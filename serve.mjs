@@ -1,21 +1,74 @@
-// Minimal static server for local dev — no dependencies.
+// Static server + analytics API — no dependencies.
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { makeStore, aggregate } from './analytics.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.PORT) || 4173;
+// Optional: set ANALYTICS_KEY to require ?key=... for reading analytics (event
+// logging stays open — the app itself must be able to post). Recommended if the
+// site is ever hosted publicly.
+const ANALYTICS_KEY = process.env.ANALYTICS_KEY || '';
+const store = makeStore(root);
+
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json',
   '.png': 'image/png', '.svg': 'image/svg+xml', '.md': 'text/markdown; charset=utf-8',
 };
 
+function readBody(req, capBytes) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > capBytes) { reject(new Error('payload too large')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+const sendJSON = (res, code, obj) => {
+  res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(obj));
+};
+
 createServer(async (req, res) => {
   try {
-    let path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    const url = new URL(req.url, 'http://x');
+    let path = decodeURIComponent(url.pathname);
+
+    // ---- analytics API ----
+    if (path === '/api/event' && req.method === 'POST') {
+      try {
+        const ok = await store.record(JSON.parse(await readBody(req, 8192)));
+        res.writeHead(ok ? 204 : 400); res.end();
+      } catch { res.writeHead(400); res.end(); }
+      return;
+    }
+    if (path === '/api/analytics' && req.method === 'GET') {
+      if (ANALYTICS_KEY && url.searchParams.get('key') !== ANALYTICS_KEY) {
+        sendJSON(res, 403, { error: 'analytics key required (?key=...)' }); return;
+      }
+      const num = (name, dflt) => {
+        const v = parseFloat(url.searchParams.get(name));
+        return Number.isFinite(v) ? v : dflt;
+      };
+      const events = await store.loadEvents();
+      sendJSON(res, 200, aggregate(events, {
+        from: num('from', 0), to: num('to', Infinity), tzOffsetMin: num('tz', 0),
+      }));
+      return;
+    }
+
+    // ---- static files ----
     if (path === '/') path = '/index.html';
+    if (path === '/analytics') path = '/analytics.html';
+    if (path === '/about') path = '/about.html';
+    if (path.startsWith('/data/')) { res.writeHead(403); res.end(); return; } // logged events are not public
     const file = normalize(join(root, path));
     if (!file.startsWith(normalize(root))) { res.writeHead(403); res.end(); return; }
     const data = await readFile(file);

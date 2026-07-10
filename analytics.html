@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Techum Calculator — Analytics</title>
+  <style>
+    :root {
+      --surface-1: #fcfcfb; --page: #f9f9f7;
+      --ink-1: #0b0b0b; --ink-2: #52514e; --ink-muted: #898781;
+      --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11,11,11,0.10);
+      --series-1: #2a78d6; /* visits */
+      --series-2: #1baf7a; /* calculations */
+      --accent: #1a6b2f;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --surface-1: #1a1a19; --page: #0d0d0d;
+        --ink-1: #ffffff; --ink-2: #c3c2b7; --ink-muted: #898781;
+        --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
+        --series-1: #3987e5; --series-2: #199e70;
+        --accent: #3fa35c;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--page); color: var(--ink-1);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px;
+    }
+    header {
+      display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+      padding: 18px 22px 0;
+    }
+    header h1 { font-size: 20px; margin: 0; }
+    header a { color: var(--ink-2); font-size: 13px; text-decoration: none; }
+    header a:hover { text-decoration: underline; }
+    main { max-width: 1080px; margin: 0 auto; padding: 10px 22px 40px; }
+
+    .ranges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 14px 0 18px; }
+    .ranges button {
+      padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px;
+      background: var(--surface-1); color: var(--ink-2); cursor: pointer; font-size: 13px;
+    }
+    .ranges button.active { color: var(--ink-1); border-color: var(--ink-1); font-weight: 600; }
+    .ranges .custom { display: none; gap: 6px; align-items: center; margin-left: 8px; }
+    .ranges .custom.open { display: flex; }
+    .ranges input[type="date"] {
+      padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
+      background: var(--surface-1); color: var(--ink-1); font-size: 13px;
+    }
+
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .tile {
+      background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .tile .v { font-size: 28px; font-weight: 650; line-height: 1.15; }
+    .tile .k { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+    .tile .s { font-size: 11.5px; color: var(--ink-muted); margin-top: 4px; }
+
+    .card {
+      background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+      padding: 14px 16px; margin-top: 14px;
+    }
+    .card h2 { font-size: 14px; margin: 0 0 4px; }
+    .card .sub { font-size: 12px; color: var(--ink-muted); margin-bottom: 10px; }
+    .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+    .legend .chip { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+    #chart-wrap { position: relative; }
+    #chart { width: 100%; height: 220px; display: block; }
+    #tooltip {
+      position: absolute; pointer-events: none; display: none; z-index: 5;
+      background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.18); padding: 7px 10px; font-size: 12px; white-space: nowrap;
+    }
+    #tooltip b { display: block; margin-bottom: 2px; }
+    #tooltip .row { color: var(--ink-2); }
+    #tooltip .row .chip { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 800px) { .cols { grid-template-columns: 1fr; } }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    th { text-align: left; color: var(--ink-muted); font-weight: 500; font-size: 11.5px;
+         border-bottom: 1px solid var(--grid); padding: 4px 8px 6px 0; }
+    td { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    tr:last-child td { border-bottom: none; }
+    .muted { color: var(--ink-muted); }
+    .empty { color: var(--ink-muted); font-size: 12.5px; padding: 8px 0; }
+    .err {
+      background: #fff3cd; color: #6b5200; border: 1px solid #ffe08a; border-radius: 8px;
+      padding: 10px 12px; margin-top: 14px; display: none; font-size: 13px;
+    }
+    code { background: rgba(128,128,128,0.12); border-radius: 4px; padding: 1px 4px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Techum Calculator — usage analytics</h1>
+    <a href="index.html">← back to the calculator</a>
+    <a href="#" id="refresh">refresh</a>
+  </header>
+  <main>
+    <div class="ranges" id="ranges">
+      <button data-range="day">Today</button>
+      <button data-range="week" class="active">Last 7 days</button>
+      <button data-range="month">Last 30 days</button>
+      <button data-range="all">All time</button>
+      <button data-range="custom">Custom…</button>
+      <span class="custom" id="custom-box">
+        <input type="date" id="from-date" /> <span class="muted">to</span>
+        <input type="date" id="to-date" />
+        <button id="apply-custom">Apply</button>
+      </span>
+    </div>
+
+    <div class="err" id="err"></div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <h2>Activity per day</h2>
+      <div class="sub" id="chart-sub"></div>
+      <div class="legend">
+        <span><span class="chip" style="background:var(--series-1)"></span>Visits</span>
+        <span><span class="chip" style="background:var(--series-2)"></span>Calculations</span>
+      </div>
+      <div id="chart-wrap">
+        <svg id="chart" preserveAspectRatio="none"></svg>
+        <div id="tooltip"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Non-default settings chosen</h2>
+      <div class="sub">Every setting on a calculation that differed from the app defaults
+        (Mishna Berurah/Ashkenazi profile). Counts are calculations, not visitors.</div>
+      <div id="tbl-settings"></div>
+    </div>
+
+    <div class="cols">
+      <div class="card">
+        <h2>Top address searches</h2>
+        <div class="sub">Every address typed into the search box.</div>
+        <div id="tbl-searches"></div>
+      </div>
+      <div class="card">
+        <h2>Top calculated places</h2>
+        <div class="sub">Where people actually ran a techum calculation.</div>
+        <div id="tbl-places"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Recent activity</h2>
+      <div class="sub">Latest events in the selected range (newest first, up to 120).</div>
+      <div id="tbl-recent"></div>
+    </div>
+  </main>
+
+  <script>
+  (function () {
+    'use strict';
+    const $ = (id) => document.getElementById(id);
+    const KEY = new URLSearchParams(location.search).get('key') || '';
+    const DAY = 86400000;
+    let currentRange = 'week';
+
+    function rangeBounds(range) {
+      const now = new Date();
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      if (range === 'day') return { from: midnight, to: midnight + DAY };
+      if (range === 'week') return { from: midnight - 6 * DAY, to: midnight + DAY };
+      if (range === 'month') return { from: midnight - 29 * DAY, to: midnight + DAY };
+      if (range === 'custom') {
+        const f = $('from-date').valueAsDate, t = $('to-date').valueAsDate;
+        // date inputs are UTC-midnight; rebuild as LOCAL midnights
+        const loc = (d) => d ? new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getTime() : null;
+        const from = loc(f), to = loc(t);
+        return { from: from ?? 0, to: to != null ? to + DAY : Date.now() + DAY };
+      }
+      return { from: 0, to: Date.now() + DAY }; // all time
+    }
+
+    async function load() {
+      const { from, to } = rangeBounds(currentRange);
+      const tz = new Date().getTimezoneOffset();
+      const url = `/api/analytics?from=${from}&to=${isFinite(to) ? to : ''}&tz=${tz}` +
+        (KEY ? `&key=${encodeURIComponent(KEY)}` : '');
+      let agg;
+      try {
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || ('HTTP ' + res.status));
+        agg = await res.json();
+      } catch (e) {
+        $('err').style.display = 'block';
+        $('err').textContent = 'Could not load analytics: ' + e.message +
+          ' — is the site running via serve.mjs (node serve.mjs)?';
+        return;
+      }
+      $('err').style.display = 'none';
+      render(agg, from, to);
+    }
+
+    function tile(v, k, s) {
+      return `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div>` +
+        (s ? `<div class="s">${s}</div>` : '') + '</div>';
+    }
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function pct(part, whole) { return whole ? Math.round((100 * part) / whole) + '%' : '—'; }
+
+    function render(agg, from, to) {
+      const t = agg.totals;
+      $('tiles').innerHTML =
+        tile(t.visits, 'Visits', `${t.uniqueVisitors} unique visitor${t.uniqueVisitors === 1 ? '' : 's'}`) +
+        tile(t.calcs, 'Techum calculations',
+          `${agg.modes.city} city · ${agg.modes.point} open-field · ${pct(agg.cacheHits, t.calcs)} from cache`) +
+        tile(t.searches, 'Address searches', `${pct(agg.searchFound, t.searches)} found`) +
+        tile(t.exports, 'Exports (KML/GeoJSON)', `${t.snapshots} snapshot save/loads`);
+
+      drawChart(agg, from, to);
+      renderSettingsTable(agg);
+      renderTable('tbl-searches', ['Address searched', 'Times', 'Found'],
+        agg.topSearches.map((s) => [esc(s.example), s.count, s.found === s.count ? 'yes' : `${s.found}/${s.count}`]),
+        [null, 'num', 'num']);
+      renderTable('tbl-places', ['Place (geocode label or pin)', 'Calcs'],
+        agg.topPlaces.map((p) => [esc(p.key), p.count]), [null, 'num']);
+      renderRecent(agg.recent);
+    }
+
+    function renderSettingsTable(agg) {
+      const rows = agg.nonDefaultSettings.map((s) => {
+        const eq = s.key.indexOf(' = ');
+        return [`<code>${esc(s.key.slice(0, eq))}</code>`, esc(s.key.slice(eq + 3)), s.count, pct(s.count, agg.totals.calcs)];
+      });
+      if (agg.profiles.length) {
+        for (const p of agg.profiles) {
+          if (p.key !== 'mishna-berura')
+            rows.push([`<code>profile (effective)</code>`, esc(p.key), p.count, pct(p.count, agg.totals.calcs)]);
+        }
+      }
+      renderTable('tbl-settings', ['Setting', 'Chosen value', 'Calcs', '% of calcs'], rows, [null, null, 'num', 'num'],
+        'All calculations in this range used the default settings.');
+    }
+
+    function renderTable(id, headers, rows, aligns, emptyMsg) {
+      if (!rows.length) { $(id).innerHTML = `<div class="empty">${emptyMsg || 'Nothing in this range yet.'}</div>`; return; }
+      const th = headers.map((h, i) => `<th class="${aligns && aligns[i] || ''}">${h}</th>`).join('');
+      const trs = rows.map((r) =>
+        '<tr>' + r.map((c, i) => `<td class="${aligns && aligns[i] || ''}">${c}</td>`).join('') + '</tr>').join('');
+      $(id).innerHTML = `<table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`;
+    }
+
+    function renderRecent(recent) {
+      renderTable('tbl-recent', ['When', 'Event', 'Detail', ''],
+        recent.map((e) => [
+          `<span class="muted">${new Date(e.t).toLocaleString()}</span>`,
+          esc(e.type), esc(e.detail || ''), `<span class="muted">${esc(e.extra || '')}</span>`,
+        ]));
+    }
+
+    // ---- daily chart: grouped thin bars, hover tooltip ----
+    function drawChart(agg, from, to) {
+      const svg = $('chart'), wrap = $('chart-wrap'), tip = $('tooltip');
+      const byDay = new Map(agg.byDay.map((d) => [d.day, d]));
+      const tz = new Date().getTimezoneOffset();
+      const dayKey = (ms) => new Date(ms - tz * 60000).toISOString().slice(0, 10);
+      let start = from, end = Math.min(isFinite(to) ? to : Date.now() + DAY, Date.now() + DAY);
+      if (!from && agg.firstEventAt) start = agg.firstEventAt; // "all time" starts at first event
+      if (!from && !agg.firstEventAt) start = Date.now();
+      // bucket by week when the span is long, so bars stay readable
+      const days = Math.max(1, Math.ceil((end - start) / DAY));
+      const step = days > 90 ? 7 : 1;
+      const buckets = [];
+      for (let ms = start; ms < end; ms += step * DAY) {
+        const b = { label: dayKey(ms), visits: 0, calcs: 0 };
+        for (let k = 0; k < step; k++) {
+          const d = byDay.get(dayKey(ms + k * DAY));
+          if (d) { b.visits += d.visits; b.calcs += d.calcs; }
+        }
+        buckets.push(b);
+      }
+      $('chart-sub').textContent = step === 1
+        ? `${buckets.length} day${buckets.length === 1 ? '' : 's'}`
+        : `${buckets.length} weeks (weekly totals — range too long for daily bars)`;
+
+      const W = 1000, H = 220, padL = 34, padB = 20, padT = 8;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      const maxV = Math.max(1, ...buckets.map((b) => Math.max(b.visits, b.calcs)));
+      const yTicks = niceTicks(maxV);
+      const yMax = yTicks[yTicks.length - 1];
+      const plotW = W - padL - 6, plotH = H - padT - padB;
+      const y = (v) => padT + plotH * (1 - v / yMax);
+      const groupW = plotW / buckets.length;
+      const barW = Math.max(2, Math.min(18, (groupW - 4) / 2 - 1));
+
+      let out = '';
+      const css = getComputedStyle(document.documentElement);
+      const c1 = css.getPropertyValue('--series-1').trim(), c2 = css.getPropertyValue('--series-2').trim();
+      const grid = css.getPropertyValue('--grid').trim(), muted = css.getPropertyValue('--ink-muted').trim();
+      const baseline = css.getPropertyValue('--baseline').trim();
+      for (const tv of yTicks) {
+        out += `<line x1="${padL}" x2="${W - 6}" y1="${y(tv)}" y2="${y(tv)}" stroke="${grid}" stroke-width="1"/>` +
+          `<text x="${padL - 6}" y="${y(tv) + 4}" text-anchor="end" font-size="10" fill="${muted}">${tv}</text>`;
+      }
+      buckets.forEach((b, i) => {
+        const cx = padL + groupW * (i + 0.5);
+        const bars = [[b.visits, c1, cx - barW - 1], [b.calcs, c2, cx + 1]];
+        for (const [v, color, bx] of bars) {
+          if (!v) continue;
+          const h = Math.max(1.5, plotH * (v / yMax));
+          out += `<rect x="${bx}" y="${padT + plotH - h}" width="${barW}" height="${h}" rx="2" fill="${color}"/>`;
+        }
+        // sparse x labels
+        const every = Math.max(1, Math.ceil(buckets.length / 10));
+        if (i % every === 0)
+          out += `<text x="${cx}" y="${H - 5}" text-anchor="middle" font-size="10" fill="${muted}">${b.label.slice(5)}</text>`;
+        out += `<rect data-i="${i}" x="${padL + groupW * i}" y="${padT}" width="${groupW}" height="${plotH}" fill="transparent"/>`;
+      });
+      out += `<line x1="${padL}" x2="${W - 6}" y1="${padT + plotH}" y2="${padT + plotH}" stroke="${baseline}" stroke-width="1"/>`;
+      svg.innerHTML = out;
+
+      svg.onmousemove = (e) => {
+        const target = e.target.closest('rect[data-i]');
+        if (!target) { tip.style.display = 'none'; return; }
+        const b = buckets[+target.dataset.i];
+        tip.innerHTML = `<b>${b.label}${step > 1 ? ' (week)' : ''}</b>` +
+          `<div class="row"><span class="chip" style="background:${c1}"></span>${b.visits} visits</div>` +
+          `<div class="row"><span class="chip" style="background:${c2}"></span>${b.calcs} calculations</div>`;
+        tip.style.display = 'block';
+        const r = wrap.getBoundingClientRect();
+        tip.style.left = Math.min(e.clientX - r.left + 12, r.width - 150) + 'px';
+        tip.style.top = (e.clientY - r.top - 10) + 'px';
+      };
+      svg.onmouseleave = () => { tip.style.display = 'none'; };
+    }
+
+    function niceTicks(maxV) {
+      const raw = maxV / 3;
+      const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+      const stepC = [1, 2, 5, 10].find((s) => s * mag >= raw) * mag;
+      const ticks = [];
+      for (let v = 0; v <= maxV + stepC - 1e-9; v += stepC) ticks.push(Math.round(v));
+      return ticks.length > 1 ? ticks : [0, 1];
+    }
+
+    // ---- wiring ----
+    $('ranges').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-range]');
+      if (!btn) return;
+      for (const b of document.querySelectorAll('#ranges button[data-range]')) b.classList.remove('active');
+      btn.classList.add('active');
+      $('custom-box').classList.toggle('open', btn.dataset.range === 'custom');
+      currentRange = btn.dataset.range;
+      if (currentRange !== 'custom') load();
+    });
+    $('apply-custom').addEventListener('click', load);
+    $('refresh').addEventListener('click', (e) => { e.preventDefault(); load(); });
+    load();
+  })();
+  </script>
+</body>
+</html>

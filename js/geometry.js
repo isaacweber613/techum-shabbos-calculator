@@ -133,6 +133,94 @@
     return best;
   }
 
+  // ---------- Ring buffer contour (audit/display aid — no psak math depends on it) ----------
+  // Traces the closed curve of points exactly `dist` meters from a footprint ring
+  // (interior counts as 0), by marching squares over the same ringDistToPoint field the
+  // clustering uses. That keeps the audit semantics EXACT:
+  //   - building B touches/enters buffer(A, 70⅔ amos)  ⇔  ringDist(A,B) ≤ 70⅔  ⇔ same chain;
+  //   - buffer(A, 70⅔) touches buffer(B, 70⅔)          ⇔  ringDist(A,B) ≤ 141⅓ ⇔ city merge
+  //     (each settlement contributes its own 70⅔ — SA 398:5).
+  // Returns an array of closed loops [{x,y},...]; a simple footprint yields one loop.
+  function bufferRing(ring, dist, cellM) {
+    const cell = cellM || Math.max(1.25, dist / 20);
+    const bb = bboxOfRing(ring);
+    const x0 = bb.minX - dist - 2 * cell, y0 = bb.minY - dist - 2 * cell;
+    const nx = Math.ceil((bb.maxX + dist + 2 * cell - x0) / cell) + 2;
+    const ny = Math.ceil((bb.maxY + dist + 2 * cell - y0) / cell) + 2;
+    const f = new Float64Array(nx * ny);
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        const p = { x: x0 + i * cell, y: y0 + j * cell };
+        // bbox distance is a lower bound on ring distance — skip exact eval far outside
+        const dx = Math.max(bb.minX - p.x, p.x - bb.maxX, 0);
+        const dy = Math.max(bb.minY - p.y, p.y - bb.maxY, 0);
+        const lb = Math.hypot(dx, dy);
+        f[j * nx + i] = (lb > dist + 2 * cell ? lb : ringDistToPoint(p, ring)) - dist;
+      }
+    }
+    const at = (i, j) => f[j * nx + i];
+    const pt = (i, j) => ({ x: x0 + i * cell, y: y0 + j * cell });
+    const inside = (v) => v < 0;
+    // Crossing points are cached per grid EDGE and shared by both adjacent cells, so
+    // loop stitching works by object identity — no floating-point key matching.
+    const hPts = new Map(), vPts = new Map(); // edge (i,j)->(i+1,j) / (i,j)->(i,j+1)
+    function cross(cache, idx, pa, pb, va, vb) {
+      let p = cache.get(idx);
+      if (!p) {
+        const t = va / (va - vb);
+        p = { x: pa.x + (pb.x - pa.x) * t, y: pa.y + (pb.y - pa.y) * t };
+        cache.set(idx, p);
+      }
+      return p;
+    }
+    const out = new Map(); // contour point -> next contour point (inside kept on the left)
+    for (let j = 0; j < ny - 1; j++) {
+      for (let i = 0; i < nx - 1; i++) {
+        const vA = at(i, j), vB = at(i + 1, j), vC = at(i + 1, j + 1), vD = at(i, j + 1);
+        const code = (inside(vA) ? 1 : 0) | (inside(vB) ? 2 : 0) |
+                     (inside(vC) ? 4 : 0) | (inside(vD) ? 8 : 0);
+        if (code === 0 || code === 15) continue;
+        const eAB = () => cross(hPts, j * nx + i, pt(i, j), pt(i + 1, j), vA, vB);
+        const eBC = () => cross(vPts, j * nx + i + 1, pt(i + 1, j), pt(i + 1, j + 1), vB, vC);
+        const eCD = () => cross(hPts, (j + 1) * nx + i, pt(i, j + 1), pt(i + 1, j + 1), vD, vC);
+        const eDA = () => cross(vPts, j * nx + i, pt(i, j), pt(i, j + 1), vA, vD);
+        const seg = (a, b) => out.set(a, b);
+        switch (code) {
+          case 1: seg(eAB(), eDA()); break;
+          case 2: seg(eBC(), eAB()); break;
+          case 4: seg(eCD(), eBC()); break;
+          case 8: seg(eDA(), eCD()); break;
+          case 14: seg(eDA(), eAB()); break;
+          case 13: seg(eAB(), eBC()); break;
+          case 11: seg(eBC(), eCD()); break;
+          case 7: seg(eCD(), eDA()); break;
+          case 3: seg(eBC(), eDA()); break;
+          case 12: seg(eDA(), eBC()); break;
+          case 6: seg(eCD(), eAB()); break;
+          case 9: seg(eAB(), eCD()); break;
+          case 5: // saddle — disambiguate with the cell-center value
+            if (inside((vA + vB + vC + vD) / 4)) { seg(eAB(), eBC()); seg(eCD(), eDA()); }
+            else { seg(eAB(), eDA()); seg(eCD(), eBC()); }
+            break;
+          case 10:
+            if (inside((vA + vB + vC + vD) / 4)) { seg(eDA(), eAB()); seg(eBC(), eCD()); }
+            else { seg(eBC(), eAB()); seg(eDA(), eCD()); }
+            break;
+        }
+      }
+    }
+    const visited = new Set();
+    const loops = [];
+    for (const start of out.keys()) {
+      if (visited.has(start)) continue;
+      const loop = [];
+      let p = start;
+      while (p && !visited.has(p)) { visited.add(p); loop.push(p); p = out.get(p); }
+      if (p === start && loop.length >= 8) loops.push(loop);
+    }
+    return loops;
+  }
+
   // ---------- Spatial grid index over building bboxes ----------
   function GridIndex(cellSize) {
     const cells = new Map();
@@ -507,7 +595,7 @@
   }
 
   return {
-    AMOS, makeProjection, runPipeline,
+    AMOS, makeProjection, runPipeline, bufferRing,
     // exported for tests
     _internals: {
       bboxOfRing, bboxGap, expandRect, rectsOverlap, rectContains, ringDist,

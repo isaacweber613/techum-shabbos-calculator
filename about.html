@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>About — Techum Shabbos Calculator</title>
+  <style>
+    :root {
+      --page: #f9f9f7; --surface: #fcfcfb; --ink-1: #1b1b1b; --ink-2: #52514e;
+      --muted: #898781; --border: #e1e0d9; --accent: #1a6b2f; --banner: #7a1f1f;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--page); color: var(--ink-1);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 15px; line-height: 1.55; }
+    #banner { background: var(--banner); color: #ffe9e9; padding: 6px 14px; font-size: 13px;
+      line-height: 1.35; position: sticky; top: 0; z-index: 20; }
+    #banner b { color: #fff; }
+    main { max-width: 860px; margin: 0 auto; padding: 24px 22px 60px; }
+    nav { font-size: 13.5px; margin-bottom: 18px; }
+    nav a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    nav a:hover { text-decoration: underline; }
+    h1 { font-size: 26px; line-height: 1.15; margin: 0 0 4px; }
+    h1 .he { display: block; font-size: 17px; color: var(--ink-2); font-weight: 400; }
+    .mission { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      padding: 18px 22px; margin: 18px 0; }
+    .mission h2 { margin-top: 0; }
+    .principles li { margin: 7px 0; }
+    .divider { margin: 34px 0 10px; border-bottom: 2px solid var(--border); padding-bottom: 6px;
+      display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    .divider h2 { margin: 0; font-size: 21px; }
+    .divider span { color: var(--muted); font-size: 12.5px; }
+    /* rendered spec */
+    #spec h1 { font-size: 22px; margin-top: 30px; }
+    #spec h2 { font-size: 19px; margin-top: 28px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+    #spec h3 { font-size: 16px; margin-top: 22px; }
+    #spec blockquote { border-left: 4px solid #c9a227; background: #fdf6e3; color: #5b4a12;
+      margin: 14px 0; padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 14px; }
+    #spec table { border-collapse: collapse; margin: 12px 0; font-size: 13px; display: block; overflow-x: auto; }
+    #spec th, #spec td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; vertical-align: top; }
+    #spec th { background: var(--surface); }
+    #spec code { background: rgba(128,128,128,0.13); border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+    #spec pre { background: #22271f; color: #d7e0cd; border-radius: 8px; padding: 12px 14px;
+      overflow-x: auto; font-size: 12.5px; line-height: 1.45; }
+    #spec pre code { background: none; padding: 0; color: inherit; }
+    #spec ul, #spec ol { padding-left: 24px; }
+    #spec li { margin: 4px 0; }
+    #spec hr { border: none; border-top: 2px solid var(--border); margin: 26px 0; }
+    #spec del { color: var(--muted); }
+    .loading { color: var(--muted); font-style: italic; }
+    footer { margin-top: 40px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 12px; }
+  </style>
+</head>
+<body>
+  <div id="banner">
+    ⚠ DRAFT TOOL — <b>not a psak halacha.</b> Techum measurement requires an expert (MB 399:7).
+    <b>Verify with a rav before relying on anything here.</b>
+  </div>
+  <main>
+    <nav><a href="index.html">← Back to the calculator</a></nav>
+    <h1>Techum Shabbos Calculator<span class="he">תחום שבת — about this project</span></h1>
+
+    <div class="mission">
+      <h2>Our goal &amp; mission</h2>
+      <p>
+        Establishing a techum Shabbos today is almost entirely manual work: someone traces
+        buildings on a map by hand, measures gaps one by one, squares the city by eye, and
+        publishes a line that is hard for anyone else to check. Existing tools stop at
+        drawing a rectangle you position yourself. <b>The derivation itself — which buildings
+        count, which chains join at 70⅔ amos, which settlements merge at 141⅓, where the
+        ribua and the 2000-amos boundary actually fall — is exactly where mistakes happen,
+        and exactly what nobody had automated.</b>
+      </p>
+      <p>
+        This project's goal is to make that derivation <b>fast, transparent, and checkable</b>
+        for any address in the world, so that a rav or mumcheh reviewing a techum spends their
+        time on the halachic judgment calls — not on tracing rooftops. It is
+        <b>decision-support for a posek, never a replacement</b>: the Mishna Berurah (399:7)
+        requires techum measurement by an expert, and every output of this tool carries that
+        banner permanently.
+      </p>
+      <h3>Principles</h3>
+      <ul class="principles">
+        <li><b>Every rule cites its source.</b> The full halachic spec below records each rule,
+          each machlokes, and each open question, with references — nothing is a black box.</li>
+        <li><b>Every disputed rule is a setting.</b> Defaults follow the widely-known psak
+          (Mishna Berurah / Ashkenazi profile); genuinely split machlokes are offered as
+          options (Chazon Ish, Mechaber/Sefardi profiles), never silently decided.</li>
+        <li><b>Deterministic and auditable.</b> Same map data + same settings = the same line,
+          every time. Snapshots freeze data, settings, and manual decisions into a file a rav
+          can review, approve, and replay exactly. Every export embeds the full configuration
+          and data provenance.</li>
+        <li><b>Human review is the product.</b> Map data is imperfect and dwelling status is a
+          halachic judgment. Uncertain buildings are flagged in color, one click includes or
+          excludes them, and the line recomputes instantly. The audit-rings display draws the
+          actual 70⅔-amos distances on the map so every join can be verified by eye.</li>
+        <li><b>Both audiences.</b> A layperson gets sensible locked defaults and clear warnings;
+          a rav gets the full configuration matrix and review tools.</li>
+      </ul>
+      <p style="font-size:12.5px; color: var(--muted); margin-bottom: 0;">
+        Privacy: this site keeps simple self-hosted usage statistics (page visits, the
+        addresses searched, and calculation settings) to understand what's useful and where
+        the tool needs work. Nothing is shared with third parties.
+      </p>
+    </div>
+
+    <div class="divider">
+      <h2>The full halachic spec</h2>
+      <span>rendered live from <code>TECHUM-SPEC.md</code> — the project's source of truth,
+        including every psak default, dated revision notes, and the open questions</span>
+    </div>
+    <div id="spec"><p class="loading">Loading TECHUM-SPEC.md…</p></div>
+
+    <footer>
+      Techum Shabbos Calculator — draft decision-support tool.
+      <a href="index.html" style="color: var(--accent);">Open the calculator</a>
+    </footer>
+  </main>
+
+  <script src="js/track.js"></script>
+  <script>
+  // Minimal markdown renderer — just enough for TECHUM-SPEC.md (headings, blockquotes,
+  // tables, nested lists, fenced code, hr, bold/italic/code/strikethrough).
+  (function () {
+    'use strict';
+    const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    function inline(s) {
+      return esc(s)
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+        .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+        .replace(/\*([^*\n]+)\*/g, '<i>$1</i>')
+        .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    }
+    function render(md) {
+      const lines = md.split(/\r?\n/);
+      const out = [];
+      let i = 0, para = [], listStack = [];
+      const flushPara = () => { if (para.length) { out.push('<p>' + inline(para.join(' ')) + '</p>'); para = []; } };
+      const closeLists = (toDepth) => {
+        while (listStack.length > toDepth) out.push(listStack.pop() === 'ol' ? '</ol>' : '</ul>');
+      };
+      while (i < lines.length) {
+        const line = lines[i];
+        // fenced code
+        if (/^```/.test(line)) {
+          flushPara(); closeLists(0);
+          const buf = []; i++;
+          while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
+          i++;
+          out.push('<pre><code>' + esc(buf.join('\n')) + '</code></pre>');
+          continue;
+        }
+        // table: header row + separator row
+        if (/^\s*\|/.test(line) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|?\s*$/.test(lines[i + 1])) {
+          flushPara(); closeLists(0);
+          const cells = (l) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => inline(c.trim()));
+          let html = '<table><thead><tr>' + cells(line).map((c) => `<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+          i += 2;
+          while (i < lines.length && /^\s*\|/.test(lines[i])) {
+            html += '<tr>' + cells(lines[i]).map((c) => `<td>${c}</td>`).join('') + '</tr>';
+            i++;
+          }
+          out.push(html + '</tbody></table>');
+          continue;
+        }
+        // blockquote block
+        if (/^\s*>/.test(line)) {
+          flushPara(); closeLists(0);
+          const buf = [];
+          while (i < lines.length && /^\s*>/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ''));
+          out.push('<blockquote>' + render(buf.join('\n')) + '</blockquote>');
+          continue;
+        }
+        const h = line.match(/^(#{1,4})\s+(.*)/);
+        if (h) { flushPara(); closeLists(0); out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); i++; continue; }
+        if (/^\s*(---+|\*\*\*+)\s*$/.test(line)) { flushPara(); closeLists(0); out.push('<hr>'); i++; continue; }
+        const li = line.match(/^(\s*)([-*]|\d+\.)\s+(.*)/);
+        if (li) {
+          flushPara();
+          const depth = Math.floor(li[1].length / 2) + 1;
+          const kind = /\d/.test(li[2]) ? 'ol' : 'ul';
+          closeLists(depth);
+          while (listStack.length < depth) { out.push(kind === 'ol' ? '<ol>' : '<ul>'); listStack.push(kind); }
+          // continuation lines (indented, not a new list item / block)
+          let text = li[3]; i++;
+          while (i < lines.length && /^\s{2,}\S/.test(lines[i]) &&
+                 !/^\s*([-*]|\d+\.)\s/.test(lines[i]) && !/^\s*\|/.test(lines[i])) {
+            text += ' ' + lines[i].trim(); i++;
+          }
+          out.push('<li>' + inline(text) + '</li>');
+          continue;
+        }
+        if (!line.trim()) { flushPara(); closeLists(0); i++; continue; }
+        // paragraph continuation
+        closeLists(0);
+        para.push(line.trim());
+        i++;
+      }
+      flushPara(); closeLists(0);
+      return out.join('\n');
+    }
+
+    fetch('TECHUM-SPEC.md', { cache: 'no-cache' })
+      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then((md) => { document.getElementById('spec').innerHTML = render(md); })
+      .catch((e) => {
+        document.getElementById('spec').innerHTML =
+          '<p class="loading">Could not load the spec (' + e.message + ').</p>';
+      });
+  })();
+  </script>
+</body>
+</html>

@@ -21,8 +21,10 @@
     dataCapHit: false,
   };
   const layerGroups = {
-    buildings: null, rects: null, second: null,
+    buildings: null, rects: null, second: null, audit: null,
   };
+  const auditCache = new Map(); // building id + join dist -> buffer loops (pure geometry)
+  function track(type, data) { if (window.TechumTrack) window.TechumTrack.send(type, data); }
 
   // ---------------- map ----------------
   function initMap() {
@@ -37,7 +39,10 @@
     layerGroups.buildings = L.layerGroup().addTo(map);
     layerGroups.rects = L.layerGroup().addTo(map);
     layerGroups.second = L.layerGroup().addTo(map);
+    layerGroups.audit = L.layerGroup().addTo(map);
     map.on('click', (e) => { if (!pinMarker) setPin(e.latlng.lat, e.latlng.lng); });
+    // audit rings are viewport-limited — refresh them as the reviewer pans/zooms
+    map.on('moveend', () => { if (settings.showAuditRings && state.result) renderAuditRings(); });
   }
 
   function setPin(lat, lon) {
@@ -61,8 +66,11 @@
     setStatus('Geocoding…');
     try {
       const results = await D.geocode(q);
+      track('search', { q, found: results.length > 0, label: results.length ? results[0].label : null });
       if (!results.length) { setStatus('Address not found — try again or click the map.'); return; }
       const r = results[0];
+      state.lastQuery = q;
+      state.lastLabel = r.label;
       setPin(r.lat, r.lon);
       map.setView([r.lat, r.lon], 16);
       setStatus('Pin set: ' + r.label + ' — confirm the pin is on the right building (drag it if not), then Calculate.');
@@ -83,6 +91,7 @@
 
   async function calculate(forceFresh) {
     if (!state.pin) return;
+    const calcStarted = Date.now();
     state.dataCapHit = false;
     state.fromCache = false;
     state.proj = G.makeProjection(state.pin.lat, state.pin.lon);
@@ -129,6 +138,16 @@
       (state.fromCache
         ? `Data from local cache (${ageDays < 1 ? 'today' : ageDays.toFixed(0) + ' days old'}).`
         : 'Fresh OSM data.'));
+    track('calc', {
+      q: state.lastQuery || null, label: state.lastLabel || null,
+      pin: { lat: +state.pin.lat.toFixed(5), lon: +state.pin.lon.toFixed(5) },
+      mode: state.result ? state.result.mode : null,
+      buildings: state.rawBuildings.length,
+      fromCache: !!state.fromCache, fresh: !!forceFresh,
+      profile: S.effectiveProfile(settings),
+      nonDefaults: S.diffFromDefaults(settings),
+      ms: Date.now() - calcStarted,
+    });
     // Automatic staleness check — no user action needed. If the cached data hasn't been
     // verified against OSM within autoCheckDays, silently check; refetch only on real edits.
     const verifiedAge = Date.now() - Date.parse(state.checkedAt || state.fetchedAt || 0);
@@ -159,6 +178,7 @@
   }
 
   function prepareBuildings() {
+    auditCache.clear(); // buffers are keyed by building id — new data invalidates them
     const proj = state.proj;
     state.buildings = state.rawBuildings.map((raw) => {
       const ring = raw.ringLatLon.map((p) => proj.toXY(p.lat, p.lon));
@@ -335,7 +355,54 @@
         'Comparison: techum @ ' + settings.secondAmahCm + ' cm amah', layerGroups.second);
     }
 
+    renderAuditRings();
     renderPanel();
+  }
+
+  // ---------------- audit rings (manual-audit aid, advanced toggle) ----------------
+  // Dotted contour exactly 70⅔ amos from each included footprint — the same distance
+  // field the clustering uses, so the picture IS the computation:
+  //   · a building whose walls reach a ring joins that chain (ibur, SA 398:5-7);
+  //   · two rings touching, when both settlements qualify as cities, is exactly the
+  //     141⅓-amos merge — each city contributes its own 70⅔ (SA 398:5).
+  // Colors identify chains. Viewport-limited and cached; auditing is a zoomed-in task.
+  function renderAuditRings() {
+    layerGroups.audit.clearLayers();
+    const res = state.result;
+    if (!settings.showAuditRings || !res || !state.buildings.length) return;
+    const joinM = res.thresholds.joinM;
+    const mb = map.getBounds().pad(0.2);
+    const sw = state.proj.toXY(mb.getSouth(), mb.getWest());
+    const ne = state.proj.toXY(mb.getNorth(), mb.getEast());
+    const view = {
+      minX: Math.min(sw.x, ne.x) - joinM, minY: Math.min(sw.y, ne.y) - joinM,
+      maxX: Math.max(sw.x, ne.x) + joinM, maxY: Math.max(sw.y, ne.y) + joinM,
+    };
+    const CAP = 400;
+    let shown = 0, skipped = 0;
+    state.buildings.forEach((b, i) => {
+      if (!b.included) return;
+      if (b.bbox.maxX < view.minX || b.bbox.minX > view.maxX ||
+          b.bbox.maxY < view.minY || b.bbox.minY > view.maxY) return;
+      if (shown >= CAP) { skipped++; return; }
+      shown++;
+      const key = b.id + '|' + joinM.toFixed(2);
+      let loops = auditCache.get(key);
+      if (!loops) { loops = G.bufferRing(b.ring, joinM); auditCache.set(key, loops); }
+      const label = res.labels[i];
+      const color = label >= 0 ? `hsl(${(label * 137.508) % 360}, 90%, 55%)` : '#cccccc';
+      for (const loop of loops) {
+        L.polygon(loop.map((p) => { const ll = state.proj.toLatLon(p.x, p.y); return [ll.lat, ll.lon]; }), {
+          color, weight: 1.6, dashArray: '1 5', fill: false, opacity: 0.95,
+        }).bindTooltip(
+          `<b>70⅔ amos = ${joinM.toFixed(1)} m</b> around this building (chain #${label + 1}).` +
+          `<br>A building whose walls reach this ring joins the chain (ibur — SA 398:5-7).` +
+          `<br>Two rings touching, both qualifying cities, is exactly the 141⅓-amos merge (2 × 70⅔).`,
+          { sticky: true }
+        ).addTo(layerGroups.audit);
+      }
+    });
+    if (skipped) setStatus(`Audit rings: showing ${shown} of ${shown + skipped} buildings in view — zoom in to audit the rest.`);
   }
 
   function labelOfHome() {
@@ -475,6 +542,7 @@
       rawBuildings: state.rawBuildings,
     };
     K.download('techum-snapshot.json', JSON.stringify(snap), 'application/json');
+    track('snapshot', { action: 'save' });
   }
   function loadSnapshot(file) {
     const reader = new FileReader();
@@ -496,6 +564,7 @@
         prepareBuildings();
         recompute();
         setStatus(`Snapshot loaded — ${state.rawBuildings.length} buildings (data from ${snap.fetchedAt}). Deterministic replay.`);
+        track('snapshot', { action: 'load' });
         // Old snapshot? Verify against today's map automatically (the snapshot file itself
         // stays frozen; this only reports drift and redraws from fresh data if edits exist).
         if (Date.now() - Date.parse(snap.fetchedAt || 0) > (settings.autoCheckDays || 30) * 86400000) {
@@ -527,6 +596,7 @@
       second,
     }, configText());
     K.download('techum-draft.kml', kml);
+    track('export', { format: 'kml' });
   }
 
   function exportGeoJSON() {
@@ -546,6 +616,7 @@
       ].filter(Boolean),
     };
     K.download('techum-draft.geojson', JSON.stringify(fc, null, 2), 'application/geo+json');
+    track('export', { format: 'geojson' });
   }
 
   // ---------------- settings UI ----------------
@@ -564,6 +635,7 @@
       $('verified-only').checked = settings.showVerifiedOnly;
       $('second-amah').value = String(settings.secondAmahCm || 0);
       $('show-12mil').checked = settings.show12mil;
+      $('audit-rings').checked = settings.showAuditRings;
       $('fetch-radius').value = settings.fetchRadiusM;
       $('max-buildings').value = settings.maxBuildings;
     };
@@ -584,6 +656,10 @@
     $('verified-only').addEventListener('change', (e) => { settings.showVerifiedOnly = e.target.checked; onChange(); });
     $('second-amah').addEventListener('change', (e) => { settings.secondAmahCm = parseFloat(e.target.value) || 0; onChange(); });
     $('show-12mil').addEventListener('change', (e) => { settings.show12mil = e.target.checked; onChange(); });
+    $('audit-rings').addEventListener('change', (e) => {
+      settings.showAuditRings = e.target.checked; S.save(settings);
+      if (state.result) renderAuditRings();
+    });
     $('fetch-radius').addEventListener('change', (e) => { settings.fetchRadiusM = Math.max(300, parseInt(e.target.value, 10) || 1200); S.save(settings); });
     $('max-buildings').addEventListener('change', (e) => { settings.maxBuildings = Math.max(1000, parseInt(e.target.value, 10) || 30000); S.save(settings); });
     ['layer-buildings', 'layer-city', 'layer-karpef', 'layer-techum'].forEach((id) =>

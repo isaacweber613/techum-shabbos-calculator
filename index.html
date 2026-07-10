@@ -93,6 +93,10 @@
           </select>
         </label>
         <label class="check"><input id="show-12mil" type="checkbox" /> 12-mil ring (d'oraisa shita)</label>
+        <label class="check"><input id="audit-rings" type="checkbox" />
+          Audit rings: 70⅔ amos around each building <small>(advanced — dotted rings, colored by
+          chain. A building whose walls reach a ring joins that chain; two cities' rings touching
+          = the 141⅓ merge, 2 × 70⅔. Shown for the current view; zoom in to audit.)</small></label>
       </details>
 
       <div class="row exports">
@@ -109,13 +113,14 @@
         <div class="hint">Click any building to force include/exclude it.</div>
       </div>
 
-      <footer>Spec &amp; halachic sources: <code>TECHUM-SPEC.md</code></footer>
+      <footer><a href="about.html">About — our goal &amp; the full halachic spec</a></footer>
     </aside>
     <div id="map"></div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="js/track.js"></script>
   <script src="js/geometry.js"></script>
   <script src="js/data.js"></script>
   <script src="js/settings.js"></script>

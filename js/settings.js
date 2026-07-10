@@ -49,6 +49,7 @@
     secondAmahCm: 0,        // 0 = off; draws a comparison techum line
     show12mil: false,
     pointRotationDeg: 0,    // open-field square rotation (SA 399 — person may orient)
+    showAuditRings: false,  // dotted 70⅔-amos rings around buildings (manual-audit aid)
     fetchRadiusM: 1200,
     maxBuildings: 30000,
     maxExpandIterations: 4,
@@ -74,6 +75,15 @@
       squaringAngleDeg: p.squaringAngleDeg, overlapMerge: p.overlapMerge,
       minCityHouses: p.minCityHouses };
   }
+  // Every setting that differs from the app-wide defaults (for analytics: "what do
+  // people change?"). Keys mirror DEFAULTS; values are the chosen non-default value.
+  function diffFromDefaults(s) {
+    const out = {};
+    for (const k of Object.keys(DEFAULTS)) {
+      if (s[k] !== DEFAULTS[k]) out[k] = s[k];
+    }
+    return out;
+  }
   // If any profile-governed value differs from the selected profile, it's Custom.
   function effectiveProfile(s) {
     const p = PROFILES[s.profile];
@@ -84,5 +94,6 @@
     return same ? s.profile : 'custom';
   }
 
-  root.TechumSettings = { PROFILES, DEFAULTS, AMOS_OPTIONS, load, save, applyProfile, effectiveProfile };
+  root.TechumSettings = { PROFILES, DEFAULTS, AMOS_OPTIONS, load, save, applyProfile,
+    effectiveProfile, diffFromDefaults };
 })(typeof self !== 'undefined' ? self : this);

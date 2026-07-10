@@ -1,1 +1,7 @@
 .claude/settings.local.json
+
+# Local analytics store (may contain searched addresses / pins)
+data/
+
+# Scratch / agent notes — not product source
+grok review.md
