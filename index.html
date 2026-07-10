@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Techum Shabbos Calculator — DRAFT tool</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="banner">
+    ⚠ DRAFT TOOL — <b>not a psak halacha.</b> Techum measurement requires an expert (MB 399:7);
+    every line below depends on the settings shown and on OpenStreetMap data quality.
+    <b>Verify with a rav before relying on it.</b>
+  </div>
+  <div id="app">
+    <aside id="sidebar">
+      <h1>תחום שבת<br><span>Techum Calculator</span></h1>
+
+      <div class="row">
+        <input id="address" type="text" placeholder="Address or place…" />
+        <button id="btn-search">Find</button>
+      </div>
+      <button id="btn-calc" class="primary" disabled>Calculate techum</button>
+      <button id="btn-fresh" class="subtle">Fresh data (bypass local cache)</button>
+      <div id="status"></div>
+
+      <details open>
+        <summary>Psak profile &amp; shitos</summary>
+        <label>Profile
+          <select id="profile">
+            <option value="mishna-berura">Mishna Berurah / Ashkenazi (default)</option>
+            <option value="chazon-ish">Chazon Ish</option>
+            <option value="mechaber">Mechaber / Sefardi</option>
+            <option value="custom" disabled>Custom (edited)</option>
+          </select>
+        </label>
+        <label>Amah
+          <select id="amah">
+            <option value="48">R' Chaim Naeh — 48 cm (960 m)</option>
+            <option value="53.98">R' Moshe Feinstein — 54 cm (1,080 m)</option>
+            <option value="57.6">Chazon Ish — 57.6 cm (1,152 m)</option>
+          </select>
+        </label>
+        <label class="check"><input id="karpef" type="checkbox" />
+          Single-city karpef +70⅔ amos <small>(Rema; MB 398:36 — off = Mechaber)</small></label>
+        <label>Squaring angle° <small>(0 = compass; set for a natural straight edge — CI OC 110:23)</small>
+          <input id="sq-angle" type="number" step="1" min="-89" max="89" value="0" /></label>
+        <label class="check"><input id="overlap" type="checkbox" />
+          Merge overlapping city rectangles <small>(Chazon Ish; off = strict, R' S. Miller)</small></label>
+        <label>City minimum (houses) <small>(MB 398:38 — for the 141⅓ city-merge only)</small>
+          <input id="min-city" type="number" min="1" max="20" value="6" /></label>
+      </details>
+
+      <details open>
+        <summary>Buildings &amp; data</summary>
+        <label class="check"><input id="inc-unknown" type="checkbox" />
+          Include untagged buildings <small>(orange — OSM data gap, flagged)</small></label>
+        <label class="check"><input id="inc-review" type="checkbox" />
+          Include ambiguous buildings <small>(purple — hotels, shuls, schools… ask a rav)</small></label>
+        <label class="check"><input id="min-size" type="checkbox" checked />
+          Exclude structures under 4×4 amos <small>(SA HaRav 398:10 — scales with the amah)</small></label>
+        <button id="btn-clear-overrides">Clear manual overrides</button>
+        <small class="muted">Map updates are handled automatically: cached data older than
+          30 days is checked against OSM in the background; only real building edits trigger
+          a refetch, and the app reports whether the techum line actually moved.</small>
+        <div class="row">
+          <button id="btn-snapshot">Save snapshot</button>
+          <button id="btn-load-snapshot">Load snapshot</button>
+          <input id="snapshot-file" type="file" accept=".json" hidden />
+        </div>
+        <small class="muted">Snapshots freeze the fetched data + settings + overrides for a
+          deterministic, reproducible replay (OSM data changes over time; halachos don't).</small>
+        <label>Initial fetch radius (m) <input id="fetch-radius" type="number" step="100" min="300" /></label>
+        <label>Max buildings (data cap) <input id="max-buildings" type="number" step="1000" min="1000" /></label>
+      </details>
+
+      <details open>
+        <summary>Display</summary>
+        <label class="check"><input id="layer-buildings" type="checkbox" checked /> Buildings</label>
+        <label class="check"><input id="layer-city" type="checkbox" checked /> City rectangle (ribua)</label>
+        <label class="check"><input id="layer-karpef" type="checkbox" checked /> Karpef</label>
+        <label class="check"><input id="layer-techum" type="checkbox" checked /> Techum boundary</label>
+        <label class="check"><input id="verified-only" type="checkbox" checked />
+          Verified-dwellings-only scenario <small>(amber dashed — brackets data uncertainty; neither line is a psak)</small></label>
+        <label>Comparison techum line
+          <select id="second-amah">
+            <option value="0">off</option>
+            <option value="48">@ R' Chaim Naeh 48 cm</option>
+            <option value="53.98">@ R' Moshe 54 cm</option>
+            <option value="57.6">@ Chazon Ish 57.6 cm</option>
+          </select>
+        </label>
+        <label class="check"><input id="show-12mil" type="checkbox" /> 12-mil ring (d'oraisa shita)</label>
+      </details>
+
+      <div class="row exports">
+        <button id="btn-kml">Export KML</button>
+        <button id="btn-geojson">Export GeoJSON</button>
+      </div>
+
+      <div id="results"></div>
+
+      <div class="legend">
+        <div><span class="sw dw"></span> dwelling &nbsp; <span class="sw un"></span> untagged</div>
+        <div><span class="sw rv"></span> needs review &nbsp; <span class="sw no"></span> non-dwelling</div>
+        <div><span class="ln techum"></span> techum &nbsp; <span class="ln city"></span> city rect &nbsp; <span class="ln karpef"></span> karpef &nbsp; <span class="ln verified"></span> verified-only</div>
+        <div class="hint">Click any building to force include/exclude it.</div>
+      </div>
+
+      <footer>Spec &amp; halachic sources: <code>TECHUM-SPEC.md</code></footer>
+    </aside>
+    <div id="map"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="js/geometry.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/kml.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
