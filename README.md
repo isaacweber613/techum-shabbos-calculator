@@ -4,6 +4,13 @@
 > Every output depends on the psak settings shown and on OpenStreetMap data quality.
 > Verify with a rav before relying on anything this tool draws.
 
+## License
+
+**PolyForm Noncommercial 1.0.0** — free to use, study, and share for noncommercial
+purposes (personal use, learning, shuls, schools, charities, religious observance).
+**Selling products built with this software is not allowed.** See [LICENSE](LICENSE).
+Commercial licensing: contact the author.
+
 Type an address → the app fetches the real buildings around it from OpenStreetMap,
 derives the halachic city (ibur ha'ir chaining at 70⅔ amos, city merges at 141⅓,
 three-villages rule), squares it to a true-north rectangle (ribua ha'ir), and draws the
