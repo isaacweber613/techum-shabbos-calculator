@@ -63,6 +63,14 @@ permanent draft banner, never present output as psak.
 - Defaults follow the widely-known psak; genuinely split machlokes → both options.
 - Automatic over buttons (e.g., staleness check runs itself after 30 days).
 - Plain-text questions, no AskUserQuestion popups. No spawn_task chips.
+- Mehalich policy (2026-07-10): open questions that block functionality don't stay
+  unimplemented — research the mehalachim, adopt the best-supported as documented
+  default, expose alternatives as settings (spec rev-4 note).
+
+## TODO
+
+- Hunter, NY validation benchmark (deferred by Isaac 2026-07-10 — published under both
+  R' Moshe and Chazon Ish shiurim, two-shita cross-check; fallback: Borehamwood).
 
 ## Open halachic questions (need a posek — full list in spec Part 7)
 
@@ -70,7 +78,8 @@ Biggest: does a tzuras-hapesach eruv make the enclosed area "the city" (techum f
 eruv line)? Also: bow-rule endpoint designation on real city outlines, modern beis-dirah
 cases (hotels/offices/schools), courtyard model vs footprint count for city status,
 karpef-after-ibur split, whether ribua's filled corners count as "in the city" for a
-person standing there.
+person standing there. Q2 (eruv) and Q4 (bow) are getting default mehalachim per the
+mehalich policy above.
 
 ## Known limits / gotchas
 

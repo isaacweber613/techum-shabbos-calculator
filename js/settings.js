@@ -1,5 +1,5 @@
 /*
- * Psak profiles & settings — mirrors TECHUM-SPEC.md Part 2 (rev. 2).
+ * Psak profiles & settings — mirrors TECHUM-SPEC.md Part 2 (rev. 4).
  * Every disputed rule is a setting; profiles are documented defaults, all overridable.
  * Classic script: exposes window.TechumSettings.
  */

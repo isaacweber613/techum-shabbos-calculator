@@ -246,7 +246,7 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 | Squaring alignment | compass (Chayei Adam 68:14) | natural straight edge permitted (CI OC 110:23; user sets the reference angle) | compass |
 | Overlapping-squares rect merge | **off** + warning (R' S. Miller) | on (CI redraw) | off + warning |
 | City minimum for the 141⅓ merge | 6 houses (MB 398:38) | 6 + CI courtyard qualifications ⚠ | 6 |
-| Bow/concavity fill (< 4000 amos endpoints) | on (SA 398:3 — stated halacha, all profiles) | on | on |
+| Bow/concavity fill (< 4000 amos endpoints) | din applies (SA 398:3, all profiles); v1 detect-and-flag — endpoints are a reviewer decision (rev 3/4) | ” | ” |
 | Unknown-use buildings | include, flagged for review (all profiles — data policy, not psak) | ” | ” |
 | Eruv-enclosure-as-city (MB 401:7) | **off — rav-selected setting only** (real basis, but modern mega-enclosures disputed) | off | off |
 | 12-mil ring / second-shita comparison line | hidden / off (available in all profiles) | ” | ” |
@@ -305,6 +305,26 @@ overwrite).
 - **Milestone guidance adopted:** next serious step is a rav-facing validation pass on one
   curated city against a published techum map, before promoting any default as a consumer
   answer. The tool remains address-agnostic; this is about validation, not scope.
+
+### Rev-4 notes (2026-07-10, consistency fixes + mehalich directive)
+
+- **Part 7 open-question #7 (karpef) corrected** — it still carried stale rev-2 wording
+  ("we defaulted off"). The actual default since rev 2 is karpef **on** in the default
+  MB/Ashkenazi profile (Rema; MB 398:36); **off** is the Mechaber/Sefardi profile. No
+  default changed here — only the stale sentence.
+- **Profile-matrix bow row clarified** — the row read "fill on", which overstated v1: per
+  rev 3 the implementation is detect-and-flag (no auto-fill; endpoints are a reviewer
+  decision). The din itself (SA 398:3) is undisputed across profiles; the cell now says
+  "din applies; v1 detect-and-flag".
+- **settings.js header** said "mirrors Part 2 (rev. 2)"; it matches rev. 3 — comment fixed.
+- **Hunter, NY validation benchmark = standing TODO** (Isaac, 2026-07-10: deferred, keep
+  as todo). Published under both R' Moshe and Chazon Ish shiurim — two-shita cross-check.
+- **Mehalich directive (Isaac, 2026-07-10):** for open questions currently parked as
+  "needs a posek" that block functionality (Q2 eruv-as-city, Q4 bow endpoints), don't
+  leave the feature unimplemented — research the mehalachim, adopt the best-supported one
+  as the documented default, and expose the alternatives as settings (same policy as every
+  other machlokes in Part 2). Research in progress; defaults to be recorded here as a
+  dated rev note when adopted.
 
 ---
 
@@ -460,8 +480,10 @@ the UI for building-level review is the bulk of the work.
 6. **Where the 70⅔ is measured from** — building wall to building wall, or do attached
    fenced yards/courtyards (hukaf l'dira) count as part of the house? Changes borderline
    joins.
-7. **Karpef psak confidence** — we defaulted off (Mechaber), but exactly how MB 398:21 comes
-   down and what target-community practice is should be confirmed.
+7. **Karpef psak confidence** — the default MB/Ashkenazi profile has it **on** (Rema; MB
+   398:36) and the Mechaber/Sefardi profile off (corrected rev 4 — this line previously
+   carried stale rev-2 "defaulted off" wording). Exactly how MB 398:21 comes down and what
+   target-community practice is should still be confirmed.
 8. **Mixing shitos** — may one combine leniencies across shitos (e.g. CI amah for the 2000
    but RCN elsewhere)? Default: never mix; one amah drives everything.
 9. **Walled-city timing** (settled-then-walled measures from the wall) — rare, and
