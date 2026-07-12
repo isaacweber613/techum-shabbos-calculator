@@ -55,16 +55,16 @@ proxy), and Esri World Imagery (satellite tiles).
 7. **Save/Load snapshot** — freezes the fetched buildings + settings + overrides to a JSON
    for a deterministic replay: the engine is pure, so same data + same settings = same
    lines, forever. (OSM data changes over time; halachos don't.)
-7a. **Local data cache with automatic staleness handling** — fetched buildings are cached
-   in the browser (IndexedDB), so repeat calculations are instant and shita-switching
-   never refetches. When cached (or snapshot) data is **older than 30 days**, the app
-   automatically asks OSM whether any building in the area was edited since the data date
-   (Overpass `newer:` count query — cheap). No edits → data is stamped verified-current
-   and the 30-day clock resets. Edits found → automatic refetch + recompute + a report of
-   **whether the techum line actually moved and by how many meters** (most map edits
-   don't touch the boundary). No user action required; **"Fresh data"** remains for an
-   explicit refetch. Caveat: deleted buildings don't appear in `newer:` results — the
-   occasional explicit refresh is the deletion backstop.
+7a. **Building data cache (local + shared)** — raw OSM footprints are cached, never the
+   computed techum lines (settings-dependent). **L1:** browser IndexedDB for the same pin.
+   **L2 (production):** Worker `/api/buildings` unions ~2 km grid tiles from R2 so the
+   second user in the same city skips Overpass. Cold tiles fill once from Overpass and
+   stay until **"Fresh data"** or the automatic 30-day change-check finds edits.
+   When cached data is **older than 30 days**, the app asks OSM whether any building in
+   the area was edited (`newer:` count — cheap). No edits → stamp verified-current and
+   reset the clock; edits → refetch + report whether the techum line moved (meters).
+   Caveat: deletions don't appear in `newer:` — occasional explicit refresh is the backstop.
+   Localhost (`node serve.mjs`) still talks to Overpass directly.
 8. The **amber dashed line** is the verified-dwellings-only scenario — it brackets the
    uncertainty from untagged buildings. It is a *scenario*, not a machmir line: changing
    which buildings count can move the city topology in either direction.

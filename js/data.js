@@ -330,7 +330,17 @@ out geom;`;
   // The fetch is the slow, settings-INDEPENDENT part — the same buildings serve every
   // shita, so we cache raw data per area and always recompute boundaries (cheap, pure).
   // Cached entries carry fetchedAt so results are attributable to a data date.
+  //
+  // Layers (production):
+  //   L1 IndexedDB — same browser, exact bbox (instant shita-switch / re-calc)
+  //   L2 Worker R2 tiles — shared across users for the same ~2 km grid cells
+  //   L3 Overpass — cold fill (via Worker in production; direct on localhost)
   const DB_NAME = 'techum-cache', STORE = 'overpass';
+  function isLocalHost() {
+    try {
+      return location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    } catch { return true; }
+  }
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);
@@ -363,7 +373,38 @@ out geom;`;
     const r = (x) => x.toFixed(5);
     return `${r(bbox.south)},${r(bbox.west)},${r(bbox.north)},${r(bbox.east)}`;
   }
-  // Returns {buildings, fetchedAt, checkedAt, fromCache}. force=true bypasses the cache.
+
+  // Production path: Worker unions fixed-degree R2 tiles (shared multi-user cache).
+  async function fetchBuildingsFromServer(bbox, { force = false } = {}) {
+    const params = new URLSearchParams({
+      south: String(bbox.south), west: String(bbox.west),
+      north: String(bbox.north), east: String(bbox.east),
+    });
+    if (force) params.set('force', '1');
+    const res = await fetch('/api/buildings?' + params.toString(), {
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) {
+      let detail = 'HTTP ' + res.status;
+      try {
+        const err = await res.json();
+        if (err && err.error) detail = err.error;
+      } catch { /* ignore */ }
+      throw new Error(detail);
+    }
+    const data = await res.json();
+    if (!data || !Array.isArray(data.buildings)) throw new Error('invalid buildings response');
+    return {
+      buildings: data.buildings,
+      fetchedAt: data.fetchedAt || new Date().toISOString(),
+      checkedAt: data.checkedAt || data.fetchedAt || new Date().toISOString(),
+      fromCache: !!data.fromCache,
+      source: data.source || 'server-tiles',
+      tiles: data.tiles || null,
+    };
+  }
+
+  // Returns {buildings, fetchedAt, checkedAt, fromCache, source?}. force=true bypasses caches.
   // No TTL — cache entries live until an automatic change-check invalidates them:
   // `checkedAt` records the last time the entry was verified to still match OSM.
   async function fetchBuildingsCached(bbox, { force = false } = {}) {
@@ -372,13 +413,31 @@ out geom;`;
       const hit = await cacheGet(key);
       if (hit) {
         return { buildings: hit.buildings, fetchedAt: hit.fetchedAt,
-                 checkedAt: hit.checkedAt || hit.fetchedAt, fromCache: true };
+                 checkedAt: hit.checkedAt || hit.fetchedAt, fromCache: true, source: 'local' };
       }
     }
+
+    // Shared tile cache (production). Localhost keep using direct Overpass so
+    // `node serve.mjs` works without Wrangler/R2.
+    if (!isLocalHost()) {
+      try {
+        const remote = await fetchBuildingsFromServer(bbox, { force });
+        await cachePut(key, {
+          buildings: remote.buildings,
+          fetchedAt: remote.fetchedAt,
+          checkedAt: remote.checkedAt,
+        });
+        return remote;
+      } catch (e) {
+        // Fall through to direct Overpass so a Worker/R2 outage does not block calculation.
+        console.warn('server building cache failed; falling back to Overpass', e);
+      }
+    }
+
     const buildings = await fetchBuildings(bbox);
     const fetchedAt = new Date().toISOString();
     await cachePut(key, { buildings, fetchedAt, checkedAt: fetchedAt });
-    return { buildings, fetchedAt, checkedAt: fetchedAt, fromCache: false };
+    return { buildings, fetchedAt, checkedAt: fetchedAt, fromCache: false, source: 'overpass' };
   }
   // After a clean change-check ("no edits since fetchedAt"), reset the verification clock.
   async function markCheckedCurrent(bbox) {
@@ -418,9 +477,9 @@ out count;`;
   }
 
   root.TechumData = { classify, computeDataConfidence, geocode, autocomplete, fetchBuildings, fetchBuildingsCached,
-    countChangedBuildings, markCheckedCurrent,
+    fetchBuildingsFromServer, countChangedBuildings, markCheckedCurrent,
     _tables: { DWELLING_TAGS, NON_DWELLING_TAGS, REVIEW_TAGS },
     parseOvertureGeoJSON, compareBuildingSources,
     _internals: { parseOverpass, parseOvertureGeoJSON, compareBuildingSources,
-      ringsIntersect, bboxKey, photonLabel } };
+      ringsIntersect, bboxKey, photonLabel, isLocalHost } };
 })(typeof self !== 'undefined' ? self : this);

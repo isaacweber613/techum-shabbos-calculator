@@ -22,6 +22,13 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "BUILDINGS",
+      "bucket_name": "techum-buildings",
+      "preview_bucket_name": "techum-buildings-preview"
+    }
+  ],
   "ratelimits": [
     {
       "name": "EVENT_RATE_LIMITER",
@@ -32,6 +39,11 @@
       "name": "GEOCODE_RATE_LIMITER",
       "namespace_id": "71002",
       "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "BUILDINGS_RATE_LIMITER",
+      "namespace_id": "71003",
+      "simple": { "limit": 30, "period": 60 }
     }
   ],
   "vars": {
