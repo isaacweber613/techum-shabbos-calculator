@@ -10,9 +10,12 @@ local-development server; it is not the production origin.
 - Worker: `techum-shabbos-calculator`; `workers.dev` disabled by the custom-domain deployment
 - D1: `techum-analytics` (`c08c94e0-e04d-4f06-be14-6fed2d47468b`); migrations 0001–0003 applied
 - `IP_HASH_SECRET` configured; geocoder contact is `https://tchumshabbos.com/about`
-- Analytics collection is active, but analytics reads are locked (`REQUIRE_ACCESS=true`)
-  until the owner approves activation of Cloudflare Zero Trust Free and the Access
-  applications are created.
+- Analytics collection is active and analytics reads are private (`REQUIRE_ACCESS=true`).
+- Cloudflare Zero Trust Free is active. The `Techum analytics` Access application protects
+  `tchumshabbos.com/analytics*` and `tchumshabbos.com/api/analytics*` with the reusable
+  `Allow analytics owner` policy (owner email only, 24-hour policy session).
+- Outside-in verification: `/` returns `200`; both analytics paths return a `302` redirect
+  to Cloudflare Access when no authenticated Access session is present.
 
 ## One-time account setup
 
