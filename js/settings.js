@@ -54,7 +54,7 @@
     concavityReviews: {},   // review key -> recorded endpoints; never silently changes geometry
     useValidatedPerimeter: false, // explicit rav-supplied hukaf-l'dira alternative; never inferred
     fetchRadiusM: 1200,
-    maxBuildings: 30000,
+    maxBuildings: 40000,
     maxExpandIterations: 4,
     autoCheckDays: 30,      // auto change-check when cached data is older than this; no user button
   };
@@ -64,7 +64,13 @@
   function load() {
     try {
       const raw = root.localStorage && localStorage.getItem(KEY);
-      if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+      if (raw) {
+        const saved = JSON.parse(raw);
+        // 30,000 was the old built-in metro cap, not a user/halachic choice. Migrate it
+        // so Brooklyn-sized calculations can finish their boundary expansion.
+        if (saved.maxBuildings === 30000 || saved.maxBuildings === 60000) saved.maxBuildings = DEFAULTS.maxBuildings;
+        return { ...DEFAULTS, ...saved };
+      }
     } catch (e) { /* fresh defaults */ }
     return { ...DEFAULTS };
   }

@@ -351,37 +351,73 @@
     return best;
   }
 
+  function clusterGapIndexed(cA, cB, buildings, upperBound, buildingGrid) {
+    if (bboxGap(cA.bbox, cB.bbox) > upperBound) return Infinity;
+    const source = cA.members.length <= cB.members.length ? cA : cB;
+    const target = source === cA ? cB : cA;
+    const targetMembers = new Set(target.members);
+    let best = Infinity;
+    for (const i of source.members) {
+      const searchDistance = Math.min(best, upperBound);
+      for (const j of buildingGrid.query(expandRect(buildings[i].bbox, searchDistance))) {
+        if (!targetMembers.has(j)) continue;
+        if (bboxGap(buildings[i].bbox, buildings[j].bbox) > searchDistance) continue;
+        const distance = ringDist(buildings[i].ring, buildings[j].ring);
+        if (distance < best) best = distance;
+        if (best === 0) return 0;
+      }
+    }
+    return best;
+  }
+
   // ---------- Stage 2: city-to-city 141 1/3 merge (SA 398:5; MB 398:38 six-house min) ----------
   function mergeCities(clusters, buildings, t2, minCityHouses) {
-    let merged = true;
     const notes = [];
-    while (merged) {
-      merged = false;
-      outer:
-      for (let a = 0; a < clusters.length; a++) {
-        for (let b = a + 1; b < clusters.length; b++) {
-          const bothCities = clusters[a].qualifiesAsCity == null
-            ? clusters[a].members.length >= minCityHouses && clusters[b].members.length >= minCityHouses
-            : clusters[a].qualifiesAsCity && clusters[b].qualifiesAsCity;
-          if (!bothCities) continue;
-          const gap = clusterGap(clusters[a], clusters[b], buildings, t2);
-          if (gap <= t2) {
-            notes.push({ type: 'city-merge', gapM: gap });
-            clusters[a] = {
-              members: clusters[a].members.concat(clusters[b].members),
-              bbox: bboxUnion(clusters[a].bbox, clusters[b].bbox),
-              key: `merged:${clusters[a].componentKeys.concat(clusters[b].componentKeys).sort().join('|')}`,
-              qualifiesAsCity: true,
-              qualificationSource: 'merged-qualified-cities',
-              componentKeys: clusters[a].componentKeys.concat(clusters[b].componentKeys),
-            };
-            clusters.splice(b, 1);
-            merged = true;
-            break outer;
-          }
+    const qualifies = (cluster) => cluster.qualifiesAsCity == null
+      ? cluster.members.length >= minCityHouses : cluster.qualifiesAsCity;
+    const uf = UnionFind(clusters.length);
+    const grid = GridIndex(Math.max(t2, 50));
+    const buildingGrid = GridIndex(Math.max(t2, 25));
+    buildings.forEach((building, index) => { if (building.included) buildingGrid.insert(index, building.bbox); });
+    clusters.forEach((cluster, index) => { if (qualifies(cluster)) grid.insert(index, cluster.bbox); });
+
+    // A merge never creates a new shorter building-to-building gap: the distance from
+    // (A union B) to C is min(distance(A,C), distance(B,C)). Therefore the halachic
+    // transitive merge is exactly the connected components of the original qualifying
+    // cities under the fixed 141 1/3-amah threshold. Check each spatial candidate once.
+    for (let a = 0; a < clusters.length; a++) {
+      if (!qualifies(clusters[a])) continue;
+      for (const b of grid.query(expandRect(clusters[a].bbox, t2))) {
+        if (b <= a || !qualifies(clusters[b])) continue;
+        if (bboxGap(clusters[a].bbox, clusters[b].bbox) > t2) continue;
+        const gap = clusterGapIndexed(clusters[a], clusters[b], buildings, t2, buildingGrid);
+        if (gap <= t2 && uf.find(a) !== uf.find(b)) {
+          uf.union(a, b);
+          notes.push({ type: 'city-merge', gapM: gap });
         }
       }
     }
+
+    const groups = new Map();
+    clusters.forEach((cluster, index) => {
+      const root = qualifies(cluster) ? uf.find(index) : index;
+      if (!groups.has(root)) groups.set(root, []);
+      groups.get(root).push(cluster);
+    });
+    const mergedClusters = [...groups.values()].map((group) => {
+      if (group.length === 1) return group[0];
+      const members = group.flatMap((cluster) => cluster.members);
+      const componentKeys = group.flatMap((cluster) => cluster.componentKeys);
+      return {
+        members,
+        bbox: group.reduce((box, cluster) => bboxUnion(box, cluster.bbox), group[0].bbox),
+        key: `merged:${componentKeys.slice().sort().join('|')}`,
+        qualifiesAsCity: true,
+        qualificationSource: 'merged-qualified-cities',
+        componentKeys,
+      };
+    });
+    clusters.splice(0, clusters.length, ...mergedClusters);
     return notes;
   }
 
@@ -393,6 +429,8 @@
     const t2 = AMOS.JOIN2 * settings.amahM;
     const techum = AMOS.TECHUM * settings.amahM;
     const warnings = [];
+    const buildingGrid = GridIndex(Math.max(techum, 100));
+    buildings.forEach((building, index) => { if (building.included) buildingGrid.insert(index, building.bbox); });
     let acted = true;
     while (acted) {
       acted = false;
@@ -404,18 +442,24 @@
           ? cl.members.length >= settings.minCityHouses
           : cl.qualifiesAsCity);
       if (candidates.length < 3) break;
+      const cityGrid = GridIndex(Math.max(techum, 100));
+      candidates.forEach(({ cl, i }) => cityGrid.insert(i, cl.bbox));
       outer:
       for (const { i: b } of candidates) {
-        for (const { i: a } of candidates) {
-          if (a === b) continue;
-          for (const { i: c } of candidates) {
-            if (c <= a) continue;
-            if (c === b) continue;
+        const nearby = [];
+        for (const i of cityGrid.query(expandRect(clusters[b].bbox, techum))) {
+          if (i === b) continue;
+          const gap = clusterGapIndexed(clusters[i], clusters[b], buildings, techum, buildingGrid);
+          if (gap <= techum) nearby.push(i);
+        }
+        nearby.sort((a, c) => a - c);
+        for (let ai = 0; ai < nearby.length; ai++) {
+          const a = nearby[ai];
+          for (let ci = ai + 1; ci < nearby.length; ci++) {
+            const c = nearby[ci];
             const A = clusters[a], B = clusters[b], C = clusters[c];
-            const dAB = clusterGap(A, B, buildings, techum);
-            const dCB = clusterGap(C, B, buildings, techum);
-            if (dAB > techum || dCB > techum) continue;
-            const dAC = clusterGap(A, C, buildings, Infinity);
+            const maxOuterGap = Math.hypot(B.bbox.maxX - B.bbox.minX, B.bbox.maxY - B.bbox.minY) + 2 * t2;
+            const dAC = clusterGapIndexed(A, C, buildings, maxOuterGap, buildingGrid);
             if (!isFinite(dAC)) continue;
             // width of B along the A->C direction
             const ax = (A.bbox.minX + A.bbox.maxX) / 2, ay = (A.bbox.minY + A.bbox.maxY) / 2;
@@ -531,6 +575,15 @@
   // settings: { amahM, karpef, minCityHouses, overlapMerge, squaringAngleDeg }
   // pin: {x, y}
   function runPipeline(buildings, settings, pin) {
+    const clock = () => typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    const engineStarted = clock();
+    const stageTimings = {};
+    let stageStarted = engineStarted;
+    const markStage = (name) => {
+      const ended = clock();
+      stageTimings[name] = ended - stageStarted;
+      stageStarted = ended;
+    };
     const warnings = [];
     const joinM = AMOS.JOIN * settings.amahM;
     const t2 = AMOS.JOIN2 * settings.amahM;
@@ -559,21 +612,27 @@
       });
       workPin = rot(pin);
     }
+    markStage('rotation');
 
     // Stage 1: ibur chains
     const labels = clusterBuildings(work, joinM);
+    markStage('iburClustering');
     const clusters = buildClusters(work, labels);
+    markStage('clusterAssembly');
     annotateCityQualification(clusters, work, settings.minCityHouses, settings.cityQualificationOverrides);
     const qualificationAudit = clusters.map((c) => ({ key: c.key, members: [...c.members], memberIds: [...c.memberIds], bbox: { ...c.bbox },
       qualifiesAsCity: c.qualifiesAsCity, qualificationSource: c.qualificationSource,
       qualificationRemapScore: c.qualificationRemapScore }));
+    markStage('cityQualification');
 
     // Stage 2 + 3: settlement merges
     const mergeNotes = mergeCities(clusters, work, t2, settings.minCityHouses);
     for (const n of mergeNotes) {
       warnings.push({ type: 'city-merge', text: `Two settlements merged (gap ${n.gapM.toFixed(1)} m <= 141 1/3 amos).` });
     }
+    markStage('cityMerges');
     warnings.push(...threeVillages(clusters, work, settings));
+    markStage('threeVillages');
 
     // Locate the pin's cluster. Priority:
     //  1. A settlement whose RECTANGLE contains the pin — being inside the squared city
@@ -601,6 +660,7 @@
       ? settings.validatedCityPerimeter.map(rot) : null;
     const perimeterActive = !!(validatedPerimeter && pointInRing(workPin, validatedPerimeter));
     const mode = perimeterActive || (home >= 0 && bestD <= joinM) ? 'city' : 'point';
+    markStage('homeSelection');
 
     let cityRect = null, karpefRect = null, techumRect = null, concavity = [];
     if (mode === 'city') {
@@ -645,6 +705,7 @@
       cityRect = base;
       warnings.push({ type: 'point-mode', text: 'No settlement found joining this point (within 70 2/3 amos) — treated as shevisa in an open field: 4 amos + 2000-amos square. The square may be rotated (settings).' });
     }
+    markStage('boundaryAndWarnings');
 
     const rectToCorners = (r) => r == null ? null : [
       unrot({ x: r.minX, y: r.minY }), unrot({ x: r.maxX, y: r.minY }),
@@ -668,7 +729,7 @@
       ? rectToCorners(expandRect(karpefRect || cityRect, AMOS.MIL12 * settings.amahM))
       : rectToCorners(expandRect(cityRect, AMOS.MIL12 * settings.amahM)));
 
-    return {
+    const result = {
       mode,
       validatedPerimeterActive: perimeterActive,
       labels,
@@ -700,6 +761,9 @@
       warnings,
       thresholds: { joinM, t2, techumM, karpefM },
     };
+    markStage('resultSerialization');
+    result.engineTimings = { ...stageTimings, total: clock() - engineStarted };
+    return result;
   }
 
   return {

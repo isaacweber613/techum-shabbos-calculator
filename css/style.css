@@ -384,3 +384,35 @@ footer { display:none; }
   .setting-items { grid-template-columns:1fr; }
   #map { border:0; }
 }
+
+/* Final safety cascade: no compact layout may conceal guidance or warnings. */
+@media (min-width:901px) {
+  #sidebar { overflow-y:auto; overflow-x:hidden; scrollbar-gutter:stable; }
+}
+#status { height:auto; white-space:normal; overflow:visible; overflow-wrap:anywhere; }
+#confidence,#review-queue,#results { max-height:none; overflow:visible; }
+.review-title { display:flex; justify-content:space-between; gap:8px; margin:4px 0; }
+.review-title span { color:var(--muted); }
+.review-list { display:block; max-height:245px; overflow-y:auto; overflow-x:hidden; padding:3px; }
+.review-list button { display:grid; grid-template-columns:14px 68px minmax(0,1fr); width:100%; padding:6px; text-align:left; }
+.review-list button small { display:block; overflow:visible; white-space:normal; }
+#sidebar > details[open] p { display:block; }
+.settings-grid details label > small,.settings-grid .muted { display:block; grid-column:1 / -1; }
+.setting-help[aria-expanded="true"]:before,.setting-help[aria-expanded="true"]:after { opacity:1; visibility:visible; }
+.legend,body.has-result .legend { display:block; padding:8px; font-size:9.5px; line-height:1.35; }
+.legend > b,.legend .building-key,.legend .hint { display:flex; }
+.legend div { white-space:normal; }
+footer { display:block; }
+.map-mode-active #map { outline:4px solid #d43f8d; outline-offset:-4px; }
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible { outline:3px solid rgba(23,107,82,.35); outline-offset:2px; }
+@media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto!important; } .calc-action { animation:none!important; } }
+@media (max-width:900px) {
+  .settings-grid button:not(.setting-help),#sidebar > .exports button,#sidebar > details button { min-height:44px; height:auto; font-size:12px; }
+  #status,#results,#confidence,#review-queue { font-size:12px; line-height:1.4; }
+  #btn-calc { position:sticky; bottom:8px; z-index:1200; box-shadow:0 5px 18px rgba(0,0,0,.2); }
+  .setting-help:before,.setting-help:after { display:none; }
+  .setting-help[aria-expanded="true"]:before {
+    display:block; position:fixed; left:16px; right:16px; bottom:16px; width:auto;
+    font-size:13px; line-height:1.45;
+  }
+}
