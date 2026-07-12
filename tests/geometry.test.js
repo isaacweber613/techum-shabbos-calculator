@@ -213,5 +213,31 @@ function rectSpan(corners) {
   assert('round-trip projection', approx(fwd.x, 500, 0.01) && approx(fwd.y, 800, 0.01));
 }
 
+// 11. Point rotation changes only the established point square -----------------
+{
+  const farCity = grid6(200, 0);
+  const base = G.runPipeline(farCity, { ...S, pointRotationDeg: 0 }, { x: 0, y: 0 });
+  const rotated = G.runPipeline(farCity, { ...S, pointRotationDeg: 45 }, { x: 0, y: 0 });
+  assert('point rotation does not change point/city mode', base.mode === 'point' && rotated.mode === 'point');
+  assert('point rotation does not change clusters', JSON.stringify(base.clusters.map((c) => c.members)) ===
+    JSON.stringify(rotated.clusters.map((c) => c.members)));
+  const edgeAngle = Math.atan2(rotated.techumCorners[1].y - rotated.techumCorners[0].y,
+    rotated.techumCorners[1].x - rotated.techumCorners[0].x) * 180 / Math.PI;
+  assert('point techum square rotates 45 degrees after classification', approx(edgeAngle, 45, 0.01), `angle=${edgeAngle}`);
+}
+
+// 12. Overlap redraw keeps audit membership/count consistent -------------------
+{
+  const A = [];
+  for (let i = 0; i <= 10; i++) A.push(squareHouse(i * 30, 0));
+  for (let i = 0; i <= 10; i++) A.push(squareHouse(305, i * 30 - 5));
+  A.push(...grid6(0, 0));
+  const B = grid6(100, 150);
+  const res = G.runPipeline(A.concat(B), { ...S, overlapMerge: true }, { x: 0, y: 0 });
+  const home = res.clusters[res.homeCluster];
+  assert('overlap redraw includes both settlements in home audit membership',
+    home.members.length === A.length + B.length, `members=${home.members.length}`);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -21,12 +21,24 @@ Halachic sources and every design decision: **[TECHUM-SPEC.md](TECHUM-SPEC.md)**
 ## Run
 
 ```
-node serve.mjs          # http://localhost:4173
-node tests/geometry.test.js   # 22 golden tests from the Gemara's canonical shapes
+node serve.mjs          # quick local server: http://localhost:4173
+npm test                # geometry + classification/settings/export tests
 ```
 
-No build step, no API keys. Data: OSM Overpass (buildings) + Nominatim (geocoding) +
-Esri World Imagery (satellite tiles) — all free public endpoints; be gentle (rate limits).
+Production uses Cloudflare Workers Static Assets + D1. See
+**[CLOUDFLARE-DEPLOY.md](CLOUDFLARE-DEPLOY.md)** for deployment, database migration,
+domain, private analytics, retention, and release steps.
+
+Cloudflare-local development:
+
+```bash
+npm install
+npx wrangler d1 migrations apply techum-analytics --local
+npm run cf:dev
+```
+
+Data: OSM Overpass (buildings), Nominatim (geocoding through an identified/cached production
+proxy), and Esri World Imagery (satellite tiles).
 
 ## Using it
 
@@ -76,5 +88,6 @@ Esri World Imagery (satellite tiles) — all free public endpoints; be gentle (r
   may be slow; the fetch cap (settings) is a **data limit, not a halachic cap**, and the
   app says so when hit.
 - Bow/concavity rule (SA 398:3, ≥4000-amos gaps) is detected and **warned**, not auto-resolved.
-- Eruv-enclosure-as-city (MB 401:7), ir mubla'as extension, and eruv-techumin mode are
-  flagged/planned, not computed.
+- Eruv-enclosure-as-city defaults off: the engine measures from the buildings-derived city.
+  A rav-validated *hukaf l'dira* perimeter remains an advanced future input (spec rev. 5).
+  Ir mubla'as extension and eruv-techumin mode are flagged/planned, not computed.

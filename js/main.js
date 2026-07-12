@@ -239,12 +239,9 @@
       minCityHouses: settings.minCityHouses,
       overlapMerge: settings.overlapMerge,
       squaringAngleDeg: settings.squaringAngleDeg,
+      pointRotationDeg: settings.pointRotationDeg,
     };
     state.result = G.runPipeline(state.buildings, geoSettings, pinXY);
-    if (state.result.mode === 'point' && settings.pointRotationDeg) {
-      state.result = G.runPipeline(state.buildings,
-        { ...geoSettings, squaringAngleDeg: settings.pointRotationDeg }, pinXY);
-    }
     if (!skipRender) render();
   }
 
@@ -280,20 +277,22 @@
 
     // buildings
     const showBuildings = document.getElementById('layer-buildings').checked;
+    const homeMembers = res.mode === 'city' && res.homeCluster >= 0 && res.clusters[res.homeCluster]
+      ? new Set(res.clusters[res.homeCluster].members) : new Set();
     if (showBuildings) {
       state.buildings.forEach((b, i) => {
         const st = { ...(KLASS_STYLE[b.klass] || KLASS_STYLE.unknown) };
         const ov = state.overrides.get(b.id);
         let dash = null, weight = 1, fillOpacity = b.included ? 0.45 : 0.12, opacity = b.included ? 0.9 : 0.45;
         if (ov) { dash = '4 3'; weight = 2.5; st.color = ov === 'exclude' ? '#ff4136' : '#0074d9'; }
-        const inHome = res.mode === 'city' && res.labels[i] >= 0 && res.labels[i] === labelOfHome();
+        const inHome = homeMembers.has(i);
         const poly = L.polygon(b.ring.map((p) => { const ll = state.proj.toLatLon(p.x, p.y); return [ll.lat, ll.lon]; }), {
           color: st.color, weight, fillColor: st.fillColor, fillOpacity: inHome ? Math.min(0.65, fillOpacity + 0.15) : fillOpacity,
           opacity, dashArray: dash,
         });
         poly.bindTooltip(
-          `<b>${b.klass.toUpperCase()}</b> — ${b.reason}` +
-          (ov ? `<br>manual override: ${ov}` : '') +
+          `<b>${escapeHtml(b.klass.toUpperCase())}</b> — ${escapeHtml(b.reason)}` +
+          (ov ? `<br>manual override: ${escapeHtml(ov)}` : '') +
           `<br><i>click to cycle: auto → include → exclude</i>`,
           { sticky: true }
         );
@@ -405,16 +404,6 @@
     if (skipped) setStatus(`Audit rings: showing ${shown} of ${shown + skipped} buildings in view — zoom in to audit the rest.`);
   }
 
-  function labelOfHome() {
-    const res = state.result;
-    if (!res || res.homeCluster < 0) return -1;
-    // labels array indexes buildings; homeCluster indexes clusters post-merge. Recover a
-    // representative label: labels of members.
-    const cl = res.clusters[res.homeCluster];
-    if (!cl || !cl.members.length) return -1;
-    return res.labels[cl.members[0]];
-  }
-
   // ---------------- info panel ----------------
   function setStatus(msg) { document.getElementById('status').textContent = msg; }
 
@@ -462,7 +451,8 @@
     el.innerHTML = lines.join('');
   }
   function escapeHtml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   // ---------------- exports ----------------

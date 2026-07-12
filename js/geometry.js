@@ -478,6 +478,7 @@
     // by -angle, compute axis-aligned everything, results are in rotated frame; the
     // renderer rotates rect corners back.
     const angle = ((settings.squaringAngleDeg || 0) * Math.PI) / 180;
+    const pointAngle = ((settings.pointRotationDeg || 0) * Math.PI) / 180;
     const rot = (p) => angle === 0 ? p : ({
       x: p.x * Math.cos(-angle) - p.y * Math.sin(-angle),
       y: p.x * Math.sin(-angle) + p.y * Math.cos(-angle),
@@ -548,9 +549,10 @@
         if (rectsOverlap(karpefRect || cityRect, o.rect)) {
           if (settings.overlapMerge) {
             cityRect = bboxUnion(cityRect, clusters[o.i].bbox);
+            cluster.members = [...new Set(cluster.members.concat(clusters[o.i].members))];
             karpefRect = settings.karpef ? expandRect(cityRect, karpefM) : null;
             techumRect = expandRect(karpefRect || cityRect, techumM);
-            warnings.push({ type: 'overlap-merge', text: 'City rectangles overlap — joint rectangle redrawn (Chazon Ish approach). Disputed (R’ S. Miller); REVIEW.' });
+            warnings.push({ type: 'overlap-merge', text: 'City rectangles overlap — joint rectangle redrawn and both settlements included in the audit count (Chazon Ish approach). Disputed (R’ S. Miller); REVIEW.' });
           } else {
             warnings.push({ type: 'overlap-detected', text: 'Another city’s rectangle overlaps this one. The Chazon Ish approach would redraw a joint larger rectangle (setting is OFF = strict). Ask a posek.' });
           }
@@ -576,18 +578,33 @@
       unrot({ x: r.minX, y: r.minY }), unrot({ x: r.maxX, y: r.minY }),
       unrot({ x: r.maxX, y: r.maxY }), unrot({ x: r.minX, y: r.maxY }),
     ];
+    const rotatePointCorners = (corners) => {
+      if (mode !== 'point' || pointAngle === 0 || !corners) return corners;
+      const center = unrot(workPin);
+      return corners.map((p) => {
+        const dx = p.x - center.x, dy = p.y - center.y;
+        return {
+          x: center.x + dx * Math.cos(pointAngle) - dy * Math.sin(pointAngle),
+          y: center.y + dx * Math.sin(pointAngle) + dy * Math.cos(pointAngle),
+        };
+      });
+    };
+
+    const cityCorners = rotatePointCorners(rectToCorners(cityRect));
+    const techumCorners = rotatePointCorners(rectToCorners(techumRect));
+    const mil12Corners = rotatePointCorners(mode === 'city'
+      ? rectToCorners(expandRect(karpefRect || cityRect, AMOS.MIL12 * settings.amahM))
+      : rectToCorners(expandRect(cityRect, AMOS.MIL12 * settings.amahM)));
 
     return {
       mode,
       labels,
       homeCluster: home,
       clusters: clusters.map((c) => ({ members: c.members, corners: rectToCorners(c.bbox) })),
-      cityCorners: rectToCorners(cityRect),
+      cityCorners,
       karpefCorners: rectToCorners(karpefRect),
-      techumCorners: rectToCorners(techumRect),
-      mil12Corners: mode === 'city'
-        ? rectToCorners(expandRect(karpefRect || cityRect, AMOS.MIL12 * settings.amahM))
-        : rectToCorners(expandRect(cityRect, AMOS.MIL12 * settings.amahM)),
+      techumCorners,
+      mil12Corners,
       concavityRegions: concavity.map((w) => rectToCorners(w.region)),
       warnings,
       thresholds: { joinM, t2, techumM, karpefM },

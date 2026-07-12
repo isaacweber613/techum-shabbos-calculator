@@ -151,6 +151,19 @@
       </div>
     </div>
 
+    <div class="cols">
+      <div class="card">
+        <h2>Visitor countries</h2>
+        <div class="sub">Coarse country supplied by Cloudflare; raw IP addresses are not stored.</div>
+        <div id="tbl-countries"></div>
+      </div>
+      <div class="card">
+        <h2>Device categories</h2>
+        <div class="sub">Approximate category derived from the browser user-agent.</div>
+        <div id="tbl-devices"></div>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Recent activity</h2>
       <div class="sub">Latest events in the selected range (newest first, up to 120).</div>
@@ -162,7 +175,6 @@
   (function () {
     'use strict';
     const $ = (id) => document.getElementById(id);
-    const KEY = new URLSearchParams(location.search).get('key') || '';
     const DAY = 86400000;
     let currentRange = 'week';
 
@@ -185,8 +197,7 @@
     async function load() {
       const { from, to } = rangeBounds(currentRange);
       const tz = new Date().getTimezoneOffset();
-      const url = `/api/analytics?from=${from}&to=${isFinite(to) ? to : ''}&tz=${tz}` +
-        (KEY ? `&key=${encodeURIComponent(KEY)}` : '');
+      const url = `/api/analytics?from=${from}&to=${isFinite(to) ? to : ''}&tz=${tz}`;
       let agg;
       try {
         const res = await fetch(url, { cache: 'no-store' });
@@ -195,7 +206,7 @@
       } catch (e) {
         $('err').style.display = 'block';
         $('err').textContent = 'Could not load analytics: ' + e.message +
-          ' — is the site running via serve.mjs (node serve.mjs)?';
+          ' — locally, run node serve.mjs; in production, sign in through Cloudflare Access.';
         return;
       }
       $('err').style.display = 'none';
@@ -227,6 +238,10 @@
         [null, 'num', 'num']);
       renderTable('tbl-places', ['Place (geocode label or pin)', 'Calcs'],
         agg.topPlaces.map((p) => [esc(p.key), p.count]), [null, 'num']);
+      renderTable('tbl-countries', ['Country', 'Events'],
+        (agg.countries || []).map((c) => [esc(c.key), c.count]), [null, 'num']);
+      renderTable('tbl-devices', ['Device', 'Events'],
+        (agg.devices || []).map((d) => [esc(d.key), d.count]), [null, 'num']);
       renderRecent(agg.recent);
     }
 

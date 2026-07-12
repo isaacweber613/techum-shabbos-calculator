@@ -1,0 +1,18 @@
+{
+  "name": "techum-shabbos-calculator",
+  "version": "1.3.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-static.mjs",
+    "test": "node tests/geometry.test.js && node tests/app.test.js",
+    "typecheck": "tsc --noEmit",
+    "cf:types": "wrangler types worker-configuration.d.ts",
+    "cf:dev": "npm run build && wrangler dev --local",
+    "cf:dry-run": "npm run build && wrangler deploy --dry-run",
+    "cf:deploy": "npm run build && wrangler deploy"
+  },
+  "devDependencies": {
+    "typescript": "latest",
+    "wrangler": "latest"
+  }
+}

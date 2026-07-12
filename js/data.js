@@ -52,8 +52,13 @@
 
   // ---------- Nominatim geocoding ----------
   async function geocode(query) {
-    const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=5&q=' +
-      encodeURIComponent(query);
+    // Production goes through the Worker so requests are identified, globally throttled,
+    // and cached as required by the public Nominatim usage policy. The direct URL remains
+    // only for local development through serve.mjs.
+    const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const url = local
+      ? 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=' + encodeURIComponent(query)
+      : '/api/geocode?q=' + encodeURIComponent(query);
     const res = await fetch(url, { headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error('Geocoding failed: HTTP ' + res.status);
     const arr = await res.json();
@@ -212,5 +217,6 @@ out count;`;
 
   root.TechumData = { classify, geocode, fetchBuildings, fetchBuildingsCached,
     countChangedBuildings, markCheckedCurrent,
-    _tables: { DWELLING_TAGS, NON_DWELLING_TAGS, REVIEW_TAGS } };
+    _tables: { DWELLING_TAGS, NON_DWELLING_TAGS, REVIEW_TAGS },
+    _internals: { parseOverpass, bboxKey } };
 })(typeof self !== 'undefined' ? self : this);

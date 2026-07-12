@@ -1,7 +1,7 @@
 // Static server + analytics API — no dependencies.
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
+import { extname, join, normalize, relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeStore, aggregate } from './analytics.mjs';
 
@@ -70,7 +70,11 @@ createServer(async (req, res) => {
     if (path === '/about') path = '/about.html';
     if (path.startsWith('/data/')) { res.writeHead(403); res.end(); return; } // logged events are not public
     const file = normalize(join(root, path));
-    if (!file.startsWith(normalize(root))) { res.writeHead(403); res.end(); return; }
+    const rel = relative(root, file);
+    const segments = rel.split(/[\\/]+/);
+    if (!rel || rel.startsWith('..' + sep) || isAbsolute(rel) || segments.some((segment) => segment.startsWith('.'))) {
+      res.writeHead(403); res.end(); return;
+    }
     const data = await readFile(file);
     res.writeHead(200, {
       'Content-Type': MIME[extname(file)] || 'application/octet-stream',

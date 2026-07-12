@@ -2,6 +2,12 @@
 
 # Local analytics store (may contain searched addresses / pins)
 data/
+dist/
+.wrangler/
+.dev.vars*
+node_modules/
+worker-configuration.d.ts
+worker-startup.cpuprofile
 
 # Scratch / agent notes — not product source
 grok review.md
