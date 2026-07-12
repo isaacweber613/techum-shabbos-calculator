@@ -286,6 +286,9 @@
       state.fetchBBox = bbox;
       const prepStarted = performance.now();
       prepareBuildings();
+      // Snap before the expensive pipeline so its result already uses the actual
+      // footprint. Snapping at the end forced a second metro-scale engine run.
+      snapPinToFootprint();
       const prepMs = performance.now() - prepStarted;
       setCalculationStage('analyze', `Building the city from ${state.rawBuildings.length.toLocaleString()} footprints…`);
       await nextPaint();
@@ -309,9 +312,8 @@
     }
     setCalculationStage('draw', 'Drawing and labeling the boundaries…');
     await nextPaint();
-    snapPinToFootprint();
     const renderStarted = performance.now();
-    recompute(); // final render with cap flags
+    render(); // the final analysis pass already produced state.result
     perf.renderMs = performance.now() - renderStarted;
     perf.totalMs = performance.now() - calcStarted;
     perf.buildings = state.rawBuildings.length;
@@ -688,7 +690,11 @@
 
     // verified-only scenario: pipeline over clearly-residential structures only.
     // Brackets the data uncertainty from untagged buildings; neither line is a psak.
-    if (settings.showVerifiedOnly && res.mode === 'city') {
+    // This optional data-quality scenario is another complete pipeline. On a metro
+    // fetch it can monopolize the main thread for minutes, so keep the primary result
+    // responsive and omit the comparison at large scale.
+    const canRenderVerifiedScenario = state.buildings.length <= 10000;
+    if (settings.showVerifiedOnly && res.mode === 'city' && canRenderVerifiedScenario) {
       const verifiedB = state.buildings.map((b) => ({ ...b, included: isVerifiedIncluded(b) }));
       if (verifiedB.some((b) => b.included)) {
         const resV = G.runPipeline(verifiedB, {
@@ -891,6 +897,9 @@
     lines.push(`<div class="stat"><b>Buildings fetched:</b> ${state.buildings.length} — ` +
       `<span class="sw dw"></span>${counts.dwelling} dwelling, <span class="sw un"></span>${counts.unknown} untagged, ` +
       `<span class="sw rv"></span>${counts.review} needs-review, <span class="sw no"></span>${counts.non} non-dwelling</div>`);
+    if (settings.showVerifiedOnly && state.buildings.length > 10000) {
+      lines.push('<div class="note"><b>Verified-dwellings comparison omitted:</b> this optional second scenario is disabled above 10,000 footprints to keep large-city calculations responsive. The primary techum still uses the complete fetched dataset.</div>');
+    }
     if (res.mode === 'city') lines.push(`<div class="stat"><b>Home city cluster:</b> ${homeSize} structures</div>`);
     const smallCount = settings.minSizeFilter
       ? state.buildings.filter((b) => isTooSmall(b) && state.overrides.get(b.id) !== 'include').length : 0;
