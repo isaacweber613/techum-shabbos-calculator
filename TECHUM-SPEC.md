@@ -286,17 +286,19 @@ overwrite).
      data age always shown, and the audit stamp records the true data date either way.
   2. **Snapshots** freeze fetched buildings + pin + settings + overrides to a JSON for
      exact replay/sharing (the artifact a rav actually reviews and approves).
-  3. **v2: a published snapshot library** — a shared folder/DB of *reviewed* city
-     snapshots with rav sign-off metadata. That's the real "database of cities": a psak
-     registry, not a compute cache.
+  3. **Published snapshot library — foundation implemented:** immutable D1 revisions of
+     *reviewed* city snapshots with reviewer/date/source/conditions, integrity hashes,
+     withdrawal history, public reads, and fail-closed authenticated writes. This is a
+     psak registry, not a compute cache; production publishing remains disabled until
+     Cloudflare Access and an authorized rav workflow are configured.
   4. **Staleness detection ("how do we know the map updated?"):** AUTOMATIC (per Isaac —
      no user-facing button). Cached/snapshot data older than **30 days** (autoCheckDays)
      triggers a background Overpass `newer:` count of building edits since the data date.
      No edits → entry stamped verified-current (checkedAt), clock resets. Edits → auto
      refetch + recompute + techum-corner displacement report in meters ("unchanged" vs
      "moved X m — re-review"). Known gap: OSM deletions don't appear in `newer:` results;
-     the explicit "Fresh data" refetch is the deletion backstop. A v2 registry would run
-     this same check on a schedule per published city.
+     the explicit "Fresh data" refetch is the deletion backstop. Scheduled registry-wide
+     staleness checks remain operational work after reviewed entries exist.
   Every export carries an audit block (engine version, data timestamp, extent, per-class
   counts, override list, frontier-closed status, projection, orientation choice).
 - **MB 401:7 citation for the eruv-enclosure question retracted** — siman 401 discusses
@@ -369,6 +371,20 @@ overwrite).
 - A rav-facing review checklist was added in `RAV-REVIEW-PACKET.md`. This revision changes
   documentation only and does not change any profile or halachic default.
 
+### Rev. 7 — 2026-07-12 (planned engineering completed; no default changes)
+
+- Implemented footprint snapping with disclosure, classification-confidence scoring,
+  one-click review queues, reviewer city-qualification controls, bow-endpoint recording,
+  stable decision remapping, projection/performance tests, PDF/PNG/KMZ exports, manual
+  footprint drawing/import, and reviewer-uploaded Overture comparison.
+- Added a reviewed-snapshot registry with immutable revisions, hashes, reviewer/date/source
+  metadata, withdrawal history, public read endpoints, and fail-closed authenticated writes.
+- Added an explicit rav-validated enclosure-perimeter import. It defaults off, is used only
+  when the shevisa point lies inside it, and is never inferred from an ordinary carrying eruv.
+- Remaining non-halachic external work is the published-map benchmark and operating an
+  automatic Overture extraction service. Overture bulk GeoParquet has no official no-key
+  browser bbox API; reviewer-uploaded extracts are implemented instead.
+
 ---
 
 ## Part 3 — Product spec
@@ -377,22 +393,22 @@ overwrite).
 
 - **Designed for any address, any city, worldwide** — no per-city setup. The implemented
   source is OSM Overpass; coverage, tags, fetch limits, and local geometry can make a result
-  incomplete. Overture comparison and a computed confidence score are planned.
+  incomplete. Reviewer-uploaded Overture comparison and a computed confidence score are implemented.
 - **Two personas, one app:**
   - **Regular person:** types an address, gets the map with the locked defaults (Part 2).
     No halachic decisions asked of them. The standing “verify with a rav” banner and data
-    warnings are implemented; a computed green/yellow/red confidence indicator is planned.
+    warnings and a computed green/yellow/red classification-confidence indicator are implemented.
   - **Rav / mumcheh (advanced mode):** the full config matrix, per-building
-    include/exclude, calculation-explanation layers, and warnings. A unified flagged-review
-    queue, manual bow endpoints, and annotated PDF are planned.
+    include/exclude, calculation-explanation layers, warnings, a unified flagged-review
+    queue, manual bow endpoints, city-status review, and annotated PDF/PNG/KMZ exports.
 - The app auto-decides everything it can (clear tags, unambiguous joins, geometry); anything
   uncertain is shown through two data scenarios and explicit warnings; inclusion is not
-  inherently conservative. A unified one-click review queue is planned.
+  inherently conservative. A unified one-click review queue is implemented.
 
 ### 3.1 User flow
 
-1. Enter address / drop pin. **Implemented:** geocode and map placement. **Planned:** snap to
-   the containing/nearest footprint and require explicit imagery confirmation.
+1. Enter address / drop pin. **Implemented:** geocode, map placement, nearest-footprint snap
+   with the movement disclosed, and explicit instructions to confirm against imagery.
 2. Pick shitos (Part 2 matrix, defaults pre-set).
 3. Layers rendered on satellite map, each toggleable and inspectable:
    - **L1** dwellings used (click to include/exclude → instant recompute)
@@ -400,27 +416,28 @@ overwrite).
    - **L3** ribua rectangle (true-north aligned)
    - **L4** techum boundary (rectangle + 2000 amos)
    - **L5** optional machmir/meikil band (e.g. 960 m vs 1,152 m lines)
-4. Export **KML and GeoJSON** with config/audit metadata. **Planned:** KMZ and annotated
-   printable PDF. Every export must retain the “requires review by a rav/mumcheh” warning.
+4. Export **KML, KMZ, GeoJSON, PNG, and annotated PDF** with config/audit metadata and the
+   “requires review by a rav/mumcheh” warning.
 
 ### 3.2 Pipeline
 
 ```
-address ─► geocode ─► [planned: snap to footprint + confirmation]
+address ─► geocode ─► snap to footprint + disclosed confirmation requirement
         ─► fetch OSM footprints with expanding-radius Overpass queries
         ─► classify dwellings (tags + heuristics + manual override)
         ─► local true-north tangent/equirectangular projection, all math in meters
         ─► ibur: buffer by (70⅔·amah)/2, union, dissolve → city clusters
         ─► merge passes: two-cities ≤141⅓ (cities only) ; three-villages test
-        ─► concavity detection + warning [planned: reviewer endpoints and rule application]
+        ─► concavity detection + warning + reviewer endpoint record [rule application awaits rav]
         ─► ribua: compass-aligned bounding rectangle (convergence-corrected true north)
         ─► [karpef toggle: inflate rectangle 70⅔]
         ─► techum: expand rectangle 2000·amah on all four sides (square corners)
-        ─► reproject WGS84 ─► render in Leaflet ─► KML/GeoJSON [planned: PDF]
+        ─► reproject WGS84 ─► render in Leaflet ─► KML/KMZ/GeoJSON/PNG/PDF
 ```
 
 Modes: **settlement mode** (above), **point mode** (open field: 4000×4000 square, rotatable),
-**eruv mode** (v2 — point mode centered on eruv + "lost region" display).
+**validated-enclosure mode** (implemented, explicit opt-in) uses a rav-supplied hukaf-l'dira
+perimeter as the city edge. **Eruv-techumin relocation mode** remains future work.
 
 ### 3.3 Human-in-the-loop is the product
 
@@ -467,8 +484,9 @@ engineering is easy; the psak configuration is the project.**
 ## Part 6 — Technical stack (implemented and planned; audited 2026-07-12)
 
 - **Footprints — implemented:** OSM Overpass, expanding fetch, IndexedDB input cache,
-  change checks, and per-building overrides. **Planned:** Overture comparison/fallback and
-  manual footprint drawing/import. Microsoft/Open Buildings remain research candidates,
+  change checks, per-building overrides, manual footprint drawing/import, and uploaded
+  Overture comparison extracts. **Planned:** an operated automatic Overture extraction service.
+  Microsoft/Open Buildings remain research candidates,
   not runtime sources.
 - **Dwelling tags:** most OSM buildings are bare `building=yes`; Overture inherits the gap.
   US parcel land-use data would solve it but national licensing ≈ $80k/yr (Regrid);
@@ -477,9 +495,9 @@ engineering is easy; the psak configuration is the project.**
 - **Geometry — implemented:** dependency-free JavaScript engine using a local true-north
   tangent/equirectangular metric projection; Leaflet rendering; KML/GeoJSON export. The
   engine does not perform polygon algebra directly in longitude/latitude. Quantified
-  projection-error tests over large metros remain planned.
-- **Geocoding — implemented:** Nominatim. It locates the search point; automatic footprint
-  snapping and mandatory visual confirmation are planned.
+  projection-error and 20,000-footprint performance tests are implemented.
+- **Geocoding — implemented:** Nominatim plus disclosed nearest-footprint snapping and a
+  mandatory reviewer instruction to confirm the marker against satellite imagery.
 
 ---
 
