@@ -207,7 +207,7 @@ a posek (related to ir mubla'as, SA 408).
 
 ---
 
-## Part 2 — Psak configuration: PROFILES & DEFAULTS (rev. 2 — 2026-07-10)
+## Part 2 — Psak configuration: PROFILES & DEFAULTS (rev. 5 — 2026-07-11)
 
 Policy (per Isaac): follow the widely-known psak as the default; **every** disputed rule is
 a setting the user can change; the app decides automatically wherever it can and makes human
@@ -248,7 +248,7 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 | City minimum for the 141⅓ merge | 6 houses (MB 398:38) | 6 + CI courtyard qualifications ⚠ | 6 |
 | Bow/concavity fill (< 4000 amos endpoints) | din applies (SA 398:3, all profiles); v1 detect-and-flag — endpoints are a reviewer decision (rev 3/4) | ” | ” |
 | Unknown-use buildings | include, flagged for review (all profiles — data policy, not psak) | ” | ” |
-| Eruv-enclosure-as-city (MB 401:7) | **off — rav-selected setting only** (real basis, but modern mega-enclosures disputed) | off | off |
+| Eruv-enclosure-as-city | **off — measure from buildings** (mainstream map practice; see rev. 5) | off | off |
 | 12-mil ring / second-shita comparison line | hidden / off (available in all profiles) | ” | ” |
 
 Audit rule: any change to defaults gets a dated rev note in this section (append, don't
@@ -325,6 +325,36 @@ overwrite).
   as the documented default, and expose the alternatives as settings (same policy as every
   other machlokes in Part 2). Research in progress; defaults to be recorded here as a
   dated rev note when adopted.
+
+### Rev. 5 — 2026-07-11 (recovered mehalich research; defaults adopted)
+
+- **Eruv-enclosure-as-city default resolved: OFF.** The operative, best-supported practice
+  is to derive the city from dwellings, ibur, and ribua (Eruvin 55b; SA OC 398), not from a
+  community carrying-eruv. Published practical workflows checked in the research
+  (Borehamwood and the Boston/Lehrhaus discussion) measure from the outermost dwellings;
+  a din.org.il/kipa responsum likewise says the eruv wire is not the techum line. SA OC
+  396:2's rule that a person resting in a *hukaf l'dira* enclosure treats all of it as four
+  amos is a distinct din and does not by itself redefine the city boundary for residents.
+  Peninei Halakha, Techum §§2, 4, 8 supplies a real lenient alternative: a wall or eruv may
+  make the enclosed area one place and measurement may begin at its perimeter. Because a
+  modern eruv's *hukaf l'dira* status is fact-specific and OSM cannot establish it, that
+  alternative may be used only after a rav validates and supplies the actual perimeter.
+  The core engine therefore continues to ignore an ordinary eruv; an oversized eruv also
+  does not shrink the buildings-based techum.
+- **Bow/concavity mehalich resolved: reviewer-designated endpoints remain the default.**
+  SA OC 398:4's primary test is the chord between the two bow endpoints: below 4000 amos,
+  the gap is filled. The Rema records the additional leniency that even with a chord of
+  4000+ amos, the chord may be used when chord-to-arc depth is below 2000 amos. No verified
+  source or published map workflow supplied a defensible algorithm for choosing endpoints
+  on a fractal modern outline. The app therefore detects and highlights material pockets,
+  applies the undisputed textbook threshold where endpoints are unambiguous, and requires
+  reviewer designation for ambiguous real-city pockets. Automatic Mechaber chord and Rema
+  depth variants belong behind advanced settings once endpoint-designation UI exists; the
+  software must not silently invent endpoints.
+- **Confidence and remaining posek input:** high confidence in buildings-based eruv default;
+  medium confidence in the operational bow detector because endpoint selection is an
+  engineering generalization, not a sourced algorithm. A tight, demonstrably *hukaf
+  l'dira* enclosure and every disputed bow endpoint remain review flags, not automatic psak.
 
 ---
 
@@ -463,17 +493,15 @@ the UI for building-level review is the bulk of the work.
 
 1. ~~Six-house minimum~~ **RESOLVED** — MB 398:38 (3 chatzeros × 2 houses); governs
    independent-city status for city-level rules, not chain extension. In the config matrix.
-2. **Eruv-enclosure-as-city** — does a tzuras-hapesach eruv make the enclosed area "the
-   city" so the techum starts at the eruv line? Real literature exists on exactly this;
-   the MB 401:7 citation previously given here was wrong (401 discusses techum of
-   objects) — the actual responsa/articles and their primary sources still need to be
-   pulled. Rav-selected setting (off, not implemented); the biggest open question.
+2. ~~**Eruv-enclosure-as-city default**~~ **RESOLVED in rev. 5 — default OFF.** Measure from
+   the buildings-derived city. A rav-validated *hukaf l'dira* perimeter remains a supported
+   alternative mehalich, but the app cannot infer that factual status or perimeter from OSM.
 3. ~~Ribua scope cap on mega-cities~~ **RESOLVED — no halachic cap** (Peninei Halakha:
    chains can run days' walk). Practical limits come from real breaks (rivers, industry,
    non-qualifying gaps) and data caps, which the app labels as data limits.
-4. **Generalizing the bow rule to real city outlines** — SA 398:3's cases are textbook
-   shapes (bow, gamma, trapezoid). Real suburb boundaries are fractal; which concavities
-   get filled (endpoint span < 4000) needs an operational definition a posek signs off on.
+4. ~~**Generalizing the bow rule to real city outlines**~~ **DEFAULT RESOLVED in rev. 5:**
+   detect material pockets and require reviewer-designated endpoints; do not silently infer
+   endpoints. The Mechaber chord and Rema depth variants apply after endpoints are supplied.
 5. **Modern beis-dirah edge cases** — offices/factories (occupied but not slept in), hotels,
    hospitals, schools, seasonal cottages, trailers/mobile homes, airports. The classic
    categories (attended barn = yes, bare shul = no) don't map cleanly.
