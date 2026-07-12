@@ -10,46 +10,30 @@
 </head>
 <body>
   <div id="banner">
-    <span class="banner-mark">Draft</span> This map is decision support, not a psak. <b>Review with a rav before relying on it.</b>
+    ⚠ DRAFT TOOL — <b>not a psak halacha.</b> Techum measurement requires an expert (MB 399:7);
+    every line below depends on the settings shown and on OpenStreetMap data quality.
+    <b>Verify with a rav before relying on it.</b>
   </div>
   <div id="app">
     <aside id="sidebar">
-      <header class="brand">
-        <a class="brand-mark" href="./" aria-label="Techum home">ת</a>
-        <div><h1>Techum</h1><p>Shabbos boundary calculator</p></div>
-        <a class="about-link" href="about.html">About</a>
-      </header>
+      <h1>תחום שבת<br><span>Techum Calculator</span></h1>
 
-      <section class="intro">
-        <span class="eyebrow">Start with a place</span>
-        <h2>Where will you be for Shabbos?</h2>
-        <p>Enter the address where your techum begins. We’ll guide you through the rest.</p>
-      </section>
-
-      <div class="search-row">
+      <div class="row search-row">
         <div class="address-combobox">
-          <span class="search-icon" aria-hidden="true">⌕</span>
-          <input id="address" type="text" placeholder="Enter an address or place" autocomplete="street-address"
+          <input id="address" type="text" placeholder="Address or place…" autocomplete="off"
                  role="combobox" aria-autocomplete="list" aria-expanded="false"
                  aria-controls="address-suggestions" />
           <div id="address-suggestions" class="suggestions" role="listbox" hidden></div>
         </div>
-        <button id="btn-search" aria-label="Find address">Find</button>
+        <button id="btn-search">Find</button>
       </div>
-      <button id="btn-location" class="text-button location-button" type="button">◎ Use my current location</button>
+      <button id="btn-location" class="subtle location-button" type="button">⌖ My location</button>
+      <button id="btn-calc" class="primary" disabled>Calculate techum</button>
+      <button id="btn-fresh" class="subtle">Fresh data (bypass local cache)</button>
       <div id="status"></div>
 
-      <div class="next-step">
-        <div class="step-number">2</div>
-        <div><strong>Confirm the pin</strong><span>You can drag it to the exact building.</span></div>
-      </div>
-      <button id="btn-calc" class="primary" disabled>Calculate my techum <span aria-hidden="true">→</span></button>
-
-      <div id="results"></div>
-
-      <div class="advanced-heading"><span>Review &amp; settings</span><span>Optional</span></div>
-      <details>
-        <summary><span>Halachic profile</span><small>Defaults &amp; shitos</small></summary>
+      <details open>
+        <summary>Psak profile &amp; shitos</summary>
         <label>Profile
           <select id="profile">
             <option value="mishna-berura">Mishna Berurah / Ashkenazi (default)</option>
@@ -75,8 +59,8 @@
           <input id="min-city" type="number" min="1" max="20" value="6" /></label>
       </details>
 
-      <details>
-        <summary><span>Buildings &amp; data</span><small>Sources &amp; overrides</small></summary>
+      <details open>
+        <summary>Buildings &amp; data</summary>
         <label class="check"><input id="inc-unknown" type="checkbox" />
           Include untagged buildings <small>(orange — OSM data gap, flagged)</small></label>
         <label class="check"><input id="inc-review" type="checkbox" />
@@ -87,7 +71,6 @@
         <small class="muted">Map updates are handled automatically: cached data older than
           30 days is checked against OSM in the background; only real building edits trigger
           a refetch, and the app reports whether the techum line actually moved.</small>
-        <button id="btn-fresh" class="secondary">Refresh map data</button>
         <div class="row">
           <button id="btn-snapshot">Save snapshot</button>
           <button id="btn-load-snapshot">Load snapshot</button>
@@ -99,8 +82,8 @@
         <label>Max buildings (data cap) <input id="max-buildings" type="number" step="1000" min="1000" /></label>
       </details>
 
-      <details>
-        <summary><span>Map display</span><small>Layers &amp; comparison</small></summary>
+      <details open>
+        <summary>Display</summary>
         <label class="check"><input id="layer-buildings" type="checkbox" checked /> Buildings</label>
         <label class="check"><input id="layer-city" type="checkbox" checked /> City rectangle (ribua)</label>
         <label class="check"><input id="layer-karpef" type="checkbox" checked /> Karpef</label>
@@ -127,6 +110,8 @@
         <button id="btn-geojson">Export GeoJSON</button>
       </div>
 
+      <div id="results"></div>
+
       <div class="legend">
         <div><span class="sw dw"></span> dwelling &nbsp; <span class="sw un"></span> untagged</div>
         <div><span class="sw rv"></span> needs review &nbsp; <span class="sw no"></span> non-dwelling</div>
@@ -134,7 +119,7 @@
         <div class="hint">Click any building to force include/exclude it.</div>
       </div>
 
-      <footer>Built for careful review · <a href="about.html">Method &amp; halachic sources</a></footer>
+      <footer><a href="about.html">About — our goal &amp; the full halachic spec</a></footer>
     </aside>
     <div id="map"></div>
   </div>

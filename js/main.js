@@ -47,7 +47,6 @@
 
   function setPin(lat, lon) {
     state.pin = { lat, lon };
-    document.body.classList.add('has-pin');
     if (!pinMarker) {
       pinMarker = L.marker([lat, lon], { draggable: true }).addTo(map);
       pinMarker.bindTooltip('Shevisa point — drag to adjust', { direction: 'top' });
@@ -364,7 +363,6 @@
   };
 
   function render() {
-    document.body.classList.add('has-result');
     layerGroups.buildings.clearLayers();
     layerGroups.rects.clearLayers();
     layerGroups.second.clearLayers();
