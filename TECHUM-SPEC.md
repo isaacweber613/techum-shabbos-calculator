@@ -282,8 +282,10 @@ overwrite).
   1. **Cache the INPUT, not the output** — the Overpass fetch is slow and settings-
      independent; computed boundaries are ~1s and settings-dependent (a boundary cache
      would need an entry per city × amah × karpef × …). Implemented: local IndexedDB
-     cache of raw building data per area, 7-day TTL, "Fresh data" button bypasses,
-     data age always shown, and the audit stamp records the true data date either way.
+     (L1, exact bbox) plus production shared R2 grid tiles via `/api/buildings` (L2,
+     ~2 km cells so nearby pins share data). No hard TTL — 30-day auto change-check
+     + "Fresh data" bypass; data age always shown; audit stamp records the true data date.
+     (Rev. note 2026-07-12: earlier draft said 7-day TTL; superseded by auto-check + shared tiles.)
   2. **Snapshots** freeze fetched buildings + pin + settings + overrides to a JSON for
      exact replay/sharing (the artifact a rav actually reviews and approves).
   3. **Published snapshot library — foundation implemented:** immutable D1 revisions of
@@ -483,7 +485,7 @@ engineering is easy; the psak configuration is the project.**
 
 ## Part 6 — Technical stack (implemented and planned; audited 2026-07-12)
 
-- **Footprints — implemented:** OSM Overpass, expanding fetch, IndexedDB input cache,
+- **Footprints — implemented:** OSM Overpass, expanding fetch, IndexedDB + R2 tile input cache,
   change checks, per-building overrides, manual footprint drawing/import, and uploaded
   Overture comparison extracts. **Planned:** an operated automatic Overture extraction service.
   Microsoft/Open Buildings remain research candidates,

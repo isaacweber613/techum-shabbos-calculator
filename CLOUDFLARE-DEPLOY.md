@@ -8,7 +8,10 @@ local-development server; it is not the production origin.
 
 - Live calculator: `https://tchumshabbos.com`
 - Worker: `techum-shabbos-calculator`; `workers.dev` disabled by the custom-domain deployment
-- D1: `techum-analytics` (`c08c94e0-e04d-4f06-be14-6fed2d47468b`); migrations 0001–0003 applied
+- D1: `techum-analytics` (`c08c94e0-e04d-4f06-be14-6fed2d47468b`); migrations 0001–0004
+  applied; `0005_building_tiles.sql` must be applied immediately before deploying this change
+- R2: `techum-buildings` and `techum-buildings-preview` are provisioned; the shared OSM
+  tile binding and `/api/buildings` route ship with this change
 - `IP_HASH_SECRET` configured; geocoder contact is `https://tchumshabbos.com/about`
 - Analytics collection is active and analytics reads are private (`REQUIRE_ACCESS=true`).
 - Cloudflare Zero Trust Free is active. The `Techum analytics` Access application protects
@@ -43,12 +46,18 @@ local-development server; it is not the production origin.
    npx wrangler secret put IP_HASH_SECRET
    ```
 
-5. Apply migrations and deploy:
+5. Create the building-tile R2 buckets (once) and apply migrations:
 
    ```powershell
+   npx wrangler r2 bucket create techum-buildings
+   npx wrangler r2 bucket create techum-buildings-preview
    npx wrangler d1 migrations apply techum-analytics --remote
    npm run cf:deploy
    ```
+
+   `/api/buildings` serves fixed ~2 km grid tiles from R2, filling cold tiles from Overpass
+   (global one-fill-per-second gate + 30 requests/minute per network). Payloads stay as raw
+   OSM footprints; techum lines are never server-cached.
 
 6. Test the `workers.dev` URL before connecting the domain: address search, calculation,
    `/about`, `/analytics`, exports, mobile layout, and browser console.
@@ -83,6 +92,8 @@ policy remains the primary enforcement layer.
 - Event writes: 60/minute per anonymous visitor/network combination.
 - Geocoding: 20/minute per network plus a global one-request-per-second cache-miss gate.
 - Repeated geocoding queries are cached in D1.
+- Building tiles: 30/minute per network; cold Overpass fills share a one-per-second global slot.
+  Tile metadata is in D1 (`building_tiles`); JSON payloads are in R2 (`techum-buildings`).
 - A daily scheduled handler deletes expired raw events and old throttle slots.
 
 Change `RAW_RETENTION_DAYS` only with a matching update to the About-page disclosure.

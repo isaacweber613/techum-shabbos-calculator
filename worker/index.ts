@@ -1,10 +1,13 @@
+import { handleBuildings } from './buildings';
 import { sha256Hex, validateRegistrySubmission } from './registry';
 
 interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  BUILDINGS: R2Bucket;
   EVENT_RATE_LIMITER: RateLimit;
   GEOCODE_RATE_LIMITER: RateLimit;
+  BUILDINGS_RATE_LIMITER: RateLimit;
   IP_HASH_SECRET: string;
   REQUIRE_ACCESS: string;
   RAW_RETENTION_DAYS: string;
@@ -367,6 +370,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/analytics' && request.method === 'GET') return analytics(request, env);
   if (url.pathname === '/api/geocode' && request.method === 'GET') return geocode(request, env);
   if (url.pathname === '/api/autocomplete' && request.method === 'GET') return autocomplete(request, env);
+  if (url.pathname === '/api/buildings' && request.method === 'GET') return handleBuildings(request, env);
   if (url.pathname === '/api/registry' && request.method === 'GET') return listRegistry(env);
   if (url.pathname === '/api/registry' && request.method === 'POST') return publishRegistry(request, env);
   const registryMatch = url.pathname.match(/^\/api\/registry\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
@@ -392,6 +396,7 @@ export default {
     await env.DB.batch([
       env.DB.prepare('DELETE FROM events WHERE t < ?1').bind(cutoff),
       env.DB.prepare('DELETE FROM geocode_slots WHERE second < ?1').bind(Math.floor(Date.now() / 1000) - 120),
+      env.DB.prepare('DELETE FROM building_fill_slots WHERE second < ?1').bind(Math.floor(Date.now() / 1000) - 120),
     ]);
     console.log(JSON.stringify({ message: 'retention cleanup complete', cutoff, days }));
   },

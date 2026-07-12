@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "build": "node scripts/build-static.mjs",
-    "test": "node tests/geometry.test.js && node tests/app.test.js && node tests/projection-performance.test.js && node tests/registry.test.ts",
-    "typecheck": "tsc --noEmit",
+    "test": "node tests/geometry.test.js && node tests/app.test.js && node tests/projection-performance.test.js && node tests/registry.test.ts && node tests/buildings-cache.test.ts",
+    "typecheck": "wrangler types worker-configuration.d.ts && tsc --noEmit",
     "cf:types": "wrangler types worker-configuration.d.ts",
     "cf:dev": "npm run build && wrangler dev --local",
     "cf:dry-run": "npm run build && wrangler deploy --dry-run",

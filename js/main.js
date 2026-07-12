@@ -266,6 +266,7 @@
         state.fetchedAt = r.fetchedAt;
         state.checkedAt = r.checkedAt;
         state.fromCache = r.fromCache;
+        state.dataSource = r.source || (r.fromCache ? 'local' : 'overpass');
       } catch (e) {
         setStatus('Map-data error: ' + e.message + ' — try again in a minute (public server rate limits).');
         finishCalculationProgress(false);
@@ -302,12 +303,16 @@
       map.fitBounds(L.latLngBounds(pts).pad(0.05));
     }
     const ageDays = state.fetchedAt ? ((Date.now() - Date.parse(state.fetchedAt)) / 86400000) : 0;
+    const ageLabel = ageDays < 1 ? 'today' : ageDays.toFixed(0) + ' days old';
+    const cacheLabel = state.fromCache
+      ? (state.dataSource === 'server-tiles'
+        ? `Data from shared city cache (${ageLabel}).`
+        : `Data from local cache (${ageLabel}).`)
+      : (state.dataSource === 'server-tiles' ? 'Fresh OSM data (stored for other users).' : 'Fresh OSM data.');
     setStatus(`Done — ${state.rawBuildings.length} buildings analyzed. ` +
       (state.result && state.result.mode === 'city'
         ? 'Techum drawn from the squared city. ' : 'Point-shevisa techum drawn. ') +
-      (state.fromCache
-        ? `Data from local cache (${ageDays < 1 ? 'today' : ageDays.toFixed(0) + ' days old'}).`
-        : 'Fresh OSM data.'));
+      cacheLabel);
     finishCalculationProgress(true);
     track('calc', {
       q: state.lastQuery || null, label: state.lastLabel || null,
