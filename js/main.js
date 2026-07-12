@@ -69,6 +69,15 @@
     });
   }
 
+  function compactSettingGroups() {
+    document.querySelectorAll('.settings-grid > details').forEach((details) => {
+      const items = document.createElement('div');
+      items.className = 'setting-items';
+      [...details.children].filter((child) => child.tagName !== 'SUMMARY').forEach((child) => items.appendChild(child));
+      details.appendChild(items);
+    });
+  }
+
   // ---------------- map ----------------
   function initMap() {
     map = L.map('map', { zoomControl: true }).setView([41.1, -74.05], 13);
@@ -1268,6 +1277,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     initMap();
     bindSettings();
+    compactSettingGroups();
     addSettingHelp();
     document.getElementById('btn-dismiss-banner').addEventListener('click', () => {
       document.getElementById('banner').remove();
