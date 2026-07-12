@@ -18,10 +18,16 @@
     <aside id="sidebar">
       <h1>תחום שבת<br><span>Techum Calculator</span></h1>
 
-      <div class="row">
-        <input id="address" type="text" placeholder="Address or place…" />
+      <div class="row search-row">
+        <div class="address-combobox">
+          <input id="address" type="text" placeholder="Address or place…" autocomplete="off"
+                 role="combobox" aria-autocomplete="list" aria-expanded="false"
+                 aria-controls="address-suggestions" />
+          <div id="address-suggestions" class="suggestions" role="listbox" hidden></div>
+        </div>
         <button id="btn-search">Find</button>
       </div>
+      <button id="btn-location" class="subtle location-button" type="button">⌖ My location</button>
       <button id="btn-calc" class="primary" disabled>Calculate techum</button>
       <button id="btn-fresh" class="subtle">Fresh data (bypass local cache)</button>
       <div id="status"></div>

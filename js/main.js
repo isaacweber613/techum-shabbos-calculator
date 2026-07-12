@@ -60,21 +60,115 @@
   }
 
   // ---------------- geocode ----------------
+  let suggestionTimer = null;
+  let suggestionRequest = 0;
+  let suggestions = [];
+  let activeSuggestion = -1;
+
+  function closeSuggestions() {
+    suggestions = [];
+    activeSuggestion = -1;
+    const list = document.getElementById('address-suggestions');
+    list.hidden = true;
+    list.replaceChildren();
+    document.getElementById('address').setAttribute('aria-expanded', 'false');
+  }
+
+  function applyGeocodeResult(r, query) {
+    document.getElementById('address').value = r.label;
+    state.lastQuery = query || r.label;
+    state.lastLabel = r.label;
+    setPin(r.lat, r.lon);
+    map.setView([r.lat, r.lon], 16);
+    closeSuggestions();
+    setStatus('Pin set: ' + r.label + ' — confirm the pin is on the right building (drag it if not), then Calculate.');
+  }
+
+  function renderSuggestions(results) {
+    suggestions = results;
+    activeSuggestion = -1;
+    const list = document.getElementById('address-suggestions');
+    list.replaceChildren(...results.map((r) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'suggestion';
+      button.setAttribute('role', 'option');
+      button.textContent = r.label;
+      button.addEventListener('mousedown', (e) => e.preventDefault());
+      button.addEventListener('click', () => applyGeocodeResult(r, document.getElementById('address').value.trim()));
+      return button;
+    }));
+    list.hidden = !results.length;
+    document.getElementById('address').setAttribute('aria-expanded', String(!!results.length));
+  }
+
+  async function fetchSuggestions() {
+    const q = document.getElementById('address').value.trim();
+    if (q.length < 3) { closeSuggestions(); return; }
+    const request = ++suggestionRequest;
+    try {
+      const results = await D.autocomplete(q, state.locationBias);
+      if (request === suggestionRequest && document.getElementById('address').value.trim() === q) renderSuggestions(results);
+    } catch { if (request === suggestionRequest) closeSuggestions(); }
+  }
+
+  function onAddressInput() {
+    clearTimeout(suggestionTimer);
+    suggestionRequest++;
+    closeSuggestions();
+    suggestionTimer = setTimeout(fetchSuggestions, 650);
+  }
+
+  function onAddressKeydown(e) {
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && suggestions.length) {
+      e.preventDefault();
+      activeSuggestion = e.key === 'ArrowDown'
+        ? (activeSuggestion + 1) % suggestions.length
+        : (activeSuggestion - 1 + suggestions.length) % suggestions.length;
+      document.querySelectorAll('.suggestion').forEach((el, i) => {
+        el.classList.toggle('active', i === activeSuggestion);
+        el.setAttribute('aria-selected', String(i === activeSuggestion));
+      });
+      return;
+    }
+    if (e.key === 'Escape') { closeSuggestions(); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeSuggestion >= 0) applyGeocodeResult(suggestions[activeSuggestion], document.getElementById('address').value.trim());
+      else onSearch();
+    }
+  }
+
   async function onSearch() {
     const q = document.getElementById('address').value.trim();
     if (!q) return;
     setStatus('Geocoding…');
     try {
-      const results = await D.geocode(q);
+      const results = await D.geocode(q, state.locationBias);
       track('search', { q, found: results.length > 0, label: results.length ? results[0].label : null });
       if (!results.length) { setStatus('Address not found — try again or click the map.'); return; }
-      const r = results[0];
-      state.lastQuery = q;
-      state.lastLabel = r.label;
-      setPin(r.lat, r.lon);
-      map.setView([r.lat, r.lon], 16);
-      setStatus('Pin set: ' + r.label + ' — confirm the pin is on the right building (drag it if not), then Calculate.');
+      applyGeocodeResult(results[0], q);
     } catch (e) { setStatus('Geocoding error: ' + e.message); }
+  }
+
+  function useMyLocation() {
+    if (!navigator.geolocation) { setStatus('Location is not available in this browser — click the map instead.'); return; }
+    setStatus('Getting your location…');
+    navigator.geolocation.getCurrentPosition((position) => {
+      const { latitude: lat, longitude: lon, accuracy } = position.coords;
+      state.locationBias = { lat, lon };
+      state.lastQuery = 'My location';
+      state.lastLabel = 'My location';
+      document.getElementById('address').value = 'My location';
+      setPin(lat, lon);
+      map.setView([lat, lon], 17);
+      closeSuggestions();
+      setStatus(`Pin set from your location (accuracy about ${Math.round(accuracy)} m) — confirm it on the map, then Calculate.`);
+    }, (error) => {
+      setStatus(error.code === error.PERMISSION_DENIED
+        ? 'Location permission was denied — enter an address or click the map.'
+        : 'Could not get your location — enter an address or click the map.');
+    }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   }
 
   // ---------------- fetch + auto-expand ----------------
@@ -662,7 +756,10 @@
     initMap();
     bindSettings();
     document.getElementById('btn-search').addEventListener('click', onSearch);
-    document.getElementById('address').addEventListener('keydown', (e) => { if (e.key === 'Enter') onSearch(); });
+    document.getElementById('address').addEventListener('input', onAddressInput);
+    document.getElementById('address').addEventListener('keydown', onAddressKeydown);
+    document.getElementById('address').addEventListener('blur', () => setTimeout(closeSuggestions, 100));
+    document.getElementById('btn-location').addEventListener('click', useMyLocation);
     document.getElementById('btn-calc').addEventListener('click', () => calculate(false));
     document.getElementById('btn-fresh').addEventListener('click', () => calculate(true));
     document.getElementById('btn-kml').addEventListener('click', exportKML);

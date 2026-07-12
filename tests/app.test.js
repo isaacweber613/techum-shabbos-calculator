@@ -27,6 +27,13 @@ test('multipolygon outers become stable pseudo-buildings', () => {
   assert.equal(parsed[0].tags.building, 'apartments');
 });
 
+test('Photon autocomplete labels are readable and deduplicated', () => {
+  assert.equal(D._internals.photonLabel({
+    housenumber: '10', street: 'Downing Street', city: 'London', state: 'London',
+    postcode: 'SW1A 2AA', country: 'United Kingdom',
+  }), '10 Downing Street, London, SW1A 2AA, United Kingdom');
+});
+
 test('settings profile and non-default analytics stay deterministic', () => {
   const ci = S.applyProfile({ ...S.DEFAULTS }, 'chazon-ish');
   assert.equal(S.effectiveProfile(ci), 'chazon-ish');
