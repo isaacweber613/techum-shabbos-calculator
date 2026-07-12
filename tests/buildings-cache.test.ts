@@ -12,6 +12,8 @@ import {
   oldestIso,
   isValidBBox,
   parseTileKey,
+  bboxForTiles,
+  parseBBoxParams,
 } from '../worker/buildings.ts';
 
 let passed = 0;
@@ -47,10 +49,31 @@ test('tilesForBBox covers pin-sized radius with a few cells', () => {
   assert.ok(tiles.every((t) => t.key.startsWith('v1/')));
 });
 
+test('bboxForTiles covers the complete cold tile group in one upstream query', () => {
+  const tiles = [
+    { i: 10, j: -5, key: tileKey(10, -5) },
+    { i: 12, j: -3, key: tileKey(12, -3) },
+  ];
+  assert.deepEqual(bboxForTiles(tiles), {
+    south: 10 * TILE_DEG,
+    west: -5 * TILE_DEG,
+    north: 13 * TILE_DEG,
+    east: -2 * TILE_DEG,
+  });
+  assert.throws(() => bboxForTiles([]), /at least one tile/);
+});
+
 test('isValidBBox rejects oversized spans', () => {
   assert.equal(isValidBBox({ south: 0, west: 0, north: 0.05, east: 0.05 }), true);
   assert.equal(isValidBBox({ south: 0, west: 0, north: 1, east: 1 }), false);
   assert.equal(isValidBBox({ south: 1, west: 0, north: 0, east: 1 }), false);
+});
+
+test('bbox parsing rejects missing and blank coordinates instead of treating them as zero', () => {
+  assert.equal(parseBBoxParams(new URLSearchParams('west=1&north=2&east=2')), null);
+  assert.equal(parseBBoxParams(new URLSearchParams('south=&west=1&north=2&east=2')), null);
+  assert.deepEqual(parseBBoxParams(new URLSearchParams('south=0&west=1&north=2&east=2')),
+    { south: 0, west: 1, north: 2, east: 2 });
 });
 
 test('parseOverpass matches client multipolygon pseudo-ids', () => {

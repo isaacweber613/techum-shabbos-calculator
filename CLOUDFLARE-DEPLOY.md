@@ -8,8 +8,10 @@ local-development server; it is not the production origin.
 
 - Live calculator: `https://tchumshabbos.com`
 - Worker: `techum-shabbos-calculator`; `workers.dev` disabled by the custom-domain deployment
-- D1: `techum-analytics` (`c08c94e0-e04d-4f06-be14-6fed2d47468b`); migrations 0001–0005
-- R2: `techum-buildings` (shared OSM building tiles for `/api/buildings`)
+- D1: `techum-analytics` (`c08c94e0-e04d-4f06-be14-6fed2d47468b`); migrations 0001–0004
+  applied; `0005_building_tiles.sql` must be applied immediately before deploying this change
+- R2: `techum-buildings` and `techum-buildings-preview` are provisioned; the shared OSM
+  tile binding and `/api/buildings` route ship with this change
 - `IP_HASH_SECRET` configured; geocoder contact is `https://tchumshabbos.com/about`
 - Analytics collection is active and analytics reads are private (`REQUIRE_ACCESS=true`).
 - Cloudflare Zero Trust Free is active. The `Techum analytics` Access application protects

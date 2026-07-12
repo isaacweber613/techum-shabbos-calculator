@@ -225,7 +225,7 @@ async function storeTile(env: BuildingsEnv, coord: TileCoord, buildings: Buildin
     .bind(coord.key, nowIso, buildings.length, body.length, r2Key).run();
 }
 
-async function fillTile(env: BuildingsEnv, coord: TileCoord): Promise<{ buildings: Building[]; fetchedAt: string }> {
+async function reserveFillSlot(env: BuildingsEnv): Promise<void> {
   // Global 1 fill / second so public Overpass is not hammered by concurrent cold users.
   const second = Math.floor(Date.now() / 1000);
   try {
@@ -240,15 +240,44 @@ async function fillTile(env: BuildingsEnv, coord: TileCoord): Promise<{ building
       throw new Error('building fill rate limited; retry in one second');
     }
   }
-  const bbox = tileBBox(coord.i, coord.j);
-  const buildings = await fetchOverpassBuildings(bbox, env.GEOCODER_CONTACT);
-  const nowIso = new Date().toISOString();
-  await storeTile(env, coord, buildings, nowIso);
-  return { buildings, fetchedAt: nowIso };
 }
 
-function parseBBox(url: URL): BBox | null {
-  const num = (name: string) => Number(url.searchParams.get(name));
+/** Bounding box covering a non-empty set of whole tiles. */
+export function bboxForTiles(tiles: TileCoord[]): BBox {
+  if (!tiles.length) throw new Error('at least one tile is required');
+  const boxes = tiles.map((tile) => tileBBox(tile.i, tile.j));
+  return {
+    south: Math.min(...boxes.map((box) => box.south)),
+    west: Math.min(...boxes.map((box) => box.west)),
+    north: Math.max(...boxes.map((box) => box.north)),
+    east: Math.max(...boxes.map((box) => box.east)),
+  };
+}
+
+async function fillTiles(
+  env: BuildingsEnv,
+  tiles: TileCoord[],
+): Promise<Map<string, { buildings: Building[]; fetchedAt: string }>> {
+  await reserveFillSlot(env);
+
+  // Fetch the cold area once, then partition the response into cache tiles. Fetching
+  // each tile separately made one user fan out into as many as 36 serial Overpass calls.
+  const allBuildings = await fetchOverpassBuildings(bboxForTiles(tiles), env.GEOCODER_CONTACT);
+  const nowIso = new Date().toISOString();
+  const filled = new Map<string, { buildings: Building[]; fetchedAt: string }>();
+  for (const tile of tiles) {
+    const buildings = filterBuildingsToBBox(allBuildings, tileBBox(tile.i, tile.j));
+    await storeTile(env, tile, buildings, nowIso);
+    filled.set(tile.key, { buildings, fetchedAt: nowIso });
+  }
+  return filled;
+}
+
+export function parseBBoxParams(params: URLSearchParams): BBox | null {
+  const num = (name: string) => {
+    const raw = params.get(name);
+    return raw === null || raw.trim() === '' ? NaN : Number(raw);
+  };
   const south = num('south'), west = num('west'), north = num('north'), east = num('east');
   if (![south, west, north, east].every(Number.isFinite)) return null;
   return { south, west, north, east };
@@ -265,7 +294,7 @@ export async function handleBuildings(request: Request, env: BuildingsEnv): Prom
   }
 
   const url = new URL(request.url);
-  const bbox = parseBBox(url);
+  const bbox = parseBBoxParams(url.searchParams);
   if (!bbox || !isValidBBox(bbox)) {
     return json({
       error: 'valid south,west,north,east required (max span ~7 km)',
@@ -291,6 +320,7 @@ export async function handleBuildings(request: Request, env: BuildingsEnv): Prom
   const checkedAts: string[] = [];
   let hits = 0;
   let misses = 0;
+  const coldTiles: TileCoord[] = [];
 
   for (const tile of tiles) {
     if (!force) {
@@ -303,12 +333,20 @@ export async function handleBuildings(request: Request, env: BuildingsEnv): Prom
         continue;
       }
     }
+    coldTiles.push(tile);
+  }
+
+  if (coldTiles.length) {
     try {
-      const filled = await fillTile(env, tile);
-      groups.push(filled.buildings);
-      fetchedAts.push(filled.fetchedAt);
-      checkedAts.push(filled.fetchedAt);
-      misses++;
+      const filledTiles = await fillTiles(env, coldTiles);
+      for (const tile of coldTiles) {
+        const filled = filledTiles.get(tile.key);
+        if (!filled) throw new Error(`tile fill missing ${tile.key}`);
+        groups.push(filled.buildings);
+        fetchedAts.push(filled.fetchedAt);
+        checkedAts.push(filled.fetchedAt);
+        misses++;
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('rate limited')) return json({ error: msg }, 429, { 'Retry-After': '1' });
