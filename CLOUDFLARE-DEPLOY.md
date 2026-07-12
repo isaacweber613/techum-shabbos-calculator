@@ -4,6 +4,16 @@ Production is one Cloudflare Worker serving explicit static assets plus three AP
 with D1 for analytics and Cloudflare Access protecting the dashboard. `serve.mjs` remains a
 local-development server; it is not the production origin.
 
+## Current production status (2026-07-12)
+
+- Live calculator: `https://tchumshabbos.com`
+- Worker: `techum-shabbos-calculator`; `workers.dev` disabled by the custom-domain deployment
+- D1: `techum-analytics` (`c08c94e0-e04d-4f06-be14-6fed2d47468b`); migrations 0001–0003 applied
+- `IP_HASH_SECRET` configured; geocoder contact is `https://tchumshabbos.com/about`
+- Analytics collection is active, but analytics reads are locked (`REQUIRE_ACCESS=true`)
+  until the owner approves activation of Cloudflare Zero Trust Free and the Access
+  applications are created.
+
 ## One-time account setup
 
 1. Authenticate Wrangler interactively:
@@ -13,7 +23,8 @@ local-development server; it is not the production origin.
    npx wrangler whoami
    ```
 
-2. Create the database and replace the zero UUID in `wrangler.jsonc` with the returned ID:
+2. Create the database and place the returned ID in `wrangler.jsonc` (already completed for
+   this deployment):
 
    ```powershell
    npx wrangler d1 create techum-analytics --location wnam
@@ -56,8 +67,8 @@ local-development server; it is not the production origin.
 
 The Worker also requires the Access identity header once `REQUIRE_ACCESS=true`; the Access
 policy remains the primary enforcement layer.
-5. After the custom domain is verified, add `"workers_dev": false` to `wrangler.jsonc` so
-   the unprotected `workers.dev` hostname cannot bypass the domain's Access application.
+5. Confirm the custom-domain deployment reports the `workers.dev` route disabled so the
+   unprotected temporary hostname cannot bypass the domain's Access application.
 
 ## Analytics and retention
 
@@ -82,5 +93,5 @@ npm run cf:dry-run
 npm run cf:deploy
 ```
 
-Do not publish while `GEOCODER_CONTACT` is `SET_BEFORE_PRODUCTION`, the D1 ID is the zero
-UUID, the HMAC secret is missing, or Access is not protecting both analytics paths.
+Do not expose analytics reads while the HMAC secret is missing or Access is not protecting
+both analytics paths. Keep `REQUIRE_ACCESS=true` during any Access setup gap.

@@ -4,6 +4,9 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-07-12",
   "compatibility_flags": ["nodejs_compat"],
+  "routes": [
+    { "pattern": "tchumshabbos.com", "custom_domain": true }
+  ],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
@@ -15,7 +18,7 @@
     {
       "binding": "DB",
       "database_name": "techum-analytics",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "c08c94e0-e04d-4f06-be14-6fed2d47468b",
       "migrations_dir": "migrations"
     }
   ],
@@ -32,9 +35,9 @@
     }
   ],
   "vars": {
-    "REQUIRE_ACCESS": "false",
+    "REQUIRE_ACCESS": "true",
     "RAW_RETENTION_DAYS": "365",
-    "GEOCODER_CONTACT": "SET_BEFORE_PRODUCTION"
+    "GEOCODER_CONTACT": "https://tchumshabbos.com/about"
   },
   "triggers": { "crons": ["17 4 * * *"] },
   "observability": {
