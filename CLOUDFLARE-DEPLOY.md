@@ -13,7 +13,8 @@ local-development server; it is not the production origin.
 - Analytics collection is active and analytics reads are private (`REQUIRE_ACCESS=true`).
 - Cloudflare Zero Trust Free is active. The `Techum analytics` Access application protects
   `tchumshabbos.com/analytics*` and `tchumshabbos.com/api/analytics*` with the reusable
-  `Allow analytics owner` policy (owner email only, 24-hour policy session).
+  `Allow analytics owner` policy (owner email only, one-month policy session, the current
+  Cloudflare Access maximum).
 - Outside-in verification: `/` returns `200`; both analytics paths return a `302` redirect
   to Cloudflare Access when no authenticated Access session is present.
 
