@@ -300,6 +300,44 @@
     return [...map.values()];
   }
 
+  function stableClusterKey(memberIds) {
+    let hash = 2166136261;
+    for (const ch of memberIds.join('\u001f')) {
+      hash ^= ch.charCodeAt(0); hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    return `cluster:v2:${memberIds.length}:${hash.toString(16).padStart(8, '0')}`;
+  }
+
+  function annotateCityQualification(clusters, buildings, minCityHouses, overrides) {
+    const configured = overrides && typeof overrides === 'object' ? overrides : {};
+    for (const cluster of clusters) {
+      cluster.memberIds = cluster.members.map((i) => {
+        const b = buildings[i], id = b.id == null ? 'missing-id' : String(b.id), box = b.bbox;
+        return `${id}@${box.minX.toFixed(3)},${box.minY.toFixed(3)},${box.maxX.toFixed(3)},${box.maxY.toFixed(3)}`;
+      }).sort();
+      cluster.key = stableClusterKey(cluster.memberIds);
+      let record = configured[cluster.key];
+      let remapScore = null;
+      if (record == null) {
+        const current = new Set(cluster.memberIds);
+        for (const candidate of Object.values(configured)) {
+          if (!candidate || typeof candidate !== 'object' || !Array.isArray(candidate.memberIds) || typeof candidate.decision !== 'boolean') continue;
+          const old = new Set(candidate.memberIds.map(String));
+          let shared = 0; for (const id of current) if (old.has(id)) shared++;
+          const score = shared / Math.max(1, current.size + old.size - shared);
+          if (score >= 0.8 && (remapScore == null || score > remapScore)) { record = candidate; remapScore = score; }
+        }
+      }
+      const decision = typeof record === 'boolean' ? record : record && typeof record.decision === 'boolean' ? record.decision : null;
+      cluster.qualifiesAsCity = typeof decision === 'boolean'
+        ? decision
+        : cluster.members.length >= minCityHouses;
+      cluster.qualificationSource = typeof decision === 'boolean' ? (remapScore == null ? 'reviewer' : 'reviewer-remapped') : 'footprint-count';
+      cluster.qualificationRemapScore = remapScore;
+      cluster.componentKeys = [cluster.key];
+    }
+  }
+
   function clusterGap(cA, cB, buildings, upperBound) {
     if (bboxGap(cA.bbox, cB.bbox) > upperBound) return Infinity;
     let best = Infinity;
@@ -322,9 +360,9 @@
       outer:
       for (let a = 0; a < clusters.length; a++) {
         for (let b = a + 1; b < clusters.length; b++) {
-          const bothCities =
-            clusters[a].members.length >= minCityHouses &&
-            clusters[b].members.length >= minCityHouses;
+          const bothCities = clusters[a].qualifiesAsCity == null
+            ? clusters[a].members.length >= minCityHouses && clusters[b].members.length >= minCityHouses
+            : clusters[a].qualifiesAsCity && clusters[b].qualifiesAsCity;
           if (!bothCities) continue;
           const gap = clusterGap(clusters[a], clusters[b], buildings, t2);
           if (gap <= t2) {
@@ -332,6 +370,10 @@
             clusters[a] = {
               members: clusters[a].members.concat(clusters[b].members),
               bbox: bboxUnion(clusters[a].bbox, clusters[b].bbox),
+              key: `merged:${clusters[a].componentKeys.concat(clusters[b].componentKeys).sort().join('|')}`,
+              qualifiesAsCity: true,
+              qualificationSource: 'merged-qualified-cities',
+              componentKeys: clusters[a].componentKeys.concat(clusters[b].componentKeys),
             };
             clusters.splice(b, 1);
             merged = true;
@@ -362,7 +404,9 @@
           for (let c = a + 1; c < n; c++) {
             if (c === b) continue;
             const A = clusters[a], B = clusters[b], C = clusters[c];
-            if ([A, B, C].some((cl) => cl.members.length < settings.minCityHouses)) continue;
+            if ([A, B, C].some((cl) => cl.qualifiesAsCity == null
+              ? cl.members.length < settings.minCityHouses
+              : !cl.qualifiesAsCity)) continue;
             const dAB = clusterGap(A, B, buildings, techum);
             const dCB = clusterGap(C, B, buildings, techum);
             if (dAB > techum || dCB > techum) continue;
@@ -390,6 +434,10 @@
               const mergedCluster = {
                 members: A.members.concat(B.members, C.members),
                 bbox: bboxUnion(bboxUnion(A.bbox, B.bbox), C.bbox),
+                key: `three:${A.componentKeys.concat(B.componentKeys, C.componentKeys).sort().join('|')}`,
+                qualifiesAsCity: true,
+                qualificationSource: 'three-villages',
+                componentKeys: A.componentKeys.concat(B.componentKeys, C.componentKeys),
               };
               const drop = [a, b, c].sort((x, y) => y - x);
               for (const idx of drop) clusters.splice(idx, 1);
@@ -450,8 +498,18 @@
       }
       const spanX = (maxCX - minCX + 1) * cw, spanY = (maxCY - minCY + 1) * ch;
       if (touchesBorder && Math.max(spanX, spanY) >= bow) {
+        const reviewKey = `concavity:${warnings.length}`;
+        const savedReview = settings.concavityReviews && settings.concavityReviews[reviewKey];
+        const endpoints = savedReview && Array.isArray(savedReview.endpoints) &&
+          savedReview.endpoints.length === 2 && savedReview.endpoints.every((p) =>
+            p && Number.isFinite(p.x) && Number.isFinite(p.y))
+          ? savedReview.endpoints.map((p) => ({ x: p.x, y: p.y }))
+          : null;
         warnings.push({
           type: 'large-concavity',
+          reviewKey,
+          reviewerEndpoints: endpoints,
+          reviewStatus: endpoints ? 'endpoints-recorded-not-applied' : 'needs-endpoints',
           text: 'Empty region spanning >= 4000 amos inside the squared rectangle — per SA 398:3 a bow this wide is NOT automatically filled. The rectangle shown may be too lenient here; REQUIRES a posek.',
           region: {
             minX: rect.minX + minCX * cw, maxX: rect.minX + (maxCX + 1) * cw,
@@ -500,6 +558,10 @@
     // Stage 1: ibur chains
     const labels = clusterBuildings(work, joinM);
     const clusters = buildClusters(work, labels);
+    annotateCityQualification(clusters, work, settings.minCityHouses, settings.cityQualificationOverrides);
+    const qualificationAudit = clusters.map((c) => ({ key: c.key, members: [...c.members], memberIds: [...c.memberIds], bbox: { ...c.bbox },
+      qualifiesAsCity: c.qualifiesAsCity, qualificationSource: c.qualificationSource,
+      qualificationRemapScore: c.qualificationRemapScore }));
 
     // Stage 2 + 3: settlement merges
     const mergeNotes = mergeCities(clusters, work, t2, settings.minCityHouses);
@@ -530,21 +592,26 @@
         }
       });
     }
-    const mode = home >= 0 && bestD <= joinM ? 'city' : 'point';
+    const validatedPerimeter = Array.isArray(settings.validatedCityPerimeter) && settings.validatedCityPerimeter.length >= 3
+      ? settings.validatedCityPerimeter.map(rot) : null;
+    const perimeterActive = !!(validatedPerimeter && pointInRing(workPin, validatedPerimeter));
+    const mode = perimeterActive || (home >= 0 && bestD <= joinM) ? 'city' : 'point';
 
     let cityRect = null, karpefRect = null, techumRect = null, concavity = [];
     if (mode === 'city') {
-      const cluster = clusters[home];
+      const cluster = perimeterActive ? { bbox: bboxOfRing(validatedPerimeter), members: [] } : clusters[home];
       cityRect = { ...cluster.bbox };                 // ribua — SA 398:1-3
       karpefRect = settings.karpef ? expandRect(cityRect, karpefM) : null; // MB 398:36
       techumRect = expandRect(karpefRect || cityRect, techumM);            // SA 399, square corners
-      concavity = concavityWarnings(cluster, work, settings);
+      concavity = perimeterActive ? [] : concavityWarnings(cluster, work, settings);
       warnings.push(...concavity);
+      if (perimeterActive) warnings.push({ type: 'validated-perimeter', text: 'A reviewer-supplied validated enclosure is being used as the city edge. The app did not infer its hukaf-l\'dira status; confirm the supplied perimeter and ruling.' });
 
       // Overlapping-squares machlokes (CI redraw vs R' S. Miller):
       const otherRects = clusters
-        .map((c, i) => ({ i, rect: settings.karpef ? expandRect(c.bbox, karpefM) : c.bbox, size: c.members.length }))
-        .filter((o) => o.i !== home && o.size >= settings.minCityHouses);
+        .map((c, i) => ({ i, rect: settings.karpef ? expandRect(c.bbox, karpefM) : c.bbox,
+          size: c.members.length, qualifiesAsCity: c.qualifiesAsCity }))
+        .filter((o) => o.i !== home && o.qualifiesAsCity);
       for (const o of otherRects) {
         if (rectsOverlap(karpefRect || cityRect, o.rect)) {
           if (settings.overlapMerge) {
@@ -598,14 +665,33 @@
 
     return {
       mode,
+      validatedPerimeterActive: perimeterActive,
       labels,
       homeCluster: home,
-      clusters: clusters.map((c) => ({ members: c.members, corners: rectToCorners(c.bbox) })),
+      clusters: clusters.map((c) => ({
+        members: c.members,
+        corners: rectToCorners(c.bbox),
+        key: c.key,
+        qualifiesAsCity: c.qualifiesAsCity,
+        qualificationSource: c.qualificationSource,
+        qualificationRemapScore: c.qualificationRemapScore,
+        componentKeys: c.componentKeys,
+      })),
+      reviewClusters: qualificationAudit.map((c) => ({ key: c.key, members: c.members, memberIds: c.memberIds,
+        corners: rectToCorners(c.bbox), qualifiesAsCity: c.qualifiesAsCity,
+        qualificationSource: c.qualificationSource, qualificationRemapScore: c.qualificationRemapScore })),
       cityCorners,
       karpefCorners: rectToCorners(karpefRect),
       techumCorners,
       mil12Corners,
       concavityRegions: concavity.map((w) => rectToCorners(w.region)),
+      concavityAudit: concavity.map((w) => ({
+        reviewKey: w.reviewKey,
+        regionCorners: rectToCorners(w.region),
+        reviewerEndpoints: w.reviewerEndpoints ? w.reviewerEndpoints.map(unrot) : null,
+        reviewStatus: w.reviewStatus,
+        appliedToBoundary: false,
+      })),
       warnings,
       thresholds: { joinM, t2, techumM, karpefM },
     };
@@ -617,7 +703,7 @@
     _internals: {
       bboxOfRing, bboxGap, expandRect, rectsOverlap, rectContains, ringDist,
       ringDistToPoint, clusterBuildings, buildClusters, mergeCities, GridIndex,
-      pointInRing, segSegDist,
+      pointInRing, segSegDist, annotateCityQualification, concavityWarnings,
     },
   };
 });

@@ -11,6 +11,7 @@
 <body>
   <div id="banner">
     <span class="banner-mark">Draft</span> This map is decision support, not a psak. <b>Review with a rav before relying on it.</b>
+    <button id="btn-dismiss-banner" type="button" aria-label="Dismiss disclaimer">×</button>
   </div>
   <div id="app">
     <aside id="sidebar">
@@ -28,13 +29,21 @@
         <button id="btn-search" aria-label="Find address">Find</button>
       </div>
       <button id="btn-location" class="text-button location-button" type="button">◎ Use my current location</button>
-      <div id="status"></div>
+      <div id="status" role="status" aria-live="polite"></div>
+      <div id="calc-progress" class="calc-progress" hidden aria-hidden="true">
+        <span data-stage="fetch">1 <b>Get map data</b></span>
+        <span data-stage="analyze">2 <b>Build the city</b></span>
+        <span data-stage="draw">3 <b>Draw the tchum</b></span>
+      </div>
       <div class="next-step"><span class="step-number">2</span><div><strong>Confirm the pin</strong><span>You can drag it to the exact building.</span></div></div>
-      <button id="btn-calc" class="primary" disabled>Calculate my techum <span>→</span></button>
+      <button id="btn-calc" class="primary" disabled><span class="calc-label">Calculate my tchum</span> <span class="calc-action">→</span></button>
+      <div id="confidence" class="confidence" hidden></div>
       <div id="results"></div>
+      <div id="review-queue" class="review-queue" hidden></div>
       <div class="advanced-heading"><span>Review &amp; settings</span><small>Optional</small></div>
 
-      <details>
+      <div class="settings-grid">
+      <details open>
         <summary>Halachic profile <small>Defaults &amp; shitos</small></summary>
         <label>Profile
           <select id="profile">
@@ -61,7 +70,7 @@
           <input id="min-city" type="number" min="1" max="20" value="6" /></label>
       </details>
 
-      <details>
+      <details open>
         <summary>Buildings &amp; data <small>Sources &amp; overrides</small></summary>
         <label class="check"><input id="inc-unknown" type="checkbox" />
           Include untagged buildings <small>(orange — OSM data gap, flagged)</small></label>
@@ -85,7 +94,7 @@
         <label>Max buildings (data cap) <input id="max-buildings" type="number" step="1000" min="1000" /></label>
       </details>
 
-      <details>
+      <details open>
         <summary>Map display <small>Layers &amp; comparison</small></summary>
         <label class="check"><input id="layer-buildings" type="checkbox" checked /> Buildings</label>
         <label class="check"><input id="layer-city" type="checkbox" checked /> City rectangle (ribua)</label>
@@ -102,22 +111,78 @@
           </select>
         </label>
         <label class="check"><input id="show-12mil" type="checkbox" /> 12-mil ring (d'oraisa shita)</label>
-        <label class="check"><input id="audit-rings" type="checkbox" />
-          Audit rings: 70⅔ amos around each building <small>(advanced — dotted rings, colored by
-          chain. A building whose walls reach a ring joins that chain; two cities' rings touching
-          = the 141⅓ merge, 2 × 70⅔. Shown for the current view; zoom in to audit.)</small></label>
+        <label class="check audit-toggle"><input id="audit-rings" type="checkbox" />
+          <span><b>Show how the calculation works</b><small>Advanced audit view — exact house
+          footprints, colored 70⅔-amah reach, chain numbers, settlement rectangles, and the
+          home-city boundary. Zoom in and hover any line for its calculation.</small></span></label>
+        <div id="audit-guide" class="audit-guide" hidden>
+          <b>Reading the audit view</b>
+          <ol>
+            <li><span class="audit-key footprint"></span>Solid shape: the exact mapped building footprint.</li>
+            <li><span class="audit-key reach"></span>Dotted shape: 70⅔ amos from its walls. Touching a house joins the chain.</li>
+            <li><span class="audit-key settlement"></span>Dashed box: a derived settlement after chain and city-merge rules.</li>
+            <li><span class="audit-key home"></span>Bright box: your selected city’s ribua; the techum is measured from it.</li>
+          </ol>
+          <p id="audit-summary" class="muted"></p>
+          <div id="cluster-review" class="cluster-review"></div>
+        </div>
       </details>
+      </div>
 
       <div class="row exports">
         <button id="btn-kml">Export KML</button>
+        <button id="btn-kmz">Export KMZ</button>
         <button id="btn-geojson">Export GeoJSON</button>
       </div>
+      <details>
+        <summary>Missing buildings <small>Manual map corrections</small></summary>
+        <p class="muted">Draw or import a footprint that is absent from OpenStreetMap. Manual shapes are
+          visibly flagged and treated like untagged buildings until you review them.</p>
+        <div class="row">
+          <button id="btn-draw-building">Draw footprint</button>
+          <button id="btn-finish-building" hidden>Finish shape</button>
+        </div>
+        <div class="row">
+          <button id="btn-import-buildings">Import GeoJSON</button>
+          <button id="btn-clear-manual">Clear manual</button>
+          <input id="building-file" type="file" accept=".json,.geojson,application/geo+json" hidden />
+        </div>
+      </details>
+      <details>
+        <summary>Overture cross-check <small>Independent footprint review</small></summary>
+        <p class="muted">Import an Overture building GeoJSON extract. Differences are review candidates only and never enter the calculation automatically.</p>
+        <button id="btn-import-overture">Compare Overture GeoJSON</button>
+        <input id="overture-file" type="file" accept=".json,.geojson,application/geo+json" hidden />
+        <div id="overture-report" class="source-report"></div>
+      </details>
+      <details>
+        <summary>Reviewed city library <small>Published rav-reviewed snapshots</small></summary>
+        <p class="muted">Published entries preserve the reviewer, date, conditions, and source notes. Loading one replaces the current calculation after confirmation.</p>
+        <button id="btn-registry-refresh">Browse reviewed cities</button>
+        <div id="registry-list" class="source-report"></div>
+      </details>
+      <details>
+        <summary>Validated enclosure <small>Rav-supplied perimeter only</small></summary>
+        <p class="muted">Import a rav-validated hukaf-l'dira wall/eruv perimeter. It remains inactive until you explicitly enable it and is never inferred from an ordinary carrying eruv.</p>
+        <button id="btn-import-perimeter">Import validated GeoJSON</button>
+        <input id="perimeter-file" type="file" accept=".json,.geojson,application/geo+json" hidden />
+        <label class="check"><input id="use-perimeter" type="checkbox" /> Use validated perimeter as the city edge</label>
+        <button id="btn-clear-perimeter">Clear validated perimeter</button>
+      </details>
+      <div class="row exports">
+        <button id="btn-pdf">Export PDF</button>
+        <button id="btn-image">Export PNG image</button>
+      </div>
 
-      <div class="legend">
-        <div><span class="sw dw"></span> dwelling &nbsp; <span class="sw un"></span> untagged</div>
-        <div><span class="sw rv"></span> needs review &nbsp; <span class="sw no"></span> non-dwelling</div>
-        <div><span class="ln techum"></span> techum &nbsp; <span class="ln city"></span> city rect &nbsp; <span class="ln karpef"></span> karpef &nbsp; <span class="ln verified"></span> verified-only</div>
-        <div class="hint">Click any building to force include/exclude it.</div>
+      <div class="legend" aria-label="Map key">
+        <b>What you’re looking at</b>
+        <div><span class="ln techum"></span><strong>Red:</strong> your 2,000-amah tchum boundary.</div>
+        <div><span class="ln city"></span><strong>Green:</strong> the halachic city rectangle used as the starting point—not the town border.</div>
+        <div><span class="ln karpef"></span><strong>Teal dashed:</strong> the extra karpef before measuring 2,000 amos.</div>
+        <div><span class="ln verified"></span><strong>Amber dashed:</strong> a second scenario using only clearly tagged dwellings; it can be larger or smaller.</div>
+        <div class="building-key"><span class="sw dw"></span> Green buildings: tagged dwelling <span class="sw un"></span> Orange: untagged</div>
+        <div class="building-key"><span class="sw rv"></span> Purple: needs review <span class="sw no"></span> Gray: excluded non-dwelling</div>
+        <div class="hint">Click a building to include or exclude it manually. Hover a boundary for its name.</div>
       </div>
 
       <footer>Built for careful review · <a href="about.html">Method &amp; halachic sources</a></footer>
@@ -127,6 +192,8 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script src="js/track.js"></script>
   <script src="js/geometry.js"></script>
   <script src="js/data.js"></script>

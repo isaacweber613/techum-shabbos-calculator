@@ -1,5 +1,5 @@
 /*
- * Psak profiles & settings — mirrors TECHUM-SPEC.md Part 2 (rev. 4).
+ * Psak profiles & settings — mirrors TECHUM-SPEC.md Part 2 (rev. 5).
  * Every disputed rule is a setting; profiles are documented defaults, all overridable.
  * Classic script: exposes window.TechumSettings.
  */
@@ -50,6 +50,9 @@
     show12mil: false,
     pointRotationDeg: 0,    // open-field square rotation (SA 399 — person may orient)
     showAuditRings: false,  // dotted 70⅔-amos rings around buildings (manual-audit aid)
+    cityQualificationOverrides: {}, // cluster key -> reviewer yes/no; empty preserves count proxy
+    concavityReviews: {},   // review key -> recorded endpoints; never silently changes geometry
+    useValidatedPerimeter: false, // explicit rav-supplied hukaf-l'dira alternative; never inferred
     fetchRadiusM: 1200,
     maxBuildings: 30000,
     maxExpandIterations: 4,
