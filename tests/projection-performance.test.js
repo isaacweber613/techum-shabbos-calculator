@@ -45,4 +45,35 @@ test('three-villages analysis skips thousands of non-city singleton clusters', (
   assert.ok(Date.now() - started < 3000, 'non-city filtering exceeded 3 seconds');
 });
 
+test('engine reports actionable per-stage timings', () => {
+  const buildings = [];
+  for (let i = 0; i < 100; i++) {
+    const x = (i % 10) * 20, y = Math.floor(i / 10) * 20;
+    buildings.push({ id: String(i), included: true, bbox: { minX: x, minY: y, maxX: x + 8, maxY: y + 8 },
+      ring: [{ x, y }, { x: x + 8, y }, { x: x + 8, y: y + 8 }, { x, y: y + 8 }] });
+  }
+  const result = G.runPipeline(buildings, { amahM: 0.48, karpef: true, minCityHouses: 6, overlapMerge: false, squaringAngleDeg: 0 }, { x: 5, y: 5 });
+  assert.ok(result.engineTimings.total >= 0);
+  for (const stage of ['iburClustering', 'clusterAssembly', 'cityQualification', 'cityMerges', 'threeVillages', 'homeSelection', 'boundaryAndWarnings']) {
+    assert.equal(typeof result.engineTimings[stage], 'number', `missing timing for ${stage}`);
+  }
+});
+
+test('spatially pruned city merges and three-villages stay practical', () => {
+  const buildings = [];
+  let id = 0;
+  for (let city = 0; city < 80; city++) {
+    const baseX = (city % 10) * 180, baseY = Math.floor(city / 10) * 180;
+    for (let house = 0; house < 6; house++) {
+      const x = baseX + (house % 3) * 14, y = baseY + Math.floor(house / 3) * 14;
+      buildings.push({ id: String(id++), included: true, bbox: { minX: x, minY: y, maxX: x + 8, maxY: y + 8 },
+        ring: [{ x, y }, { x: x + 8, y }, { x: x + 8, y: y + 8 }, { x, y: y + 8 }] });
+    }
+  }
+  const started = Date.now();
+  const result = G.runPipeline(buildings, { amahM: 0.48, karpef: true, minCityHouses: 6, overlapMerge: false, squaringAngleDeg: 0 }, { x: 5, y: 5 });
+  assert.equal(result.mode, 'city');
+  assert.ok(Date.now() - started < 5000, 'city merge/three-villages fixture exceeded 5 seconds');
+});
+
 console.log(`\n${passed} projection/performance tests passed`);

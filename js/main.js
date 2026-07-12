@@ -29,6 +29,12 @@
   };
   const auditCache = new Map(); // building id + join dist -> buffer loops (pure geometry)
   let drawing = null;
+  let bowCapture = null;
+  let analysisWorker = null;
+  let analysisRequestId = 0;
+  let latestAnalysisId = 0;
+  let activeCalculationId = 0;
+  const analysisPending = new Map();
   function track(type, data) { if (window.TechumTrack) window.TechumTrack.send(type, data); }
 
   const SETTING_HELP = {
@@ -69,7 +75,13 @@
       help.textContent = '?';
       help.setAttribute('aria-label', 'About this setting');
       help.dataset.tip = explanation;
-      help.addEventListener('click', (e) => e.preventDefault());
+      help.setAttribute('aria-expanded', 'false');
+      help.addEventListener('click', (e) => {
+        e.preventDefault();
+        const open = help.getAttribute('aria-expanded') !== 'true';
+        document.querySelectorAll('.setting-help[aria-expanded="true"]').forEach((el) => el.setAttribute('aria-expanded', 'false'));
+        help.setAttribute('aria-expanded', String(open));
+      });
       label.appendChild(help);
     });
   }
@@ -106,7 +118,10 @@
     layerGroups.perimeter = L.layerGroup().addTo(map);
     map.on('click', (e) => {
       if (drawing) { addDrawingVertex(e.latlng); return; }
-      if (!pinMarker) setPin(e.latlng.lat, e.latlng.lng);
+      if (bowCapture) { addBowEndpoint(e.latlng); return; }
+      const invalidatesResult = !!state.rawBuildings.length;
+      setPin(e.latlng.lat, e.latlng.lng, { invalidateResult: invalidatesResult });
+      if (!invalidatesResult) setStatus('Pin set from the map. Confirm its position, then Calculate. Click elsewhere to move it.');
     });
     // audit rings are viewport-limited — refresh them as the reviewer pans/zooms
     map.on('moveend', () => {
@@ -115,7 +130,7 @@
     });
   }
 
-  function setPin(lat, lon) {
+  function setPin(lat, lon, options) {
     state.pin = { lat, lon };
     document.body.classList.add('has-pin');
     if (!pinMarker) {
@@ -124,10 +139,11 @@
       pinMarker.on('dragend', () => {
         const p = pinMarker.getLatLng();
         state.pin = { lat: p.lat, lon: p.lng };
-        if (state.rawBuildings.length) recompute();
+        if (state.rawBuildings.length) invalidateCalculationForMovedPin();
       });
     } else pinMarker.setLatLng([lat, lon]);
     document.getElementById('btn-calc').disabled = false;
+    if (options && options.invalidateResult) invalidateCalculationForMovedPin();
   }
 
   // ---------------- geocode ----------------
@@ -143,6 +159,7 @@
     list.hidden = true;
     list.replaceChildren();
     document.getElementById('address').setAttribute('aria-expanded', 'false');
+    document.getElementById('address').removeAttribute('aria-activedescendant');
   }
 
   function applyGeocodeResult(r, query) {
@@ -159,10 +176,11 @@
     suggestions = results;
     activeSuggestion = -1;
     const list = document.getElementById('address-suggestions');
-    list.replaceChildren(...results.map((r) => {
+    list.replaceChildren(...results.map((r, i) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'suggestion';
+      button.id = `address-suggestion-${i}`;
       button.setAttribute('role', 'option');
       button.textContent = r.label;
       button.addEventListener('mousedown', (e) => e.preventDefault());
@@ -200,6 +218,7 @@
         el.classList.toggle('active', i === activeSuggestion);
         el.setAttribute('aria-selected', String(i === activeSuggestion));
       });
+      document.getElementById('address').setAttribute('aria-activedescendant', `address-suggestion-${activeSuggestion}`);
       return;
     }
     if (e.key === 'Escape') { closeSuggestions(); return; }
@@ -212,7 +231,10 @@
 
   async function onSearch() {
     const q = document.getElementById('address').value.trim();
-    if (!q) return;
+    if (!q) { setStatus('Enter an address or place, or click the map to set the pin.'); return; }
+    const button = document.getElementById('btn-search');
+    if (button.disabled) return;
+    button.disabled = true; button.setAttribute('aria-busy', 'true');
     setStatus('Geocoding…');
     try {
       const results = await D.geocode(q, state.locationBias);
@@ -220,6 +242,7 @@
       if (!results.length) { setStatus('Address not found — try again or click the map.'); return; }
       applyGeocodeResult(results[0], q);
     } catch (e) { setStatus('Geocoding error: ' + e.message); }
+    finally { button.disabled = false; button.setAttribute('aria-busy', 'false'); }
   }
 
   function useMyLocation() {
@@ -257,10 +280,12 @@
   async function calculate(forceFresh) {
     if (!state.pin) return;
     if (document.getElementById('btn-calc').getAttribute('aria-busy') === 'true') return;
+    const calculationId = ++activeCalculationId;
     setCalculationStage('fetch', forceFresh ? 'Refreshing map buildings…' : 'Getting nearby map buildings…');
     await nextPaint();
     const calcStarted = performance.now();
     const perf = { passes: [], buildings: 0 };
+    document.getElementById('performance-report').hidden = true;
     state.dataCapHit = false;
     state.fromCache = false;
     state.proj = G.makeProjection(state.pin.lat, state.pin.lon);
@@ -270,19 +295,30 @@
       setCalculationStage('fetch', `Getting map buildings${iteration ? ` (area pass ${iteration + 1})` : ''}…`);
       await nextPaint();
       const fetchStarted = performance.now();
+      let fetched;
       try {
-        const r = await D.fetchBuildingsCached(bbox, { force: !!forceFresh });
-        state.rawBuildings = r.buildings;
-        state.fetchedAt = r.fetchedAt;
-        state.checkedAt = r.checkedAt;
-        state.fromCache = r.fromCache;
-        state.dataSource = r.source || (r.fromCache ? 'local' : 'overpass');
+        fetched = await D.fetchBuildingsCached(bbox, { force: !!forceFresh });
+        if (calculationId !== activeCalculationId) return;
       } catch (e) {
         setStatus('Map-data error: ' + e.message + ' — try again in a minute (public server rate limits).');
         finishCalculationProgress(false);
         return;
       }
       const fetchMs = performance.now() - fetchStarted;
+      // Do not start an unexpectedly oversized expansion pass. Keep the last complete
+      // analyzed pass and mark it as bounded instead of silently analyzing beyond the
+      // configured safety limit (the old behavior reached 80k under a 60k cap).
+      if (iteration > 0 && fetched.buildings.length > settings.maxBuildings) {
+        state.dataCapHit = true;
+        perf.passes.push({ pass: iteration + 1, buildings: fetched.buildings.length, fetchMs,
+          prepMs: 0, engineMs: 0, engineStages: null, skippedAtDataCap: true });
+        break;
+      }
+      state.rawBuildings = fetched.buildings;
+      state.fetchedAt = fetched.fetchedAt;
+      state.checkedAt = fetched.checkedAt;
+      state.fromCache = fetched.fromCache;
+      state.dataSource = fetched.source || (fetched.fromCache ? 'local' : 'overpass');
       state.fetchBBox = bbox;
       const prepStarted = performance.now();
       prepareBuildings();
@@ -293,9 +329,18 @@
       setCalculationStage('analyze', `Building the city from ${state.rawBuildings.length.toLocaleString()} footprints…`);
       await nextPaint();
       const engineStarted = performance.now();
-      recompute(true);
+      try {
+        await recompute(true);
+        if (calculationId !== activeCalculationId) return;
+      } catch (error) {
+        if (calculationId !== activeCalculationId) return;
+        setStatus('Calculation error: ' + error.message);
+        finishCalculationProgress(false);
+        return;
+      }
       const engineMs = performance.now() - engineStarted;
-      perf.passes.push({ pass: iteration + 1, buildings: state.rawBuildings.length, fetchMs, prepMs, engineMs });
+      perf.passes.push({ pass: iteration + 1, buildings: state.rawBuildings.length, fetchMs, prepMs, engineMs,
+        engineStages: state.result && state.result.engineTimings ? state.result.engineTimings : null });
       if (state.rawBuildings.length > settings.maxBuildings) {
         state.dataCapHit = true;
         break;
@@ -361,10 +406,23 @@
     const totals = perf.passes.reduce((a, p) => ({ fetch: a.fetch + p.fetchMs, prep: a.prep + p.prepMs, engine: a.engine + p.engineMs }), { fetch: 0, prep: 0, engine: 0 });
     const parts = [['map-data wait', totals.fetch], ['footprint preparation', totals.prep], ['halachic engine', totals.engine], ['final draw', perf.renderMs || 0]].sort((a, b) => b[1] - a[1]);
     const reason = parts[0][1] > 1000 ? `Most time: ${parts[0][0]} (${(parts[0][1] / 1000).toFixed(1)}s).` : 'No slow stage detected.';
-    const agentReport = { app: 'Techum Shabbos Calculator', totalMs: Math.round(perf.totalMs), buildings: perf.buildings, passes: perf.passes.map((p) => ({ ...p, fetchMs: Math.round(p.fetchMs), prepMs: Math.round(p.prepMs), engineMs: Math.round(p.engineMs) })), renderMs: Math.round(perf.renderMs || 0), diagnosis: reason };
-    el.innerHTML = `<strong>Calculation time: ${(perf.totalMs / 1000).toFixed(1)}s</strong><span>${escapeHtml(reason)} ${perf.passes.length} map pass(es), ${perf.buildings.toLocaleString()} footprints.</span><button type="button" id="btn-copy-performance">Copy agent report</button>`;
+    const stageTotals = {};
+    for (const pass of perf.passes) for (const [name, ms] of Object.entries(pass.engineStages || {})) {
+      if (name !== 'total') stageTotals[name] = (stageTotals[name] || 0) + ms;
+    }
+    const slowEngineStages = Object.entries(stageTotals).sort((a, b) => b[1] - a[1]);
+    const stageSummary = slowEngineStages.length
+      ? ` Slowest engine stage: ${slowEngineStages[0][0]} (${(slowEngineStages[0][1] / 1000).toFixed(1)}s).`
+      : '';
+    const agentReport = { app: 'Techum Shabbos Calculator', totalMs: Math.round(perf.totalMs), buildings: perf.buildings,
+      passes: perf.passes.map((p) => ({ ...p, fetchMs: Math.round(p.fetchMs), prepMs: Math.round(p.prepMs), engineMs: Math.round(p.engineMs),
+        engineStages: Object.fromEntries(Object.entries(p.engineStages || {}).map(([name, ms]) => [name, Math.round(ms)])) })),
+      engineStageTotalsMs: Object.fromEntries(slowEngineStages.map(([name, ms]) => [name, Math.round(ms)])),
+      renderMs: Math.round(perf.renderMs || 0), diagnosis: reason + stageSummary };
+    el.innerHTML = `<strong>Calculation time: ${(perf.totalMs / 1000).toFixed(1)}s</strong><span>${escapeHtml(reason + stageSummary)} ${perf.passes.length} map pass(es), ${perf.buildings.toLocaleString()} footprints.</span><span class="performance-actions"><button type="button" id="btn-copy-performance">Copy agent report</button><button type="button" id="btn-dismiss-performance" aria-label="Dismiss performance report">Dismiss</button></span>`;
     el.hidden = false;
     document.getElementById('btn-copy-performance').onclick = async () => { await navigator.clipboard.writeText(JSON.stringify(agentReport, null, 2)); setStatus('Performance report copied — paste it into an agent task.'); };
+    document.getElementById('btn-dismiss-performance').onclick = () => { el.hidden = true; };
   }
 
   function neededExpansion(bbox) {
@@ -434,7 +492,11 @@
     });
     button.setAttribute('aria-busy', 'false');
     button.disabled = false;
-    button.querySelector('.calc-label').textContent = succeeded ? 'Recalculate my tchum' : 'Try calculating again';
+    button.querySelector('.calc-label').textContent = succeeded ? 'Recalculate my techum' : 'Try calculating again';
+    window.setTimeout(() => {
+      progress.hidden = true;
+      progress.setAttribute('aria-hidden', 'true');
+    }, succeeded ? 1200 : 0);
   }
 
   function addDrawingVertex(latlng) {
@@ -449,11 +511,13 @@
 
   function startDrawing() {
     if (!state.pin || !state.proj) { setStatus('Set an address and calculate before drawing a missing building.'); return; }
-    if (drawing && drawing.layer) drawing.layer.remove();
+    cancelMapMode(false);
     drawing = { points: [], layer: null };
     map.doubleClickZoom.disable();
     const finish = document.getElementById('btn-finish-building'); finish.hidden = false; finish.disabled = true;
-    setStatus('Click each corner of the missing building on the map, then Finish shape.');
+    document.getElementById('btn-cancel-map-mode').hidden = false;
+    document.body.classList.add('map-mode-active');
+    setStatus('Drawing mode: click each corner, then Finish shape. Press Escape or Cancel to stop.');
   }
 
   function finishDrawing() {
@@ -462,8 +526,32 @@
     state.manualBuildings.push({ id: `manual-${Date.now()}-${state.manualBuildings.length + 1}`,
       tags: { building: 'yes', source: 'manual-review' }, ringLatLon: drawing.points });
     drawing = null; map.doubleClickZoom.enable(); document.getElementById('btn-finish-building').hidden = true;
+    document.getElementById('btn-cancel-map-mode').hidden = true; document.body.classList.remove('map-mode-active');
     prepareBuildings(); recompute();
     setStatus('Manual footprint added and flagged as untagged. Click it to include or exclude it explicitly.');
+  }
+
+  function cancelCalculation() {
+    if (document.getElementById('btn-calc').getAttribute('aria-busy') !== 'true') return;
+    activeCalculationId++;
+    latestAnalysisId++;
+    if (analysisWorker) { analysisWorker.terminate(); analysisWorker = null; }
+    for (const reject of analysisPending.values()) reject(new Error('Calculation cancelled.'));
+    analysisPending.clear();
+    finishCalculationProgress(false);
+    setStatus('Calculation cancelled. You can change the pin or settings and try again.');
+  }
+
+  function cancelMapMode(announce = true) {
+    const hadMode = !!drawing || !!bowCapture;
+    if (drawing && drawing.layer) drawing.layer.remove();
+    drawing = null; bowCapture = null;
+    if (map) map.doubleClickZoom.enable();
+    const finish = document.getElementById('btn-finish-building');
+    if (finish) { finish.hidden = true; finish.disabled = true; }
+    const cancel = document.getElementById('btn-cancel-map-mode'); if (cancel) cancel.hidden = true;
+    document.body.classList.remove('map-mode-active');
+    if (announce && hadMode) setStatus('Map selection cancelled.');
   }
 
   function polygonsFromGeoJSON(value) {
@@ -578,8 +666,41 @@
     return settings.useValidatedPerimeter && Array.isArray(state.validatedPerimeter)
       ? state.validatedPerimeter.map((p) => state.proj.toXY(p.lat, p.lon)) : null;
   }
-  function recompute(skipRender) {
+  function workerSafeBuildings(buildings) {
+    return buildings.map((b) => ({ id: b.id, ring: b.ring, bbox: b.bbox, included: b.included }));
+  }
+
+  function runPipelineAsync(buildings, geoSettings, pinXY) {
+    if (typeof Worker === 'undefined' || buildings.length < 1500) {
+      return Promise.resolve(G.runPipeline(buildings, geoSettings, pinXY));
+    }
+    if (!analysisWorker) analysisWorker = new Worker('js/analysis-worker.js');
+    const id = ++analysisRequestId;
+    return new Promise((resolve, reject) => {
+      analysisPending.set(id, reject);
+      const onMessage = (event) => {
+        if (!event.data || event.data.id !== id) return;
+        analysisPending.delete(id);
+        analysisWorker.removeEventListener('message', onMessage);
+        analysisWorker.removeEventListener('error', onError);
+        if (event.data.error) reject(new Error(event.data.error));
+        else resolve(event.data.result);
+      };
+      const onError = (event) => {
+        analysisPending.delete(id);
+        analysisWorker.removeEventListener('message', onMessage);
+        analysisWorker.removeEventListener('error', onError);
+        reject(new Error(event.message || 'The background analysis worker failed.'));
+      };
+      analysisWorker.addEventListener('message', onMessage);
+      analysisWorker.addEventListener('error', onError);
+      analysisWorker.postMessage({ id, buildings: workerSafeBuildings(buildings), settings: geoSettings, pin: pinXY });
+    });
+  }
+
+  async function recompute(skipRender) {
     if (!state.buildings.length && !state.pin) return;
+    const generation = ++latestAnalysisId;
     for (const b of state.buildings) b.included = isIncluded(b);
     const pinXY = state.proj.toXY(state.pin.lat, state.pin.lon);
     const geoSettings = {
@@ -593,8 +714,11 @@
       concavityReviews: settings.concavityReviews || {},
       validatedCityPerimeter: projectedValidatedPerimeter(),
     };
-    state.result = G.runPipeline(state.buildings, geoSettings, pinXY);
+    const result = await runPipelineAsync(state.buildings, geoSettings, pinXY);
+    if (generation !== latestAnalysisId) return null;
+    state.result = result;
     if (!skipRender) render();
+    return result;
   }
 
   function cornersToLatLngs(corners) {
@@ -657,6 +781,18 @@
     });
   }
 
+  function invalidateCalculationForMovedPin() {
+    state.result = null;
+    state.snapInfo = null;
+    document.body.classList.remove('has-result');
+    layerGroups.rects.clearLayers(); layerGroups.second.clearLayers(); layerGroups.settlements.clearLayers();
+    layerGroups.audit.clearLayers(); layerGroups.perimeter.clearLayers();
+    document.getElementById('results').replaceChildren();
+    document.getElementById('confidence').hidden = true;
+    document.getElementById('review-queue').hidden = true;
+    setStatus('Pin moved. Calculate again to fetch the correct surrounding buildings; the previous boundary was cleared.');
+  }
+
   function render() {
     document.body.classList.add('has-result');
     layerGroups.rects.clearLayers();
@@ -701,6 +837,7 @@
           amahM: settings.amahCm / 100, karpef: settings.karpef,
           minCityHouses: settings.minCityHouses, overlapMerge: settings.overlapMerge,
           squaringAngleDeg: settings.squaringAngleDeg,
+          pointRotationDeg: settings.pointRotationDeg,
           cityQualificationOverrides: settings.cityQualificationOverrides || {}, concavityReviews: settings.concavityReviews || {},
           validatedCityPerimeter: projectedValidatedPerimeter(),
         }, state.proj.toXY(state.pin.lat, state.pin.lon));
@@ -711,11 +848,12 @@
     }
 
     // comparison shita line (full second pipeline run — thresholds change with the amah)
-    if (settings.secondAmahCm && settings.secondAmahCm !== settings.amahCm) {
+    if (settings.secondAmahCm && settings.secondAmahCm !== settings.amahCm && state.buildings.length <= 10000) {
       const res2 = G.runPipeline(state.buildings, {
         amahM: settings.secondAmahCm / 100, karpef: settings.karpef,
         minCityHouses: settings.minCityHouses, overlapMerge: settings.overlapMerge,
         squaringAngleDeg: settings.squaringAngleDeg,
+        pointRotationDeg: settings.pointRotationDeg,
         cityQualificationOverrides: settings.cityQualificationOverrides || {}, concavityReviews: settings.concavityReviews || {},
         validatedCityPerimeter: projectedValidatedPerimeter(),
       }, state.proj.toXY(state.pin.lat, state.pin.lon));
@@ -873,7 +1011,8 @@
         ).addTo(layerGroups.audit);
       }
     });
-    if (skipped) setStatus(`Audit rings: showing ${shown} of ${shown + skipped} buildings in view — zoom in to audit the rest.`);
+    const summary = document.getElementById('audit-summary');
+    if (summary && skipped) summary.textContent = `Showing ${shown} of ${shown + skipped} buildings in view — zoom in to audit the rest.`;
   }
 
   // ---------------- info panel ----------------
@@ -899,6 +1038,9 @@
       `<span class="sw rv"></span>${counts.review} needs-review, <span class="sw no"></span>${counts.non} non-dwelling</div>`);
     if (settings.showVerifiedOnly && state.buildings.length > 10000) {
       lines.push('<div class="note"><b>Verified-dwellings comparison omitted:</b> this optional second scenario is disabled above 10,000 footprints to keep large-city calculations responsive. The primary techum still uses the complete fetched dataset.</div>');
+    }
+    if (settings.secondAmahCm && settings.secondAmahCm !== settings.amahCm && state.buildings.length > 10000) {
+      lines.push('<div class="note"><b>Comparison-amah line omitted:</b> this optional second full-city scenario is disabled above 10,000 footprints. Change the primary amah and recalculate to evaluate that shita on a large city.</div>');
     }
     if (res.mode === 'city') lines.push(`<div class="stat"><b>Home city cluster:</b> ${homeSize} structures</div>`);
     const smallCount = settings.minSizeFilter
@@ -974,18 +1116,20 @@
   }
 
   function recordConcavityEndpoints(reviewKey) {
-    setStatus('Bow review: click the first endpoint on the map. These points will be recorded for the rav, not applied to the boundary.');
-    map.once('click', (first) => {
-      setStatus('Bow review: click the second endpoint.');
-      map.once('click', (second) => {
-        settings.concavityReviews = { ...(settings.concavityReviews || {}) };
-        settings.concavityReviews[reviewKey] = { endpoints: [
-          state.proj.toXY(first.latlng.lat, first.latlng.lng), state.proj.toXY(second.latlng.lat, second.latlng.lng),
-        ] };
-        S.save(settings); recompute();
-        setStatus('Bow endpoints recorded for rav review. They have NOT changed the calculated boundary.');
-      });
-    });
+    cancelMapMode(false);
+    bowCapture = { reviewKey, points: [] };
+    document.getElementById('btn-cancel-map-mode').hidden = false;
+    document.body.classList.add('map-mode-active');
+    setStatus('Bow review mode: click the first endpoint. Press Escape or Cancel to stop. Points are recorded for the rav and do not alter the boundary.');
+  }
+  function addBowEndpoint(latlng) {
+    bowCapture.points.push(state.proj.toXY(latlng.lat, latlng.lng));
+    if (bowCapture.points.length < 2) { setStatus('Bow review mode: click the second endpoint, or press Escape to cancel.'); return; }
+    const capture = bowCapture;
+    settings.concavityReviews = { ...(settings.concavityReviews || {}) };
+    settings.concavityReviews[capture.reviewKey] = { endpoints: capture.points };
+    cancelMapMode(false); S.save(settings); recompute();
+    setStatus('Bow endpoints recorded for rav review. They have NOT changed the calculated boundary.');
   }
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -1062,7 +1206,7 @@
   // freezes the fetched buildings + pin + settings + overrides so the identical result is
   // reproducible forever (and shareable) without refetching.
   function saveSnapshot() {
-    if (!state.rawBuildings.length) return;
+    if (!state.rawBuildings.length) { setStatus('Calculate a techum before saving a snapshot.'); return; }
     const snap = {
       format: 'techum-snapshot', version: ENGINE_VERSION,
       pin: state.pin, fetchedAt: state.fetchedAt, fetchBBox: state.fetchBBox,
@@ -1128,7 +1272,7 @@
 
   function exportKML() {
     const res = state.result;
-    if (!res) return;
+    if (!res) { setStatus('Calculate a techum before exporting KML.'); return; }
     const toPath = (corners) => corners && cornersToLatLngs(corners).map(([lat, lon]) => ({ lat, lon }));
     let second = null;
     if (settings.secondAmahCm && settings.secondAmahCm !== settings.amahCm) {
@@ -1155,7 +1299,7 @@
 
   function exportGeoJSON() {
     const res = state.result;
-    if (!res) return;
+    if (!res) { setStatus('Calculate a techum before exporting GeoJSON.'); return; }
     if (state.validatedPerimeter) {
       L.polygon(state.validatedPerimeter.map((p) => [p.lat, p.lon]), {
         color: res.validatedPerimeterActive ? '#00ffff' : '#7a7f7d', weight: 3,
@@ -1174,7 +1318,7 @@
 
   function exportKMZ() {
     const res = state.result;
-    if (!res) return;
+    if (!res) { setStatus('Calculate a techum before exporting KMZ.'); return; }
     const toPath = (corners) => corners && cornersToLatLngs(corners).map(([lat, lon]) => ({ lat, lon }));
     const kml = K.buildKML({
       pin: state.pin, techum: toPath(res.techumCorners), city: toPath(res.cityCorners),
@@ -1281,6 +1425,7 @@
       $('amah').value = String(settings.amahCm);
       $('karpef').checked = settings.karpef;
       $('sq-angle').value = settings.squaringAngleDeg;
+      $('point-angle').value = settings.pointRotationDeg;
       $('overlap').checked = settings.overlapMerge;
       $('inc-unknown').checked = settings.includeUnknown;
       $('inc-review').checked = settings.includeReview;
@@ -1302,6 +1447,7 @@
     $('amah').addEventListener('change', (e) => { settings.amahCm = parseFloat(e.target.value); refreshInputs(); onChange(); });
     $('karpef').addEventListener('change', (e) => { settings.karpef = e.target.checked; refreshInputs(); onChange(); });
     $('sq-angle').addEventListener('change', (e) => { settings.squaringAngleDeg = parseFloat(e.target.value) || 0; refreshInputs(); onChange(); });
+    $('point-angle').addEventListener('change', (e) => { settings.pointRotationDeg = parseFloat(e.target.value) || 0; refreshInputs(); onChange(); });
     $('overlap').addEventListener('change', (e) => { settings.overlapMerge = e.target.checked; refreshInputs(); onChange(); });
     $('inc-unknown').addEventListener('change', (e) => { settings.includeUnknown = e.target.checked; onChange(); });
     $('inc-review').addEventListener('change', (e) => { settings.includeReview = e.target.checked; onChange(); });
@@ -1340,6 +1486,7 @@
     document.getElementById('address').addEventListener('blur', () => setTimeout(closeSuggestions, 100));
     document.getElementById('btn-location').addEventListener('click', useMyLocation);
     document.getElementById('btn-calc').addEventListener('click', () => calculate(false));
+    document.getElementById('btn-cancel-calc').addEventListener('click', cancelCalculation);
     document.getElementById('btn-fresh').addEventListener('click', () => calculate(true));
     document.getElementById('btn-kml').addEventListener('click', exportKML);
     document.getElementById('btn-kmz').addEventListener('click', exportKMZ);
@@ -1355,6 +1502,10 @@
       document.getElementById('snapshot-file').click());
     document.getElementById('btn-draw-building').addEventListener('click', startDrawing);
     document.getElementById('btn-finish-building').addEventListener('click', finishDrawing);
+    document.getElementById('btn-cancel-map-mode').addEventListener('click', () => cancelMapMode());
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (drawing || bowCapture)) cancelMapMode(); });
+    let resizeTimer;
+    window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => map.invalidateSize(), 100); });
     document.getElementById('btn-import-buildings').addEventListener('click', () => document.getElementById('building-file').click());
     document.getElementById('building-file').addEventListener('change', (e) => {
       if (e.target.files && e.target.files[0]) importBuildings(e.target.files[0]);
@@ -1375,9 +1526,14 @@
       setStatus('Validated perimeter cleared.');
     });
     document.getElementById('btn-clear-manual').addEventListener('click', () => {
+      if (state.manualBuildings.length && !confirm('Remove all manually drawn and imported footprints?')) return;
       state.manualBuildings = []; prepareBuildings(); recompute(); setStatus('Manual footprints cleared.');
     });
-    document.getElementById('btn-clear-overrides').addEventListener('click', () => { state.overrides.clear(); if (state.rawBuildings.length) recompute(); });
+    document.getElementById('btn-clear-overrides').addEventListener('click', () => {
+      if (!state.overrides.size) { setStatus('There are no manual building overrides to clear.'); return; }
+      if (!confirm(`Clear ${state.overrides.size} manual building override(s)?`)) return;
+      state.overrides.clear(); if (state.rawBuildings.length) recompute(); setStatus('Manual building overrides cleared.');
+    });
     setStatus('Enter an address (or click the map) to set the shevisa point.');
   });
 })();
