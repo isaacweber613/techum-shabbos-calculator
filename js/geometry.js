@@ -396,17 +396,22 @@
     let acted = true;
     while (acted) {
       acted = false;
-      const n = clusters.length;
+      // Only bona-fide cities can participate. Iterating every isolated footprint made
+      // this O(all clusters^3), freezing dense-city pages even though almost all of
+      // those clusters could never satisfy the rule.
+      const candidates = clusters.map((cl, i) => ({ cl, i })).filter(({ cl }) =>
+        cl.qualifiesAsCity == null
+          ? cl.members.length >= settings.minCityHouses
+          : cl.qualifiesAsCity);
+      if (candidates.length < 3) break;
       outer:
-      for (let b = 0; b < n; b++) {
-        for (let a = 0; a < n; a++) {
+      for (const { i: b } of candidates) {
+        for (const { i: a } of candidates) {
           if (a === b) continue;
-          for (let c = a + 1; c < n; c++) {
+          for (const { i: c } of candidates) {
+            if (c <= a) continue;
             if (c === b) continue;
             const A = clusters[a], B = clusters[b], C = clusters[c];
-            if ([A, B, C].some((cl) => cl.qualifiesAsCity == null
-              ? cl.members.length < settings.minCityHouses
-              : !cl.qualifiesAsCity)) continue;
             const dAB = clusterGap(A, B, buildings, techum);
             const dCB = clusterGap(C, B, buildings, techum);
             if (dAB > techum || dCB > techum) continue;
