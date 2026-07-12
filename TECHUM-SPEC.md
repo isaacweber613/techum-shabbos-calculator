@@ -132,9 +132,9 @@ Rules by shape:
   rectangles overlap (even though the houses don't come within 141⅓) is disputed; poskim
   lean strict (Minchas Yitzchak 8:33). Default **off**, flag when it would trigger.
 
-**Computation:** compass-aligned bounding box of the cluster polygon, preceded by a
-concavity-filling pass gated on the 4000-amos endpoint test. In a local UTM/azimuthal CRS,
-axis-aligned ≈ true-north-aligned (apply grid-convergence correction; never magnetic north).
+**Computation:** compass-aligned bounding box of the cluster polygon. Material concavities
+are detected and warned; filling awaits reviewer-designated endpoints. The implemented local
+true-north tangent projection makes its axes cardinal (never magnetic north).
 
 ### 1.6 Karpef — the extra 70⅔ buffer (SA OC 398:5; MB 398:21, 398:36)
 
@@ -356,31 +356,43 @@ overwrite).
   engineering generalization, not a sourced algorithm. A tight, demonstrably *hukaf
   l'dira* enclosure and every disputed bow endpoint remain review flags, not automatic psak.
 
+### Rev. 6 — 2026-07-12 (implementation-status audit; no default changes)
+
+- Part 3 and Part 6 now distinguish **implemented**, **partial**, and **planned** behavior.
+  Earlier future-facing prose overstated automatic footprint snapping, Overture fallback,
+  confidence scoring, bow filling/designation, and PDF export.
+- The implemented engine uses a local true-north tangent/equirectangular projection, not a
+  Python UTM pipeline. Metropolitan-scale projection error still needs a quantified test.
+- Unknown-use inclusion is not called “conservative”: including a structure can enlarge or
+  topologically change the city. The ordinary and verified-dwellings-only outputs are data
+  uncertainty scenarios; neither is a psak or guaranteed inner/outer bound.
+- A rav-facing review checklist was added in `RAV-REVIEW-PACKET.md`. This revision changes
+  documentation only and does not change any profile or halachic default.
+
 ---
 
 ## Part 3 — Product spec
 
 ### 3.0 Scope & users
 
-- **Works for any address, any city, worldwide** — no per-city setup. Data sources
-  (Overture/OSM) and the geometry engine are global; the only thing that varies by place is
-  data quality, which the app measures and surfaces (see confidence indicator below).
+- **Designed for any address, any city, worldwide** — no per-city setup. The implemented
+  source is OSM Overpass; coverage, tags, fetch limits, and local geometry can make a result
+  incomplete. Overture comparison and a computed confidence score are planned.
 - **Two personas, one app:**
   - **Regular person:** types an address, gets the map with the locked defaults (Part 2).
-    No halachic decisions asked of them. A visible data-confidence indicator
-    (green = complete footprints/tags, yellow/red = gaps found) plus the standing
-    "verify with a rav" banner — shown, not buried.
+    No halachic decisions asked of them. The standing “verify with a rav” banner and data
+    warnings are implemented; a computed green/yellow/red confidence indicator is planned.
   - **Rav / mumcheh (advanced mode):** the full config matrix, per-building
-    include/exclude, the flagged-uncertainty queue (borderline 70⅔ joins, unclassified
-    buildings, overlapping-squares warnings), and annotated KML/PDF export for psak.
+    include/exclude, calculation-explanation layers, and warnings. A unified flagged-review
+    queue, manual bow endpoints, and annotated PDF are planned.
 - The app auto-decides everything it can (clear tags, unambiguous joins, geometry); anything
-  uncertain is decided conservatively for the simple view and queued for one-click review in
-  advanced mode — never a silent guess presented as certain.
+  uncertain is shown through two data scenarios and explicit warnings; inclusion is not
+  inherently conservative. A unified one-click review queue is planned.
 
 ### 3.1 User flow
 
-1. Enter address / drop pin → confirm the resolved building on satellite imagery
-   (**never** trust the raw geocode; snap to a footprint).
+1. Enter address / drop pin. **Implemented:** geocode and map placement. **Planned:** snap to
+   the containing/nearest footprint and require explicit imagery confirmation.
 2. Pick shitos (Part 2 matrix, defaults pre-set).
 3. Layers rendered on satellite map, each toggleable and inspectable:
    - **L1** dwellings used (click to include/exclude → instant recompute)
@@ -388,23 +400,23 @@ overwrite).
    - **L3** ribua rectangle (true-north aligned)
    - **L4** techum boundary (rectangle + 2000 amos)
    - **L5** optional machmir/meikil band (e.g. 960 m vs 1,152 m lines)
-4. Export **KML/KMZ** (Google Earth review), GeoJSON, printable PDF. Every export carries
-   the "requires review by a rav/mumcheh" banner and the full config used.
+4. Export **KML and GeoJSON** with config/audit metadata. **Planned:** KMZ and annotated
+   printable PDF. Every export must retain the “requires review by a rav/mumcheh” warning.
 
 ### 3.2 Pipeline
 
 ```
-address ─► geocode ─► snap to building footprint (confirm w/ user)
-        ─► fetch footprints, expanding radius (Overture buildings + OSM Overpass fallback)
+address ─► geocode ─► [planned: snap to footprint + confirmation]
+        ─► fetch OSM footprints with expanding-radius Overpass queries
         ─► classify dwellings (tags + heuristics + manual override)
-        ─► project to local UTM (estimate_utm_crs), all math in meters
+        ─► local true-north tangent/equirectangular projection, all math in meters
         ─► ibur: buffer by (70⅔·amah)/2, union, dissolve → city clusters
         ─► merge passes: two-cities ≤141⅓ (cities only) ; three-villages test
-        ─► concavity pass: fill bows/Ls where endpoint gap < 4000 amos
+        ─► concavity detection + warning [planned: reviewer endpoints and rule application]
         ─► ribua: compass-aligned bounding rectangle (convergence-corrected true north)
         ─► [karpef toggle: inflate rectangle 70⅔]
         ─► techum: expand rectangle 2000·amah on all four sides (square corners)
-        ─► reproject WGS84 ─► render (MapLibre/Leaflet + satellite) ─► KML/GeoJSON/PDF
+        ─► reproject WGS84 ─► render in Leaflet ─► KML/GeoJSON [planned: PDF]
 ```
 
 Modes: **settlement mode** (above), **point mode** (open field: 4000×4000 square, rotatable),
@@ -452,22 +464,22 @@ engineering is easy; the psak configuration is the project.**
 
 ---
 
-## Part 6 — Technical stack (verified)
+## Part 6 — Technical stack (implemented and planned; audited 2026-07-12)
 
-- **Footprints:** **Overture Maps buildings** (monthly GeoParquet releases on S3, DuckDB
-  spatial bbox queries, first-class `subtype=residential`) as primary; **OSM Overpass** as
-  supplement. Microsoft footprints = geometry only. Google Open Buildings does **not**
-  cover US/Israel. Israel OSM ≈ 42% complete → expect heavy manual review there.
+- **Footprints — implemented:** OSM Overpass, expanding fetch, IndexedDB input cache,
+  change checks, and per-building overrides. **Planned:** Overture comparison/fallback and
+  manual footprint drawing/import. Microsoft/Open Buildings remain research candidates,
+  not runtime sources.
 - **Dwelling tags:** most OSM buildings are bare `building=yes`; Overture inherits the gap.
   US parcel land-use data would solve it but national licensing ≈ $80k/yr (Regrid);
   per-county assessor portals are free but inconsistent. → tags where present + manual
   review; zoning ≠ use.
-- **Geometry:** Python backend — Shapely/GeoPandas/pyproj (`estimate_utm_crs`,
-  buffer-union-dissolve, axis-aligned envelope). Frontend MapLibre GL JS or Leaflet +
-  satellite tiles; `geojson-to-kml` for export. (Doing polygon algebra in raw lat/lon à la
-  szntech is not robust — project first.)
-- **Geocoding:** Google Places (rooftop) or Mapbox/OpenCage; Nominatim as free fallback.
-  Geocode locates the area only; the pipeline snaps to footprints.
+- **Geometry — implemented:** dependency-free JavaScript engine using a local true-north
+  tangent/equirectangular metric projection; Leaflet rendering; KML/GeoJSON export. The
+  engine does not perform polygon algebra directly in longitude/latitude. Quantified
+  projection-error tests over large metros remain planned.
+- **Geocoding — implemented:** Nominatim. It locates the search point; automatic footprint
+  snapping and mandatory visual confirmation are planned.
 
 ---
 
@@ -478,7 +490,7 @@ see README.md). Implements: geocode → OSM footprint fetch with auto-expansion 
 classification (auditable tag table) → 70⅔ ibur clustering → 141⅓ city merge (6-house
 minimum) → three-villages rule (flagged) → compass/natural-edge ribua → karpef toggle →
 2000-amos square-cornered techum → psak profiles → per-building overrides → comparison
-shita line → KML/GeoJSON export. 22 golden geometry tests pass (Gemara's canonical
+shita line → KML/GeoJSON export. The golden geometry suite covers the canonical
 shapes). Live-verified on New Square, NY (real OSM data, both amah shitos, city-mode
 detection, overlap + ir-mubla'as warnings).
 

@@ -50,6 +50,40 @@
     return { klass: 'unknown', reason: 'building=' + b + ' (use untagged in OSM)' };
   }
 
+  // Describes how much of the fetched footprint set can be classified from OSM tags.
+  // This is deliberately NOT called map completeness: Overpass cannot reveal buildings
+  // that have never been mapped. Consumers must retain the caveat in `limitations`.
+  function computeDataConfidence(buildings) {
+    const counts = { dwelling: 0, non: 0, review: 0, unknown: 0, invalidGeometry: 0 };
+    const list = Array.isArray(buildings) ? buildings : [];
+    for (const building of list) {
+      const klass = building && building.klass
+        ? building.klass
+        : classify(building && building.tags).klass;
+      if (Object.prototype.hasOwnProperty.call(counts, klass)) counts[klass]++;
+      else counts.unknown++;
+      const ring = building && (building.ringLatLon || building.ring);
+      if (!Array.isArray(ring) || ring.length < 3) counts.invalidGeometry++;
+    }
+    const total = list.length;
+    const tagged = counts.dwelling + counts.non + counts.review;
+    const decided = counts.dwelling + counts.non;
+    const taggedRate = total ? tagged / total : 0;
+    const decidedRate = total ? decided / total : 0;
+    const needsReview = counts.review + counts.unknown + counts.invalidGeometry;
+    // Grade only tag auditability, never geographic completeness.
+    const grade = total === 0 ? 'none'
+      : counts.invalidGeometry > 0 || decidedRate < 0.5 ? 'low'
+      : decidedRate < 0.8 || counts.review > 0 ? 'medium' : 'high';
+    return {
+      total, counts, taggedRate, decidedRate, needsReview, grade,
+      limitations: [
+        'Measures classification of fetched OSM footprints, not whether every real building is mapped.',
+        'OSM tags do not establish halachic beis-dirah status; ambiguous and untagged footprints require review.',
+      ],
+    };
+  }
+
   // ---------- Nominatim geocoding ----------
   async function geocode(query, bias) {
     // Production goes through the Worker so requests are identified, globally throttled,
@@ -170,6 +204,128 @@ out geom;`;
     return buildings;
   }
 
+  // ---------- Optional Overture comparison input ----------
+  // OSM remains the calculator's authoritative input. Overture's official distribution
+  // is bulk GeoParquet rather than a browser-ready bbox API, so this parser accepts an
+  // explicitly downloaded GeoJSON extract for an auditable second-source comparison.
+  // Overture properties are deliberately NOT translated into dwelling status: a second
+  // map source cannot resolve the halachic beis-dirah question.
+  function parseOvertureGeoJSON(geojson) {
+    const features = geojson && geojson.type === 'FeatureCollection'
+      ? geojson.features : geojson && geojson.type === 'Feature' ? [geojson] : [];
+    const buildings = [];
+    for (const feature of features || []) {
+      const geometry = feature && feature.geometry;
+      if (!geometry || !['Polygon', 'MultiPolygon'].includes(geometry.type)) continue;
+      const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+      let part = 0;
+      for (const polygon of polygons || []) {
+        const outer = polygon && polygon[0];
+        if (!Array.isArray(outer) || outer.length < 4) continue;
+        const ringLatLon = outer.map((point) => ({ lat: Number(point[1]), lon: Number(point[0]) }))
+          .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+        if (ringLatLon.length < 4) continue;
+        const rawId = feature.id || (feature.properties && feature.properties.id) || `anonymous-${buildings.length}`;
+        buildings.push({
+          id: `ovt:${rawId}${polygons.length > 1 ? ':' + part : ''}`,
+          source: 'overture',
+          sourceId: String(rawId),
+          sourceProperties: feature.properties || {},
+          tags: {},
+          klass: 'unknown',
+          classificationReason: 'Overture comparison footprint; dwelling status not inferred',
+          ringLatLon,
+        });
+        part++;
+      }
+    }
+    return buildings;
+  }
+
+  function ringBBox(ring) {
+    const box = { west: Infinity, south: Infinity, east: -Infinity, north: -Infinity };
+    for (const point of ring || []) {
+      box.west = Math.min(box.west, point.lon); box.east = Math.max(box.east, point.lon);
+      box.south = Math.min(box.south, point.lat); box.north = Math.max(box.north, point.lat);
+    }
+    return box;
+  }
+
+  function boxesIntersect(a, b) {
+    return a.west <= b.east && a.east >= b.west && a.south <= b.north && a.north >= b.south;
+  }
+
+  function orient(a, b, c) {
+    return (b.lon - a.lon) * (c.lat - a.lat) - (b.lat - a.lat) * (c.lon - a.lon);
+  }
+
+  function segmentsIntersect(a, b, c, d) {
+    const e = 1e-12;
+    const o1 = orient(a, b, c), o2 = orient(a, b, d), o3 = orient(c, d, a), o4 = orient(c, d, b);
+    const onSegment = (p, q, r) => Math.abs(orient(p, q, r)) <= e &&
+      r.lon >= Math.min(p.lon, q.lon) - e && r.lon <= Math.max(p.lon, q.lon) + e &&
+      r.lat >= Math.min(p.lat, q.lat) - e && r.lat <= Math.max(p.lat, q.lat) + e;
+    if (onSegment(a, b, c) || onSegment(a, b, d) || onSegment(c, d, a) || onSegment(c, d, b)) return true;
+    return ((o1 > e && o2 < -e) || (o1 < -e && o2 > e)) &&
+      ((o3 > e && o4 < -e) || (o3 < -e && o4 > e));
+  }
+
+  function pointInRing(point, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[i], b = ring[j];
+      if (((a.lat > point.lat) !== (b.lat > point.lat)) &&
+          point.lon < (b.lon - a.lon) * (point.lat - a.lat) / (b.lat - a.lat) + a.lon) inside = !inside;
+    }
+    return inside;
+  }
+
+  function ringsIntersect(a, b) {
+    if (!a.length || !b.length || !boxesIntersect(ringBBox(a), ringBBox(b))) return false;
+    if (pointInRing(a[0], b) || pointInRing(b[0], a)) return true;
+    for (let i = 0; i < a.length; i++) {
+      const a2 = a[(i + 1) % a.length];
+      for (let j = 0; j < b.length; j++) {
+        if (segmentsIntersect(a[i], a2, b[j], b[(j + 1) % b.length])) return true;
+      }
+    }
+    return false;
+  }
+
+  // Returns review candidates, never buildings to silently add to the halachic engine.
+  // "Unmatched" means polygon non-intersection, not proof that OSM is missing a building:
+  // datasets can differ in capture date, geometry, subdivision, and demolition status.
+  function compareBuildingSources(osmBuildings, overtureBuildings) {
+    const osm = (osmBuildings || []).filter((b) => Array.isArray(b.ringLatLon) && b.ringLatLon.length >= 3);
+    const overture = (overtureBuildings || []).filter((b) => Array.isArray(b.ringLatLon) && b.ringLatLon.length >= 3);
+    const osmBoxes = osm.map((building) => ringBBox(building.ringLatLon));
+    const unmatchedOverture = [];
+    let matchedOverture = 0;
+    for (const candidate of overture) {
+      const candidateBox = ringBBox(candidate.ringLatLon);
+      let match = false;
+      for (let i = 0; i < osm.length; i++) {
+        if (boxesIntersect(candidateBox, osmBoxes[i]) && ringsIntersect(candidate.ringLatLon, osm[i].ringLatLon)) {
+          match = true; break;
+        }
+      }
+      if (match) matchedOverture++;
+      else unmatchedOverture.push(candidate);
+    }
+    return {
+      source: 'Overture Maps comparison extract',
+      osmCount: osm.length,
+      overtureCount: overture.length,
+      matchedOverture,
+      unmatchedOverture,
+      limitations: [
+        'An unmatched footprint is a review candidate, not proof that OSM is missing a current building.',
+        'Differences can result from capture dates, geometry, building subdivision, construction, or demolition.',
+        'No Overture footprint is included in the halachic calculation until a reviewer confirms it.',
+      ],
+    };
+  }
+
   // ---------- Local cache of Overpass responses (IndexedDB) ----------
   // The fetch is the slow, settings-INDEPENDENT part — the same buildings serve every
   // shita, so we cache raw data per area and always recompute boundaries (cheap, pure).
@@ -261,8 +417,10 @@ out count;`;
     throw lastErr;
   }
 
-  root.TechumData = { classify, geocode, autocomplete, fetchBuildings, fetchBuildingsCached,
+  root.TechumData = { classify, computeDataConfidence, geocode, autocomplete, fetchBuildings, fetchBuildingsCached,
     countChangedBuildings, markCheckedCurrent,
     _tables: { DWELLING_TAGS, NON_DWELLING_TAGS, REVIEW_TAGS },
-    _internals: { parseOverpass, bboxKey, photonLabel } };
+    parseOvertureGeoJSON, compareBuildingSources,
+    _internals: { parseOverpass, parseOvertureGeoJSON, compareBuildingSources,
+      ringsIntersect, bboxKey, photonLabel } };
 })(typeof self !== 'undefined' ? self : this);

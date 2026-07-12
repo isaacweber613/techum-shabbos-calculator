@@ -1,3 +1,5 @@
+import { sha256Hex, validateRegistrySubmission } from './registry';
+
 interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
@@ -7,6 +9,17 @@ interface Env {
   REQUIRE_ACCESS: string;
   RAW_RETENTION_DAYS: string;
   GEOCODER_CONTACT: string;
+  REGISTRY_WRITES?: string;
+}
+
+function accessEmail(request: Request): string | null {
+  if (!request.headers.get('Cf-Access-Jwt-Assertion')) return null;
+  return request.headers.get('Cf-Access-Authenticated-User-Email')?.trim().toLowerCase() || null;
+}
+
+function requireRegistryAdmin(request: Request, env: Env): string | null {
+  if (env.REGISTRY_WRITES !== 'true') return null;
+  return accessEmail(request);
 }
 
 type EventType = 'visit' | 'search' | 'calc' | 'export' | 'snapshot';
@@ -284,12 +297,82 @@ async function autocomplete(request: Request, env: Env): Promise<Response> {
   return new Response(text, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } });
 }
 
+type RegistryRow = { id: string; slug: string; revision: number; city_label: string; snapshot_json?: string;
+  snapshot_sha256: string; reviewer_name: string; reviewed_at: string; review_decision: string;
+  review_conditions: string | null; source_notes: string; created_at: number };
+
+function publicRegistryEntry(row: RegistryRow, includeSnapshot = false) {
+  return { id: row.id, slug: row.slug, revision: row.revision, cityLabel: row.city_label,
+    snapshotSha256: row.snapshot_sha256, review: { reviewerName: row.reviewer_name,
+      reviewedAt: row.reviewed_at, decision: row.review_decision, conditions: row.review_conditions,
+      sourceNotes: row.source_notes }, publishedAt: row.created_at,
+    ...(includeSnapshot && row.snapshot_json ? { snapshot: JSON.parse(row.snapshot_json) as unknown } : {}) };
+}
+
+async function listRegistry(env: Env): Promise<Response> {
+  const rows = await env.DB.prepare(`SELECT id, slug, revision, city_label, snapshot_sha256,
+    reviewer_name, reviewed_at, review_decision, review_conditions, source_notes, created_at
+    FROM reviewed_snapshots WHERE status = 'published' ORDER BY city_label, revision DESC`).all<RegistryRow>();
+  const seen = new Set<string>();
+  return json({ entries: rows.results.filter((row) => !seen.has(row.slug) && Boolean(seen.add(row.slug))).map((row) => publicRegistryEntry(row)) },
+    200, { 'Cache-Control': 'public, max-age=300' });
+}
+
+async function getRegistry(slug: string, env: Env): Promise<Response> {
+  const row = await env.DB.prepare(`SELECT id, slug, revision, city_label, snapshot_json, snapshot_sha256,
+    reviewer_name, reviewed_at, review_decision, review_conditions, source_notes, created_at
+    FROM reviewed_snapshots WHERE slug = ?1 AND status = 'published' ORDER BY revision DESC LIMIT 1`)
+    .bind(slug).first<RegistryRow>();
+  return row ? json(publicRegistryEntry(row, true), 200, { 'Cache-Control': 'public, max-age=300' }) : json({ error: 'not found' }, 404);
+}
+
+async function publishRegistry(request: Request, env: Env): Promise<Response> {
+  const email = requireRegistryAdmin(request, env);
+  if (!email) return json({ error: env.REGISTRY_WRITES === 'true' ? 'Cloudflare Access authentication required' : 'registry writes are disabled' }, env.REGISTRY_WRITES === 'true' ? 403 : 503);
+  let raw: unknown;
+  try { raw = await request.json(); } catch { return json({ error: 'invalid JSON' }, 400); }
+  const checked = validateRegistrySubmission(raw);
+  if (!checked.ok) return json({ error: checked.error }, 400);
+  const { value, snapshotJson } = checked;
+  const hash = await sha256Hex(snapshotJson);
+  const id = crypto.randomUUID();
+  const now = Date.now();
+  await env.DB.prepare(`INSERT INTO reviewed_snapshots (id, slug, revision, city_label, snapshot_json,
+    snapshot_sha256, reviewer_name, reviewed_at, review_decision, review_conditions, source_notes,
+    status, created_at, created_by) SELECT ?1, ?2, COALESCE(MAX(revision), 0) + 1, ?3, ?4, ?5,
+    ?6, ?7, ?8, ?9, ?10, 'published', ?11, ?12 FROM reviewed_snapshots WHERE slug = ?2`)
+    .bind(id, value.slug, value.cityLabel, snapshotJson, hash, value.review.reviewerName,
+      value.review.reviewedAt, value.review.decision, value.review.conditions || null, value.review.sourceNotes, now, email).run();
+  const created = await env.DB.prepare('SELECT revision FROM reviewed_snapshots WHERE id = ?1').bind(id).first<{ revision: number }>();
+  return json({ id, slug: value.slug, revision: created?.revision, snapshotSha256: hash }, 201);
+}
+
+async function withdrawRegistry(request: Request, id: string, env: Env): Promise<Response> {
+  const email = requireRegistryAdmin(request, env);
+  if (!email) return json({ error: env.REGISTRY_WRITES === 'true' ? 'Cloudflare Access authentication required' : 'registry writes are disabled' }, env.REGISTRY_WRITES === 'true' ? 403 : 503);
+  let raw: unknown;
+  try { raw = await request.json(); } catch { return json({ error: 'invalid JSON' }, 400); }
+  const reason = raw && typeof raw === 'object' && !Array.isArray(raw) && typeof (raw as Record<string, unknown>).reason === 'string'
+    ? ((raw as Record<string, unknown>).reason as string).trim() : '';
+  if (!reason || reason.length > 1000) return json({ error: 'withdrawal reason required' }, 400);
+  const result = await env.DB.prepare(`UPDATE reviewed_snapshots SET status = 'withdrawn', withdrawn_at = ?1,
+    withdrawn_by = ?2, withdrawal_reason = ?3 WHERE id = ?4 AND status = 'published'`)
+    .bind(Date.now(), email, reason, id).run();
+  return result.meta.changes ? new Response(null, { status: 204 }) : json({ error: 'not found' }, 404);
+}
+
 async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === '/api/event' && request.method === 'POST') return recordEvent(request, env);
   if (url.pathname === '/api/analytics' && request.method === 'GET') return analytics(request, env);
   if (url.pathname === '/api/geocode' && request.method === 'GET') return geocode(request, env);
   if (url.pathname === '/api/autocomplete' && request.method === 'GET') return autocomplete(request, env);
+  if (url.pathname === '/api/registry' && request.method === 'GET') return listRegistry(env);
+  if (url.pathname === '/api/registry' && request.method === 'POST') return publishRegistry(request, env);
+  const registryMatch = url.pathname.match(/^\/api\/registry\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
+  if (registryMatch && request.method === 'GET') return getRegistry(registryMatch[1], env);
+  const withdrawalMatch = url.pathname.match(/^\/api\/registry\/([a-z0-9-]+)\/withdraw$/);
+  if (withdrawalMatch && request.method === 'POST') return withdrawRegistry(request, withdrawalMatch[1], env);
   if (url.pathname.startsWith('/api/')) return json({ error: 'not found' }, 404);
   return env.ASSETS.fetch(request);
 }

@@ -239,5 +239,84 @@ function rectSpan(corners) {
     home.members.length === A.length + B.length, `members=${home.members.length}`);
 }
 
+// 13. Reviewer city qualification overrides -----------------------------------
+{
+  // Two one-house settlements are too small for the six-footprint approximation,
+  // but a reviewer may attest that each represents a qualifying city/courtyard.
+  const houses = [squareHouse(0, 0), squareHouse(55, 0)]; // gap 45m: > JOIN, < T2
+  const ordinary = G.runPipeline(houses, S, { x: 0, y: 0 });
+  assert('qualification audit exposes default count decision',
+    ordinary.clusters.length === 2 && ordinary.clusters.every((c) =>
+      c.qualifiesAsCity === false && c.qualificationSource === 'footprint-count'));
+  const reviewed = G.runPipeline(houses, {
+    ...S,
+    cityQualificationOverrides: Object.fromEntries(ordinary.reviewClusters.map((c) => [c.key, true])),
+  }, { x: 0, y: 0 });
+  assert('reviewer-qualified small settlements participate in 141-amah merge',
+    reviewed.clusters.length === 1, `clusters=${reviewed.clusters.length}`);
+  assert('merged audit preserves source cluster keys',
+    ordinary.reviewClusters.every((c) => reviewed.clusters[0].componentKeys.includes(c.key)));
+}
+
+{
+  const houses = grid6(0, 0).concat(grid6(100, 0)); // distinct chains, gap < T2
+  const baseline = G.runPipeline(houses, S, { x: 0, y: 0 });
+  const blocked = G.runPipeline(houses, {
+    ...S,
+    cityQualificationOverrides: { [baseline.reviewClusters[0].key]: false },
+  }, { x: 0, y: 0 });
+  assert('reviewer disqualification prevents count-based city merge',
+    blocked.clusters.length === 2 && blocked.clusters.some((c) =>
+      c.qualificationSource === 'reviewer' && c.qualifiesAsCity === false));
+}
+
+{
+  const houses = [squareHouse(0, 0), squareHouse(15, 0), squareHouse(30, 0), squareHouse(45, 0)];
+  houses.forEach((h, i) => { h.id = `way/${100 + i}`; });
+  const initial = G.runPipeline(houses, S, { x: 0, y: 0 });
+  const reviewedKey = initial.reviewClusters[0].key;
+  const record = { decision: false, memberIds: initial.reviewClusters[0].memberIds };
+  const added = squareHouse(60, 0); added.id = 'way/104';
+  const refreshed = G.runPipeline([added, houses[2], houses[0], houses[3], houses[1]], {
+    ...S, cityQualificationOverrides: { [reviewedKey]: record },
+  }, { x: 0, y: 0 });
+  assert('review decision remaps across OSM ordering and a small membership change',
+    refreshed.reviewClusters[0].qualifiesAsCity === false &&
+    refreshed.reviewClusters[0].qualificationSource === 'reviewer-remapped' &&
+    refreshed.reviewClusters[0].qualificationRemapScore >= 0.8);
+}
+
+// 14. Bow endpoints are review metadata only ----------------------------------
+{
+  const cluster = { members: [], bbox: { minX: 0, maxX: 2500, minY: 0, maxY: 2500 } };
+  const endpointSettings = {
+    ...S,
+    concavityReviews: { 'concavity:0': { endpoints: [{ x: 10, y: 20 }, { x: 30, y: 40 }] } },
+  };
+  const warnings = G._internals.concavityWarnings(cluster, [], endpointSettings);
+  assert('large concavity exposes reviewer endpoint record',
+    warnings.length === 1 && warnings[0].reviewerEndpoints.length === 2 &&
+      warnings[0].reviewStatus === 'endpoints-recorded-not-applied');
+  const invalid = G._internals.concavityWarnings(cluster, [], {
+    ...S, concavityReviews: { 'concavity:0': { endpoints: [{ x: 10, y: 20 }] } },
+  });
+  assert('invalid bow endpoint record remains unapplied and needs review',
+    invalid[0].reviewerEndpoints === null && invalid[0].reviewStatus === 'needs-endpoints');
+}
+
+{
+  const perimeter = [
+    { x: -100, y: -80 }, { x: 100, y: -80 }, { x: 100, y: 80 }, { x: -100, y: 80 },
+  ];
+  const res = G.runPipeline([], { ...S, validatedCityPerimeter: perimeter }, { x: 0, y: 0 });
+  const span = rectSpan(res.cityCorners);
+  assert('explicit validated perimeter supplies city edge without inferred buildings',
+    res.mode === 'city' && res.validatedPerimeterActive && Math.abs(span.w - 200) < 0.01 &&
+    res.warnings.some((w) => w.type === 'validated-perimeter'));
+  const outside = G.runPipeline([], { ...S, validatedCityPerimeter: perimeter }, { x: 500, y: 0 });
+  assert('validated perimeter is inactive when the shevisa point is outside it',
+    outside.mode === 'point' && !outside.validatedPerimeterActive);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

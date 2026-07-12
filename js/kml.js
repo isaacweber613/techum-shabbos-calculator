@@ -11,12 +11,17 @@
     return latLonPath.map((p) => `${p.lon},${p.lat},0`).join(' ');
   }
   function polygonPlacemark(name, latLonPath, styleId) {
+    if (!Array.isArray(latLonPath) || latLonPath.length < 3) return '';
     const closed = latLonPath.concat([latLonPath[0]]);
     return `  <Placemark>
     <name>${esc(name)}</name>
     <styleUrl>#${styleId}</styleUrl>
     <Polygon><outerBoundaryIs><LinearRing><coordinates>${coordString(closed)}</coordinates></LinearRing></outerBoundaryIs></Polygon>
   </Placemark>`;
+  }
+  function linePlacemark(name, latLonPath, styleId, description) {
+    if (!Array.isArray(latLonPath) || latLonPath.length < 2) return '';
+    return `  <Placemark>\n    <name>${esc(name)}</name>${description ? `\n    <description>${esc(description)}</description>` : ''}\n    <styleUrl>#${styleId}</styleUrl>\n    <LineString><tessellate>1</tessellate><coordinates>${coordString(latLonPath)}</coordinates></LineString>\n  </Placemark>`;
   }
   function style(id, lineColorAabbggrr, width, fillColorAabbggrr) {
     return `  <Style id="${id}">
@@ -37,6 +42,9 @@
     parts.push(style('city', 'ffff8800', 2, '1aff8800'));
     parts.push(style('karpef', 'ffaaaa00', 2, '00ffffff'));
     parts.push(style('second', 'ffff00aa', 2, '00ffffff'));
+    parts.push(style('building', 'ff777777', 1, '08777777'));
+    parts.push(style('chain', 'ff00a5ff', 2, '00ffffff'));
+    parts.push(style('threshold', 'ff00ffff', 2, '00ffffff'));
     if (layers.pin) {
       parts.push(`  <Placemark><name>Shevisa point</name><Point><coordinates>${layers.pin.lon},${layers.pin.lat},0</coordinates></Point></Placemark>`);
     }
@@ -44,8 +52,71 @@
     if (layers.karpef) parts.push(polygonPlacemark('Karpef (+70⅔ amos)', layers.karpef, 'karpef'));
     if (layers.techum) parts.push(polygonPlacemark('TECHUM boundary (2000 amos)', layers.techum, 'techum'));
     if (layers.second) parts.push(polygonPlacemark('Comparison shita techum', layers.second, 'second'));
+    for (const [i, path] of (layers.buildings || []).entries())
+      parts.push(polygonPlacemark(`Mapped building ${i + 1}`, path, 'building'));
+    for (const [i, path] of (layers.settlements || []).entries())
+      parts.push(polygonPlacemark(`Derived settlement ${i + 1}`, path, 'city'));
+    for (const [i, item] of (layers.auditLines || []).entries()) {
+      const path = item.path || item;
+      parts.push(linePlacemark(item.name || `Audit measurement ${i + 1}`, path,
+        item.kind === 'threshold' ? 'threshold' : 'chain', item.description));
+    }
     parts.push('</Document></kml>');
     return parts.join('\n');
+  }
+
+  function buildGeoJSON(layers, metadata) {
+    const features = [];
+    const polygon = (path, properties) => {
+      if (!Array.isArray(path) || path.length < 3) return;
+      const coordinates = path.map((p) => [p.lon, p.lat]);
+      coordinates.push(coordinates[0]);
+      features.push({ type: 'Feature', properties, geometry: { type: 'Polygon', coordinates: [coordinates] } });
+    };
+    const line = (path, properties) => {
+      if (!Array.isArray(path) || path.length < 2) return;
+      features.push({ type: 'Feature', properties, geometry: { type: 'LineString', coordinates: path.map((p) => [p.lon, p.lat]) } });
+    };
+    if (layers.pin) features.push({
+      type: 'Feature', properties: { layer: 'shevisa-point' },
+      geometry: { type: 'Point', coordinates: [layers.pin.lon, layers.pin.lat] },
+    });
+    polygon(layers.techum, { layer: 'techum', draft: true });
+    polygon(layers.city, { layer: 'city-ribua' });
+    polygon(layers.karpef, { layer: 'karpef' });
+    polygon(layers.second, { layer: 'comparison-techum' });
+    (layers.buildings || []).forEach((path, i) => polygon(path, { layer: 'mapped-building', index: i + 1 }));
+    (layers.settlements || []).forEach((path, i) => polygon(path, { layer: 'derived-settlement', index: i + 1 }));
+    (layers.auditLines || []).forEach((item, i) => line(item.path || item, {
+      layer: 'audit-measurement', index: i + 1, name: item.name || `Audit measurement ${i + 1}`,
+      kind: item.kind || 'chain', description: item.description || '',
+    }));
+    return {
+      type: 'FeatureCollection',
+      properties: Object.assign({ draft: true, disclaimer: 'Decision-support only; requires review by a rav/mumcheh.' }, metadata || {}),
+      features,
+    };
+  }
+
+  function parseGeoJSONFootprints(value) {
+    const polygons = [];
+    const visit = (geometry) => {
+      if (!geometry) return;
+      const sets = geometry.type === 'Polygon' ? [geometry.coordinates]
+        : geometry.type === 'MultiPolygon' ? geometry.coordinates : [];
+      for (const polygon of sets) {
+        const ring = polygon && polygon[0]; // holes do not describe additional buildings
+        if (!Array.isArray(ring) || ring.length < 3) continue;
+        const points = ring.map((c) => ({ lat: Number(c[1]), lon: Number(c[0]) }));
+        if (!points.every((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180)) continue;
+        if (points.length > 3 && points[0].lat === points.at(-1).lat && points[0].lon === points.at(-1).lon) points.pop();
+        if (points.length >= 3) polygons.push(points);
+      }
+    };
+    if (value && value.type === 'FeatureCollection') (value.features || []).forEach((f) => visit(f.geometry));
+    else if (value && value.type === 'Feature') visit(value.geometry);
+    else visit(value);
+    return polygons;
   }
 
   function download(filename, text, mime) {
@@ -57,5 +128,38 @@
     URL.revokeObjectURL(a.href);
   }
 
-  root.TechumKML = { buildKML, download };
+  // KMZ is a ZIP containing a doc.kml file.  This deliberately uses the simple
+  // "stored" ZIP method so export remains dependency-free and works offline.
+  function crc32(bytes) {
+    let crc = 0xffffffff;
+    for (const byte of bytes) {
+      crc ^= byte;
+      for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+  function buildKMZ(kmlText) {
+    const encoder = new TextEncoder();
+    const name = encoder.encode('doc.kml');
+    const data = encoder.encode(kmlText);
+    const crc = crc32(data);
+    const size = 30 + name.length + data.length + 46 + name.length + 22;
+    const out = new Uint8Array(size);
+    const view = new DataView(out.buffer);
+    let p = 0;
+    const u16 = (n) => { view.setUint16(p, n, true); p += 2; };
+    const u32 = (n) => { view.setUint32(p, n, true); p += 4; };
+    u32(0x04034b50); u16(20); u16(0); u16(0); u16(0); u16(0);
+    u32(crc); u32(data.length); u32(data.length); u16(name.length); u16(0);
+    out.set(name, p); p += name.length; out.set(data, p); p += data.length;
+    const centralOffset = p;
+    u32(0x02014b50); u16(20); u16(20); u16(0); u16(0); u16(0); u16(0);
+    u32(crc); u32(data.length); u32(data.length); u16(name.length); u16(0); u16(0);
+    u16(0); u16(0); u32(0); u32(0); out.set(name, p); p += name.length;
+    const centralSize = p - centralOffset;
+    u32(0x06054b50); u16(0); u16(0); u16(1); u16(1); u32(centralSize); u32(centralOffset); u16(0);
+    return out;
+  }
+
+  root.TechumKML = { buildKML, buildGeoJSON, buildKMZ, parseGeoJSONFootprints, download, _internals: { esc, coordString, crc32 } };
 })(typeof self !== 'undefined' ? self : this);

@@ -9,38 +9,91 @@
   const ENGINE_VERSION = '1.1.0 (2026-07-10)';
 
   let settings = S.load();
-  let map, pinMarker;
+  let map, pinMarker, buildingRenderer;
   let state = {
     pin: null,            // {lat, lon}
     proj: null,
     rawBuildings: [],     // from Overpass: {id, tags, ringLatLon}
+    manualBuildings: [],  // reviewer-drawn/imported corrections, never presented as OSM data
     buildings: [],        // projected + classified: {id, tags, ring, bbox, klass, included, override}
     overrides: new Map(), // id -> 'include' | 'exclude'
     result: null,
     fetchBBox: null,      // {south, west, north, east}
     dataCapHit: false,
+    snapInfo: null,
+    overtureReport: null,
+    validatedPerimeter: null,
   };
   const layerGroups = {
-    buildings: null, rects: null, second: null, audit: null,
+    buildings: null, rects: null, second: null, settlements: null, audit: null, overture: null, perimeter: null,
   };
   const auditCache = new Map(); // building id + join dist -> buffer loops (pure geometry)
+  let drawing = null;
   function track(type, data) { if (window.TechumTrack) window.TechumTrack.send(type, data); }
+
+  const SETTING_HELP = {
+    profile: 'Choose a ready-made set of commonly used halachic defaults.',
+    amah: 'Sets the length of an amah. This changes distances and can change which buildings connect.',
+    karpef: 'Adds 70⅔ amos around a single city before measuring the 2,000-amah techum.',
+    'sq-angle': 'Rotates the city square to follow a natural straight edge. Zero keeps compass alignment.',
+    overlap: 'Controls whether overlapping squared city areas are treated as one city.',
+    'min-city': 'Minimum house footprints needed before separate groups can merge as cities.',
+    'inc-unknown': 'Includes buildings whose OpenStreetMap use is not identified.',
+    'inc-review': 'Includes hotels, schools, shuls and similar places that need individual review.',
+    'min-size': 'Leaves out structures smaller than four by four amos.',
+    'fetch-radius': 'How far from the pin the first building-data search reaches.',
+    'max-buildings': 'Safety limit for the number of building footprints downloaded.',
+    'layer-buildings': 'Shows the building footprints used by the calculation.',
+    'layer-city': 'Shows the squared city boundary from which the techum is measured.',
+    'layer-karpef': 'Shows the additional karpef area around the city.',
+    'layer-techum': 'Shows the final 2,000-amah techum boundary.',
+    'verified-only': 'Adds a comparison using only clearly identified dwellings.',
+    'second-amah': 'Adds another techum line using a different amah length.',
+    'show-12mil': 'Shows the larger twelve-mil boundary used by one Torah-law opinion.',
+    'audit-rings': 'Shows exactly how nearby buildings connect into settlements and the home city.',
+  };
+
+  function addSettingHelp() {
+    Object.entries(SETTING_HELP).forEach(([id, explanation]) => {
+      const input = document.getElementById(id);
+      const label = input && input.closest('label');
+      if (!label) return;
+      const help = document.createElement('button');
+      help.type = 'button';
+      help.className = 'setting-help';
+      help.textContent = '?';
+      help.setAttribute('aria-label', 'About this setting');
+      help.dataset.tip = explanation;
+      help.addEventListener('click', (e) => e.preventDefault());
+      label.appendChild(help);
+    });
+  }
 
   // ---------------- map ----------------
   function initMap() {
     map = L.map('map', { zoomControl: true }).setView([41.1, -74.05], 13);
+    // Thousands of footprint paths are substantially cheaper on one canvas than as
+    // thousands of live SVG nodes; boundary lines remain SVG for crisp interaction.
+    buildingRenderer = L.canvas({ padding: 0.35 });
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 20, maxNativeZoom: 19,
+      crossOrigin: true,
       attribution: 'Imagery © Esri | Map data © OpenStreetMap contributors',
     }).addTo(map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
-      maxZoom: 20, opacity: 0.9, attribution: '© CARTO',
+      maxZoom: 20, opacity: 0.9, crossOrigin: true, attribution: '© CARTO',
     }).addTo(map);
     layerGroups.buildings = L.layerGroup().addTo(map);
     layerGroups.rects = L.layerGroup().addTo(map);
     layerGroups.second = L.layerGroup().addTo(map);
+    layerGroups.settlements = L.layerGroup().addTo(map);
     layerGroups.audit = L.layerGroup().addTo(map);
-    map.on('click', (e) => { if (!pinMarker) setPin(e.latlng.lat, e.latlng.lng); });
+    layerGroups.overture = L.layerGroup().addTo(map);
+    layerGroups.perimeter = L.layerGroup().addTo(map);
+    map.on('click', (e) => {
+      if (drawing) { addDrawingVertex(e.latlng); return; }
+      if (!pinMarker) setPin(e.latlng.lat, e.latlng.lng);
+    });
     // audit rings are viewport-limited — refresh them as the reviewer pans/zooms
     map.on('moveend', () => { if (settings.showAuditRings && state.result) renderAuditRings(); });
   }
@@ -186,6 +239,9 @@
 
   async function calculate(forceFresh) {
     if (!state.pin) return;
+    if (document.getElementById('btn-calc').getAttribute('aria-busy') === 'true') return;
+    setCalculationStage('fetch', forceFresh ? 'Refreshing map buildings…' : 'Getting nearby map buildings…');
+    await nextPaint();
     const calcStarted = Date.now();
     state.dataCapHit = false;
     state.fromCache = false;
@@ -193,16 +249,23 @@
     let bbox = bboxAround(state.pin, settings.fetchRadiusM);
     let iteration = 0;
     while (true) {
-      setStatus(`Fetching buildings (pass ${iteration + 1})…`);
+      setCalculationStage('fetch', `Getting map buildings${iteration ? ` (area pass ${iteration + 1})` : ''}…`);
+      await nextPaint();
       try {
         const r = await D.fetchBuildingsCached(bbox, { force: !!forceFresh });
         state.rawBuildings = r.buildings;
         state.fetchedAt = r.fetchedAt;
         state.checkedAt = r.checkedAt;
         state.fromCache = r.fromCache;
-      } catch (e) { setStatus('Overpass error: ' + e.message + ' — try again in a minute (public server rate limits).'); return; }
+      } catch (e) {
+        setStatus('Map-data error: ' + e.message + ' — try again in a minute (public server rate limits).');
+        finishCalculationProgress(false);
+        return;
+      }
       state.fetchBBox = bbox;
       prepareBuildings();
+      setCalculationStage('analyze', `Building the city from ${state.rawBuildings.length.toLocaleString()} footprints…`);
+      await nextPaint();
       recompute(true);
       if (state.rawBuildings.length > settings.maxBuildings) {
         state.dataCapHit = true;
@@ -218,6 +281,9 @@
       bbox = bboxUnionDeg(bbox, needed);
       iteration++;
     }
+    setCalculationStage('draw', 'Drawing and labeling the boundaries…');
+    await nextPaint();
+    snapPinToFootprint();
     recompute(); // final render with cap flags
     if (state.result && state.result.techumCorners) {
       const pts = state.result.techumCorners.map((p) => {
@@ -233,6 +299,7 @@
       (state.fromCache
         ? `Data from local cache (${ageDays < 1 ? 'today' : ageDays.toFixed(0) + ' days old'}).`
         : 'Fresh OSM data.'));
+    finishCalculationProgress(true);
     track('calc', {
       q: state.lastQuery || null, label: state.lastLabel || null,
       pin: { lat: +state.pin.lat.toFixed(5), lon: +state.pin.lon.toFixed(5) },
@@ -275,7 +342,7 @@
   function prepareBuildings() {
     auditCache.clear(); // buffers are keyed by building id — new data invalidates them
     const proj = state.proj;
-    state.buildings = state.rawBuildings.map((raw) => {
+    state.buildings = state.rawBuildings.concat(state.manualBuildings).map((raw) => {
       const ring = raw.ringLatLon.map((p) => proj.toXY(p.lat, p.lon));
       const cls = D.classify(raw.tags);
       return {
@@ -284,7 +351,141 @@
         klass: cls.klass, reason: cls.reason,
         included: false, // set in recompute from klass + settings + override
       };
+      });
+  }
+
+  function nextPaint() {
+    return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+  }
+
+  function setCalculationStage(stage, message) {
+    const progress = document.getElementById('calc-progress');
+    const button = document.getElementById('btn-calc');
+    const order = ['fetch', 'analyze', 'draw'];
+    const active = order.indexOf(stage);
+    progress.hidden = false;
+    progress.setAttribute('aria-hidden', 'false');
+    progress.querySelectorAll('[data-stage]').forEach((el, i) => {
+      el.classList.toggle('done', i < active);
+      el.classList.toggle('active', i === active);
     });
+    button.setAttribute('aria-busy', 'true');
+    button.disabled = true;
+    button.querySelector('.calc-label').textContent = stage === 'fetch'
+      ? 'Getting map data' : stage === 'analyze' ? 'Building the city' : 'Drawing your tchum';
+    setStatus(message);
+  }
+
+  function finishCalculationProgress(succeeded) {
+    const progress = document.getElementById('calc-progress');
+    const button = document.getElementById('btn-calc');
+    progress.querySelectorAll('[data-stage]').forEach((el) => {
+      el.classList.toggle('done', succeeded);
+      el.classList.remove('active');
+    });
+    button.setAttribute('aria-busy', 'false');
+    button.disabled = false;
+    button.querySelector('.calc-label').textContent = succeeded ? 'Recalculate my tchum' : 'Try calculating again';
+  }
+
+  function addDrawingVertex(latlng) {
+    drawing.points.push({ lat: latlng.lat, lon: latlng.lng });
+    if (drawing.layer) drawing.layer.remove();
+    drawing.layer = L.polyline(drawing.points.map((p) => [p.lat, p.lon]), {
+      color: '#d43f8d', weight: 3, dashArray: '6 5', interactive: false,
+    }).addTo(map);
+    document.getElementById('btn-finish-building').disabled = drawing.points.length < 3;
+    setStatus(`Drawing missing footprint: ${drawing.points.length} point(s). Click each corner, then Finish shape.`);
+  }
+
+  function startDrawing() {
+    if (!state.pin || !state.proj) { setStatus('Set an address and calculate before drawing a missing building.'); return; }
+    if (drawing && drawing.layer) drawing.layer.remove();
+    drawing = { points: [], layer: null };
+    map.doubleClickZoom.disable();
+    const finish = document.getElementById('btn-finish-building'); finish.hidden = false; finish.disabled = true;
+    setStatus('Click each corner of the missing building on the map, then Finish shape.');
+  }
+
+  function finishDrawing() {
+    if (!drawing || drawing.points.length < 3) return;
+    if (drawing.layer) drawing.layer.remove();
+    state.manualBuildings.push({ id: `manual-${Date.now()}-${state.manualBuildings.length + 1}`,
+      tags: { building: 'yes', source: 'manual-review' }, ringLatLon: drawing.points });
+    drawing = null; map.doubleClickZoom.enable(); document.getElementById('btn-finish-building').hidden = true;
+    prepareBuildings(); recompute();
+    setStatus('Manual footprint added and flagged as untagged. Click it to include or exclude it explicitly.');
+  }
+
+  function polygonsFromGeoJSON(value) {
+    return K.parseGeoJSONFootprints(value);
+  }
+
+  function importBuildings(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        if (!state.pin || !state.proj) throw new Error('set an address and calculate first');
+        const polygons = polygonsFromGeoJSON(JSON.parse(reader.result));
+        if (!polygons.length) throw new Error('no Polygon or MultiPolygon footprints found');
+        const stamp = Date.now();
+        polygons.forEach((ringLatLon, i) => state.manualBuildings.push({ id: `manual-import-${stamp}-${i + 1}`,
+          tags: { building: 'yes', source: 'manual-geojson-review' }, ringLatLon }));
+        prepareBuildings(); recompute();
+        setStatus(`${polygons.length} manual footprint(s) imported and flagged for review.`);
+      } catch (e) { setStatus('Building import failed: ' + e.message); }
+    };
+    reader.readAsText(file);
+  }
+
+  function importOverture(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        if (!state.rawBuildings.length) throw new Error('calculate an address before comparing sources');
+        const overture = D.parseOvertureGeoJSON(JSON.parse(reader.result));
+        if (!overture.length) throw new Error('no valid Overture Polygon or MultiPolygon footprints found');
+        state.overtureReport = D.compareBuildingSources(state.rawBuildings.concat(state.manualBuildings), overture);
+        renderOvertureReport();
+        setStatus(`Overture comparison complete: ${state.overtureReport.unmatchedOverture.length} unmatched review candidate(s). None were added automatically.`);
+      } catch (e) { setStatus('Overture comparison failed: ' + e.message); }
+    };
+    reader.readAsText(file);
+  }
+
+  function renderOvertureReport() {
+    const el = document.getElementById('overture-report'); layerGroups.overture.clearLayers(); el.replaceChildren();
+    const report = state.overtureReport; if (!report) return;
+    const summary = document.createElement('p'); summary.className = 'muted';
+    summary.textContent = `${report.matchedOverture} matched; ${report.unmatchedOverture.length} unmatched candidates. Review each against imagery.`; el.appendChild(summary);
+    report.unmatchedOverture.slice(0, 100).forEach((candidate) => {
+      const row = document.createElement('div'); row.className = 'source-candidate';
+      const label = document.createElement('span'); label.textContent = candidate.sourceId;
+      const add = document.createElement('button'); add.type = 'button'; add.textContent = 'Add for review';
+      const ignore = document.createElement('button'); ignore.type = 'button'; ignore.textContent = 'Ignore';
+      const layer = L.polygon(candidate.ringLatLon.map((p) => [p.lat, p.lon]), { color: '#ff2da4', weight: 2, dashArray: '5 4', fillOpacity: 0.16 })
+        .bindTooltip(`Overture-only candidate ${escapeHtml(candidate.sourceId)} — not in calculation`).addTo(layerGroups.overture);
+      add.addEventListener('click', () => {
+        state.manualBuildings.push({ id: `manual-${candidate.id}`, tags: { building: 'yes', source: 'overture-review', overture_id: candidate.sourceId }, ringLatLon: candidate.ringLatLon });
+        layerGroups.overture.removeLayer(layer); row.remove(); prepareBuildings(); recompute();
+        setStatus(`Overture candidate ${candidate.sourceId} added as an untagged manual footprint for explicit review.`);
+      });
+      ignore.addEventListener('click', () => { layerGroups.overture.removeLayer(layer); row.remove(); });
+      row.append(label, add, ignore); el.appendChild(row);
+    });
+  }
+
+  function importValidatedPerimeter(file) {
+    const reader = new FileReader(); reader.onload = () => {
+      try {
+        const polygons = K.parseGeoJSONFootprints(JSON.parse(reader.result));
+        if (polygons.length !== 1) throw new Error('provide exactly one Polygon/MultiPolygon outer perimeter');
+        state.validatedPerimeter = polygons[0]; settings.useValidatedPerimeter = false; S.save(settings);
+        document.getElementById('use-perimeter').checked = false;
+        if (state.result) render();
+        setStatus('Validated perimeter imported but inactive. Enable it only after confirming this exact perimeter and ruling with the rav.');
+      } catch (e) { setStatus('Validated perimeter import failed: ' + e.message); }
+    }; reader.readAsText(file);
   }
   function ringBBox(ring) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -324,6 +525,10 @@
   }
 
   // ---------------- pipeline + render ----------------
+  function projectedValidatedPerimeter() {
+    return settings.useValidatedPerimeter && Array.isArray(state.validatedPerimeter)
+      ? state.validatedPerimeter.map((p) => state.proj.toXY(p.lat, p.lon)) : null;
+  }
   function recompute(skipRender) {
     if (!state.buildings.length && !state.pin) return;
     for (const b of state.buildings) b.included = isIncluded(b);
@@ -335,6 +540,9 @@
       overlapMerge: settings.overlapMerge,
       squaringAngleDeg: settings.squaringAngleDeg,
       pointRotationDeg: settings.pointRotationDeg,
+      cityQualificationOverrides: settings.cityQualificationOverrides || {},
+      concavityReviews: settings.concavityReviews || {},
+      validatedCityPerimeter: projectedValidatedPerimeter(),
     };
     state.result = G.runPipeline(state.buildings, geoSettings, pinXY);
     if (!skipRender) render();
@@ -368,6 +576,8 @@
     layerGroups.buildings.clearLayers();
     layerGroups.rects.clearLayers();
     layerGroups.second.clearLayers();
+    layerGroups.settlements.clearLayers();
+    layerGroups.perimeter.clearLayers();
     const res = state.result;
     if (!res) return;
 
@@ -384,8 +594,9 @@
         const inHome = homeMembers.has(i);
         const poly = L.polygon(b.ring.map((p) => { const ll = state.proj.toLatLon(p.x, p.y); return [ll.lat, ll.lon]; }), {
           color: st.color, weight, fillColor: st.fillColor, fillOpacity: inHome ? Math.min(0.65, fillOpacity + 0.15) : fillOpacity,
-          opacity, dashArray: dash,
+          opacity, dashArray: dash, renderer: buildingRenderer,
         });
+        b.mapLayer = poly;
         poly.bindTooltip(
           `<b>${escapeHtml(b.klass.toUpperCase())}</b> — ${escapeHtml(b.reason)}` +
           (ov ? `<br>manual override: ${escapeHtml(ov)}` : '') +
@@ -432,6 +643,8 @@
           amahM: settings.amahCm / 100, karpef: settings.karpef,
           minCityHouses: settings.minCityHouses, overlapMerge: settings.overlapMerge,
           squaringAngleDeg: settings.squaringAngleDeg,
+          cityQualificationOverrides: settings.cityQualificationOverrides || {}, concavityReviews: settings.concavityReviews || {},
+          validatedCityPerimeter: projectedValidatedPerimeter(),
         }, state.proj.toXY(state.pin.lat, state.pin.lon));
         if (resV.techumCorners)
           addRect(resV.techumCorners, { color: '#ffb300', weight: 2.5, dashArray: '8 6', fill: false },
@@ -445,13 +658,118 @@
         amahM: settings.secondAmahCm / 100, karpef: settings.karpef,
         minCityHouses: settings.minCityHouses, overlapMerge: settings.overlapMerge,
         squaringAngleDeg: settings.squaringAngleDeg,
+        cityQualificationOverrides: settings.cityQualificationOverrides || {}, concavityReviews: settings.concavityReviews || {},
+        validatedCityPerimeter: projectedValidatedPerimeter(),
       }, state.proj.toXY(state.pin.lat, state.pin.lon));
       addRect(res2.techumCorners, { color: '#e040fb', weight: 2.5, dashArray: '10 6', fill: false },
         'Comparison: techum @ ' + settings.secondAmahCm + ' cm amah', layerGroups.second);
     }
 
     renderAuditRings();
+    renderAuditGuide();
     renderPanel();
+    renderReviewQueue();
+  }
+
+  function closestPointOnRing(point, ring) {
+    let best = null, bestD = Infinity;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const dx = b.x - a.x, dy = b.y - a.y, den = dx * dx + dy * dy;
+      const t = den ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / den)) : 0;
+      const q = { x: a.x + t * dx, y: a.y + t * dy };
+      const d = Math.hypot(point.x - q.x, point.y - q.y);
+      if (d < bestD) { bestD = d; best = q; }
+    }
+    return { point: best, distanceM: bestD };
+  }
+
+  function snapPinToFootprint() {
+    if (!state.pin || !state.buildings.length) return;
+    const original = { ...state.pin };
+    const p = state.proj.toXY(original.lat, original.lon);
+    let best = null;
+    state.buildings.forEach((b) => {
+      if (b.klass === 'non') return;
+      const inside = G._internals.pointInRing(p, b.ring);
+      const near = inside ? { point: p, distanceM: 0 } : closestPointOnRing(p, b.ring);
+      if (!best || near.distanceM < best.distanceM) best = { ...near, building: b };
+    });
+    if (!best || best.distanceM > 75) {
+      state.snapInfo = { snapped: false, reason: 'No plausible footprint within 75 m', distanceM: best ? best.distanceM : null };
+      return;
+    }
+    if (best.distanceM > 0.5) {
+      const ll = state.proj.toLatLon(best.point.x, best.point.y);
+      state.pin = { lat: ll.lat, lon: ll.lon };
+      pinMarker.setLatLng([ll.lat, ll.lon]);
+    }
+    state.snapInfo = { snapped: best.distanceM > 0.5, distanceM: best.distanceM, buildingId: best.building.id,
+      klass: best.building.klass, reason: best.building.reason, original };
+  }
+
+  function renderAuditGuide() {
+    const guide = document.getElementById('audit-guide');
+    const summary = document.getElementById('audit-summary');
+    const res = state.result;
+    guide.hidden = !settings.showAuditRings;
+    layerGroups.settlements.clearLayers();
+    if (!settings.showAuditRings || !res) return;
+
+    const reviewClusters = res.reviewClusters || res.clusters;
+    const visibleReviewClusters = reviewClusters.filter((cluster) => cluster.qualifiesAsCity ||
+      cluster.members.length >= Math.max(1, settings.minCityHouses - 2) ||
+      (res.clusters[res.homeCluster] && res.clusters[res.homeCluster].componentKeys || []).includes(cluster.key));
+    visibleReviewClusters.slice(0, 40).forEach((cluster) => {
+      const index = reviewClusters.indexOf(cluster);
+      const isHome = index === res.homeCluster;
+      const color = isHome ? '#00e676' : `hsl(${(index * 137.508) % 360}, 75%, 48%)`;
+      const label = `Settlement #${index + 1}: ${cluster.members.length} included structure${cluster.members.length === 1 ? '' : 's'}` +
+        (isHome ? '<br><b>This is the selected home city.</b>' : '') +
+        `<br>Dashed box is its derived outer rectangle after 70⅔-amah chaining and settlement merges.`;
+      L.polygon(cornersToLatLngs(cluster.corners), {
+        color, weight: isHome ? 3 : 1.5, dashArray: isHome ? '10 5' : '6 6',
+        fill: true, fillColor: color, fillOpacity: isHome ? 0.055 : 0.018,
+      }).bindTooltip(label, { sticky: true }).addTo(layerGroups.settlements);
+
+      const center = cluster.corners.reduce((p, c) => ({ x: p.x + c.x / 4, y: p.y + c.y / 4 }), { x: 0, y: 0 });
+      const ll = state.proj.toLatLon(center.x, center.y);
+      L.marker([ll.lat, ll.lon], {
+        interactive: false,
+        icon: L.divIcon({ className: 'cluster-label', html: `<span>${isHome ? 'HOME · ' : ''}#${index + 1} · ${cluster.members.length}</span>` }),
+      }).addTo(layerGroups.settlements);
+    });
+    const home = res.homeCluster >= 0 ? res.clusters[res.homeCluster] : null;
+    summary.textContent = `${res.clusters.length} settlement${res.clusters.length === 1 ? '' : 's'} derived; ` +
+      (home ? `home is #${res.homeCluster + 1} with ${home.members.length} included structures. ` : 'the pin did not join a settlement. ') +
+      `70⅔ amos = ${res.thresholds.joinM.toFixed(1)} m; 141⅓ amos = ${res.thresholds.t2.toFixed(1)} m.`;
+    const review = document.getElementById('cluster-review');
+    review.replaceChildren();
+    const title = document.createElement('b'); title.textContent = 'Settlement city-status review'; review.appendChild(title);
+    res.clusters.forEach((cluster, index) => {
+      const row = document.createElement('label');
+      const text = document.createElement('span');
+      text.innerHTML = `#${index + 1} · ${cluster.members.length} structures<small>${cluster.qualifiesAsCity ? 'qualifies' : 'does not qualify'} via ${escapeHtml(cluster.qualificationSource)}</small>`;
+      const select = document.createElement('select'); select.setAttribute('aria-label', `Settlement ${index + 1} city status`);
+      [['','Use footprint-count proxy'],['true','Rav/reviewer: qualifies'],['false','Rav/reviewer: does not qualify']].forEach(([value, label]) => {
+        const option = document.createElement('option'); option.value = value; option.textContent = label; select.appendChild(option);
+      });
+      const saved = (settings.cityQualificationOverrides || {})[cluster.key];
+      const savedDecision = typeof saved === 'boolean' ? saved : saved && saved.decision;
+      select.value = typeof savedDecision === 'boolean' ? String(savedDecision) : (cluster.qualificationSource === 'reviewer-remapped' ? String(cluster.qualifiesAsCity) : '');
+      select.addEventListener('change', () => {
+        settings.cityQualificationOverrides = { ...(settings.cityQualificationOverrides || {}) };
+        if (select.value === '') delete settings.cityQualificationOverrides[cluster.key];
+        else settings.cityQualificationOverrides[cluster.key] = { decision: select.value === 'true', memberIds: cluster.memberIds || [] };
+        S.save(settings); recompute();
+      });
+      row.append(text, select); review.appendChild(row);
+    });
+    const omitted = reviewClusters.length - Math.min(40, visibleReviewClusters.length);
+    if (omitted > 0) {
+      const note = document.createElement('small'); note.className = 'muted';
+      note.textContent = `${omitted} small, non-qualifying settlements hidden to keep review focused.`; review.appendChild(note);
+    }
   }
 
   // ---------------- audit rings (manual-audit aid, advanced toggle) ----------------
@@ -513,6 +831,10 @@
       ? res.clusters[res.homeCluster].members.length : 0;
     const amahM = settings.amahCm / 100;
     const lines = [];
+    if (state.snapInfo) {
+      if (state.snapInfo.snapped) lines.push(`<div class="note"><b>Pin snapped to mapped footprint</b> — moved ${state.snapInfo.distanceM.toFixed(1)} m to ${escapeHtml(state.snapInfo.klass)} (${escapeHtml(state.snapInfo.reason)}). Confirm the marker against the imagery; drag it to correct.</div>`);
+      else lines.push(`<div class="note"><b>Pin check:</b> ${escapeHtml(state.snapInfo.reason || 'Already on a mapped footprint')}. Confirm against imagery.</div>`);
+    }
     lines.push(`<div class="stat"><b>Mode:</b> ${res.mode === 'city' ? 'city (whole city = 4 amos)' : 'open field (point shevisa)'}</div>`);
     lines.push(`<div class="stat"><b>Buildings fetched:</b> ${state.buildings.length} — ` +
       `<span class="sw dw"></span>${counts.dwelling} dwelling, <span class="sw un"></span>${counts.unknown} untagged, ` +
@@ -545,6 +867,64 @@
         `Click any building to include/exclude it; the map recomputes instantly.</div>`);
     }
     el.innerHTML = lines.join('');
+    renderConfidence(counts);
+  }
+
+  function renderConfidence(counts) {
+    const el = document.getElementById('confidence');
+    const report = D.computeDataConfidence(state.buildings);
+    const uncertain = report.needsReview;
+    const taggedShare = report.decidedRate;
+    const level = report.grade === 'high' && !state.dataCapHit ? 'good' : report.grade === 'medium' && !state.dataCapHit ? 'mixed' : 'poor';
+    const label = level === 'good' ? 'Higher map confidence' : level === 'mixed' ? 'Map needs review' : 'Low map confidence';
+    el.className = `confidence ${level}`;
+    el.innerHTML = `<b>${label}</b><span>${Math.round(taggedShare * 100)}% have decisive use tags; ${uncertain} need classification review.${state.dataCapHit ? ' Fetch boundary is incomplete.' : ''} This grades map data, not the halachic ruling.</span>`;
+    el.hidden = false;
+  }
+
+  function renderReviewQueue() {
+    const el = document.getElementById('review-queue');
+    const items = state.buildings.filter((b) => b.klass === 'unknown' || b.klass === 'review');
+    const bows = (state.result && state.result.concavityAudit) || [];
+    if (!items.length && !bows.length) { el.hidden = true; el.replaceChildren(); return; }
+    const head = document.createElement('div'); head.className = 'review-title';
+    head.innerHTML = `<b>Review queue</b><span>${items.length} ambiguous or untagged structures · select one to inspect</span>`;
+    const list = document.createElement('div'); list.className = 'review-list';
+    bows.forEach((audit) => {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'bow-review';
+      button.innerHTML = `<span>⌁</span><b>Bow / concavity</b><small>${audit.reviewerEndpoints ? 'Endpoints recorded; not applied to boundary' : 'Select two endpoints for the rav'}</small>`;
+      button.addEventListener('click', () => recordConcavityEndpoints(audit.reviewKey)); list.appendChild(button);
+    });
+    items.slice(0, 100).forEach((b) => {
+      const button = document.createElement('button'); button.type = 'button';
+      button.innerHTML = `<span class="sw ${b.klass === 'unknown' ? 'un' : 'rv'}"></span><b>${escapeHtml(b.klass)}</b><small>${escapeHtml(b.reason)}</small>`;
+      button.addEventListener('click', () => {
+        const sw = state.proj.toLatLon(b.bbox.minX, b.bbox.minY), ne = state.proj.toLatLon(b.bbox.maxX, b.bbox.maxY);
+        map.fitBounds([[sw.lat, sw.lon], [ne.lat, ne.lon]], { maxZoom: 20, padding: [40, 40] });
+        if (b.mapLayer) b.mapLayer.openTooltip();
+      });
+      list.appendChild(button);
+    });
+    if (items.length > 100) {
+      const more = document.createElement('small'); more.className = 'muted';
+      more.textContent = `Showing the first 100 of ${items.length}; use the map to inspect the rest.`; list.appendChild(more);
+    }
+    el.replaceChildren(head, list); el.hidden = false;
+  }
+
+  function recordConcavityEndpoints(reviewKey) {
+    setStatus('Bow review: click the first endpoint on the map. These points will be recorded for the rav, not applied to the boundary.');
+    map.once('click', (first) => {
+      setStatus('Bow review: click the second endpoint.');
+      map.once('click', (second) => {
+        settings.concavityReviews = { ...(settings.concavityReviews || {}) };
+        settings.concavityReviews[reviewKey] = { endpoints: [
+          state.proj.toXY(first.latlng.lat, first.latlng.lng), state.proj.toXY(second.latlng.lat, second.latlng.lng),
+        ] };
+        S.save(settings); recompute();
+        setStatus('Bow endpoints recorded for rav review. They have NOT changed the calculated boundary.');
+      });
+    });
   }
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -571,6 +951,8 @@
       `Engine version: ${ENGINE_VERSION} (deterministic: same data + same settings = same output)`,
       `OSM data fetched: ${state.fetchedAt || 'n/a'} via Overpass; extent S${bb ? bb.south.toFixed(5) : '?'} W${bb ? bb.west.toFixed(5) : '?'} N${bb ? bb.north.toFixed(5) : '?'} E${bb ? bb.east.toFixed(5) : '?'}`,
       `Buildings: ${state.buildings.length} (${counts.dwelling} dwelling / ${counts.unknown} untagged / ${counts.review} ambiguous / ${counts.non} non)`,
+      `Manual missing-building footprints: ${state.manualBuildings.length} (reviewer supplied; not OSM data)`,
+      `Rav-validated enclosure perimeter: ${state.validatedPerimeter ? (settings.useValidatedPerimeter ? 'ACTIVE as city edge' : 'stored but inactive') : 'none'}`,
       `Manual overrides: ${state.overrides.size}${state.overrides.size ? ' [' + [...state.overrides.entries()].map(([id, v]) => id + ':' + v).join(', ') + ']' : ''}`,
       `Search frontier closed: ${state.dataCapHit ? 'NO — data cap hit, chain may continue; techum is an inner bound in those directions' : 'yes'}`,
       `Projection: local true-north tangent plane @ pin (per-point lon scaling)`,
@@ -625,7 +1007,8 @@
       pin: state.pin, fetchedAt: state.fetchedAt, fetchBBox: state.fetchBBox,
       dataCapHit: state.dataCapHit,
       settings, overrides: [...state.overrides.entries()],
-      rawBuildings: state.rawBuildings,
+      rawBuildings: state.rawBuildings, manualBuildings: state.manualBuildings,
+      validatedPerimeter: state.validatedPerimeter,
     };
     K.download('techum-snapshot.json', JSON.stringify(snap), 'application/json');
     track('snapshot', { action: 'save' });
@@ -635,22 +1018,7 @@
     reader.onload = () => {
       try {
         const snap = JSON.parse(reader.result);
-        if (snap.format !== 'techum-snapshot') throw new Error('not a techum snapshot');
-        state.pin = snap.pin;
-        state.fetchedAt = snap.fetchedAt;
-        state.fetchBBox = snap.fetchBBox;
-        state.dataCapHit = !!snap.dataCapHit;
-        state.rawBuildings = snap.rawBuildings;
-        state.overrides = new Map(snap.overrides || []);
-        settings = { ...S.DEFAULTS, ...snap.settings };
-        S.save(settings);
-        state.proj = G.makeProjection(state.pin.lat, state.pin.lon);
-        setPin(state.pin.lat, state.pin.lon);
-        map.setView([state.pin.lat, state.pin.lon], 15);
-        prepareBuildings();
-        recompute();
-        setStatus(`Snapshot loaded — ${state.rawBuildings.length} buildings (data from ${snap.fetchedAt}). Deterministic replay.`);
-        track('snapshot', { action: 'load' });
+        applySnapshot(snap);
         // Old snapshot? Verify against today's map automatically (the snapshot file itself
         // stays frozen; this only reports drift and redraws from fresh data if edits exist).
         if (Date.now() - Date.parse(snap.fetchedAt || 0) > (settings.autoCheckDays || 30) * 86400000) {
@@ -659,6 +1027,42 @@
       } catch (e) { setStatus('Snapshot load failed: ' + e.message); }
     };
     reader.readAsText(file);
+  }
+
+  function applySnapshot(snap, registryEntry) {
+    if (!snap || snap.format !== 'techum-snapshot' || !snap.pin || !Array.isArray(snap.rawBuildings)) throw new Error('not a techum snapshot');
+    state.pin = snap.pin; state.fetchedAt = snap.fetchedAt; state.fetchBBox = snap.fetchBBox;
+    state.dataCapHit = !!snap.dataCapHit; state.rawBuildings = snap.rawBuildings;
+    state.manualBuildings = snap.manualBuildings || []; state.overrides = new Map(snap.overrides || []);
+    state.validatedPerimeter = snap.validatedPerimeter || null;
+    settings = { ...S.DEFAULTS, ...snap.settings }; S.save(settings);
+    state.proj = G.makeProjection(state.pin.lat, state.pin.lon); setPin(state.pin.lat, state.pin.lon);
+    map.setView([state.pin.lat, state.pin.lon], 15); prepareBuildings(); recompute();
+    const review = registryEntry && registryEntry.review;
+    setStatus(registryEntry
+      ? `Reviewed snapshot loaded: ${registryEntry.cityLabel}, reviewed by ${review.reviewerName} on ${review.reviewedAt}${review.conditions ? ' — conditions: ' + review.conditions : ''}.`
+      : `Snapshot loaded — ${state.rawBuildings.length} buildings (data from ${snap.fetchedAt}). Deterministic replay.`);
+    track('snapshot', { action: registryEntry ? 'registry-load' : 'load' });
+  }
+
+  async function browseRegistry() {
+    const el = document.getElementById('registry-list'); el.textContent = 'Loading reviewed cities…';
+    try {
+      const response = await fetch('/api/registry'); if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json(); el.replaceChildren();
+      if (!data.entries || !data.entries.length) { el.textContent = 'No published reviewed snapshots yet.'; return; }
+      data.entries.forEach((entry) => {
+        const row = document.createElement('div'); row.className = 'registry-entry';
+        const info = document.createElement('span'); info.innerHTML = `<b>${escapeHtml(entry.cityLabel)}</b><small>${escapeHtml(entry.review.reviewerName)} · ${escapeHtml(entry.review.reviewedAt)} · revision ${entry.revision}</small>`;
+        const load = document.createElement('button'); load.type = 'button'; load.textContent = 'Load reviewed map';
+        load.addEventListener('click', async () => {
+          if (!confirm(`Replace the current calculation with the published reviewed snapshot for ${entry.cityLabel}?`)) return;
+          const detail = await fetch(`/api/registry/${encodeURIComponent(entry.slug)}`); if (!detail.ok) { setStatus(`Registry load failed: HTTP ${detail.status}`); return; }
+          const full = await detail.json(); try { applySnapshot(full.snapshot, full); } catch (e) { setStatus('Registry snapshot invalid: ' + e.message); }
+        });
+        row.append(info, load); el.appendChild(row);
+      });
+    } catch (e) { el.textContent = 'Reviewed library unavailable: ' + e.message; }
   }
 
   function exportKML() {
@@ -671,6 +1075,8 @@
         amahM: settings.secondAmahCm / 100, karpef: settings.karpef,
         minCityHouses: settings.minCityHouses, overlapMerge: settings.overlapMerge,
         squaringAngleDeg: settings.squaringAngleDeg,
+        cityQualificationOverrides: settings.cityQualificationOverrides || {}, concavityReviews: settings.concavityReviews || {},
+        validatedCityPerimeter: projectedValidatedPerimeter(),
       }, state.proj.toXY(state.pin.lat, state.pin.lon));
       second = toPath(res2.techumCorners);
     }
@@ -680,6 +1086,7 @@
       city: toPath(res.cityCorners),
       karpef: toPath(res.karpefCorners),
       second,
+      ...exportAuditLayers(res, toPath),
     }, configText());
     K.download('techum-draft.kml', kml);
     track('export', { format: 'kml' });
@@ -688,21 +1095,120 @@
   function exportGeoJSON() {
     const res = state.result;
     if (!res) return;
-    const toPoly = (corners, props) => corners && ({
-      type: 'Feature', properties: props,
-      geometry: { type: 'Polygon', coordinates: [cornersToLatLngs(corners).concat([cornersToLatLngs(corners)[0]]).map(([lat, lon]) => [lon, lat])] },
-    });
-    const fc = {
-      type: 'FeatureCollection',
-      properties: { disclaimer: 'DRAFT — requires review by a rav/mumcheh', config: configText() },
-      features: [
-        toPoly(res.techumCorners, { layer: 'techum' }),
-        toPoly(res.cityCorners, { layer: 'city' }),
-        toPoly(res.karpefCorners, { layer: 'karpef' }),
-      ].filter(Boolean),
-    };
+    if (state.validatedPerimeter) {
+      L.polygon(state.validatedPerimeter.map((p) => [p.lat, p.lon]), {
+        color: res.validatedPerimeterActive ? '#00ffff' : '#7a7f7d', weight: 3,
+        dashArray: res.validatedPerimeterActive ? '10 4' : '4 6', fill: false,
+      }).bindTooltip(res.validatedPerimeterActive ? 'ACTIVE rav-validated city perimeter' : 'Stored validated perimeter (inactive)')
+        .addTo(layerGroups.perimeter);
+    }
+    const toPath = (corners) => corners && cornersToLatLngs(corners).map(([lat, lon]) => ({ lat, lon }));
+    const fc = K.buildGeoJSON({
+      pin: state.pin, techum: toPath(res.techumCorners), city: toPath(res.cityCorners), karpef: toPath(res.karpefCorners),
+      ...exportAuditLayers(res, toPath),
+    }, { config: configText(), dataConfidence: D.computeDataConfidence(state.buildings) });
     K.download('techum-draft.geojson', JSON.stringify(fc, null, 2), 'application/geo+json');
     track('export', { format: 'geojson' });
+  }
+
+  function exportKMZ() {
+    const res = state.result;
+    if (!res) return;
+    const toPath = (corners) => corners && cornersToLatLngs(corners).map(([lat, lon]) => ({ lat, lon }));
+    const kml = K.buildKML({
+      pin: state.pin, techum: toPath(res.techumCorners), city: toPath(res.cityCorners),
+      karpef: toPath(res.karpefCorners), ...exportAuditLayers(res, toPath),
+    }, configText());
+    downloadBlob('techum-draft.kmz', new Blob([K.buildKMZ(kml)], { type: 'application/vnd.google-earth.kmz' }));
+    track('export', { format: 'kmz' });
+    setStatus('KMZ exported for Google Earth review.');
+  }
+
+  function exportAuditLayers(res, toPath) {
+    const buildings = state.buildings.map((b) => b.ring.map((p) => {
+      const ll = state.proj.toLatLon(p.x, p.y); return { lat: ll.lat, lon: ll.lon };
+    }));
+    const settlements = res.clusters.map((c) => toPath(c.corners));
+    const auditLines = (res.concavityAudit || []).filter((a) => a.reviewerEndpoints).map((a) => ({
+      name: `Recorded bow endpoints (${a.reviewKey})`, kind: 'threshold',
+      description: 'Recorded for rav review; not applied to the calculated boundary.',
+      path: a.reviewerEndpoints.map((p) => { const ll = state.proj.toLatLon(p.x, p.y); return { lat: ll.lat, lon: ll.lon }; }),
+    }));
+    return { buildings, settlements, auditLines };
+  }
+
+  async function captureMapCanvas() {
+    if (!state.result) throw new Error('Calculate a techum first.');
+    if (!window.html2canvas) throw new Error('Image exporter did not load. Check the internet connection and reload.');
+    map.invalidateSize();
+    return window.html2canvas(document.getElementById('map'), {
+      useCORS: true, allowTaint: false, backgroundColor: '#eef1ef',
+      scale: Math.min(1.5, window.devicePixelRatio || 1.25), logging: false, imageTimeout: 5000,
+    });
+  }
+
+  function downloadBlob(filename, blob) {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  async function exportPNG() {
+    setStatus('Rendering the visible map as a PNG image…');
+    try {
+      const canvas = await captureMapCanvas();
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('Browser could not encode the map image.');
+      downloadBlob('techum-review-map.png', blob); track('export', { format: 'png' });
+      setStatus('PNG exported — it shows the current map view and visible audit layers.');
+    } catch (e) { setStatus('PNG export failed: ' + e.message); }
+  }
+
+  async function exportPDF() {
+    if (!window.jspdf || !window.jspdf.jsPDF) { setStatus('PDF exporter did not load. Check the internet connection and reload.'); return; }
+    setStatus('Rendering a print-ready PDF review sheet…');
+    try {
+      const canvas = await captureMapCanvas();
+      const pdf = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter', compress: true });
+      const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight();
+      const margin = 10, usableW = pageW - 2 * margin;
+      pdf.setTextColor(23, 32, 29); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(18);
+      pdf.text('Techum Shabbos review map', margin, 13);
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor(122, 31, 31);
+      pdf.text('DRAFT decision-support only - not a psak. Review with a rav/mumcheh.', margin, 19);
+      pdf.setTextColor(70, 80, 76); pdf.text(String(state.lastLabel || 'Selected map point'), margin, 24, { maxWidth: usableW });
+      const imageData = canvas.toDataURL('image/jpeg', 0.94);
+      const maxH = pageH - 38, ratio = canvas.width / canvas.height;
+      let imageW = usableW, imageH = imageW / ratio;
+      if (imageH > maxH) { imageH = maxH; imageW = imageH * ratio; }
+      pdf.addImage(imageData, 'JPEG', margin + (usableW - imageW) / 2, 29, imageW, imageH, undefined, 'FAST');
+
+      const confidence = D.computeDataConfidence(state.buildings);
+      const report = 'CALCULATION SUMMARY\n' + document.getElementById('results').innerText +
+        `\n\nMAP-DATA REVIEW\n${confidence.needsReview} of ${confidence.total} fetched footprints need classification review. ` +
+        'This does not measure whether every real building is mapped.\n\nACTIVE CONFIGURATION AND AUDIT RECORD\n' + configText();
+      const pdfSafeReport = report
+        .replace(/⅔/g, '2/3').replace(/⅓/g, '1/3').replace(/×/g, 'x')
+        .replace(/[—–]/g, '-').replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/·/g, '-')
+        .replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/…/g, '...')
+        .normalize('NFKD').replace(/[^\x20-\x7E\n]/g, '');
+      const lines = pdfSafeReport.split('\n').flatMap((line) =>
+        line ? pdf.splitTextToSize(line, usableW - 40) : ['']);
+      pdf.addPage('letter', 'landscape'); pdf.setTextColor(23, 32, 29); pdf.setFont('courier', 'normal'); pdf.setFontSize(8.5);
+      let y = 12;
+      for (const line of lines) {
+        if (y > pageH - 10) { pdf.addPage('letter', 'landscape'); y = 12; }
+        pdf.text(line, margin, y); y += 4;
+      }
+      const pages = pdf.getNumberOfPages();
+      for (let i = 1; i <= pages; i++) {
+        pdf.setPage(i); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(100);
+        pdf.text(`Page ${i} of ${pages} - generated ${new Date().toISOString()}`, pageW - margin, pageH - 4, { align: 'right' });
+      }
+      pdf.save('techum-review.pdf'); track('export', { format: 'pdf' });
+      setStatus('PDF exported — it includes the map, warnings, confidence limits, and active configuration.');
+    } catch (e) {
+      setStatus('PDF export failed: ' + e.message);
+    }
   }
 
   // ---------------- settings UI ----------------
@@ -724,6 +1230,7 @@
       $('audit-rings').checked = settings.showAuditRings;
       $('fetch-radius').value = settings.fetchRadiusM;
       $('max-buildings').value = settings.maxBuildings;
+      $('use-perimeter').checked = !!settings.useValidatedPerimeter;
     };
     const onChange = () => { S.save(settings); if (state.rawBuildings.length) recompute(); };
 
@@ -744,10 +1251,14 @@
     $('show-12mil').addEventListener('change', (e) => { settings.show12mil = e.target.checked; onChange(); });
     $('audit-rings').addEventListener('change', (e) => {
       settings.showAuditRings = e.target.checked; S.save(settings);
-      if (state.result) renderAuditRings();
+      if (state.result) { renderAuditRings(); renderAuditGuide(); }
     });
     $('fetch-radius').addEventListener('change', (e) => { settings.fetchRadiusM = Math.max(300, parseInt(e.target.value, 10) || 1200); S.save(settings); });
     $('max-buildings').addEventListener('change', (e) => { settings.maxBuildings = Math.max(1000, parseInt(e.target.value, 10) || 30000); S.save(settings); });
+    $('use-perimeter').addEventListener('change', (e) => {
+      if (e.target.checked && !state.validatedPerimeter) { e.target.checked = false; setStatus('Import a rav-validated perimeter first.'); return; }
+      settings.useValidatedPerimeter = e.target.checked; S.save(settings); if (state.result) recompute();
+    });
     ['layer-buildings', 'layer-city', 'layer-karpef', 'layer-techum'].forEach((id) =>
       $(id).addEventListener('change', () => render()));
     refreshInputs();
@@ -757,6 +1268,11 @@
   document.addEventListener('DOMContentLoaded', () => {
     initMap();
     bindSettings();
+    addSettingHelp();
+    document.getElementById('btn-dismiss-banner').addEventListener('click', () => {
+      document.getElementById('banner').remove();
+      map.invalidateSize();
+    });
     document.getElementById('btn-search').addEventListener('click', onSearch);
     document.getElementById('address').addEventListener('input', onAddressInput);
     document.getElementById('address').addEventListener('keydown', onAddressKeydown);
@@ -765,7 +1281,10 @@
     document.getElementById('btn-calc').addEventListener('click', () => calculate(false));
     document.getElementById('btn-fresh').addEventListener('click', () => calculate(true));
     document.getElementById('btn-kml').addEventListener('click', exportKML);
+    document.getElementById('btn-kmz').addEventListener('click', exportKMZ);
     document.getElementById('btn-geojson').addEventListener('click', exportGeoJSON);
+    document.getElementById('btn-pdf').addEventListener('click', exportPDF);
+    document.getElementById('btn-image').addEventListener('click', exportPNG);
     document.getElementById('btn-snapshot').addEventListener('click', saveSnapshot);
     document.getElementById('snapshot-file').addEventListener('change', (e) => {
       if (e.target.files && e.target.files[0]) loadSnapshot(e.target.files[0]);
@@ -773,6 +1292,30 @@
     });
     document.getElementById('btn-load-snapshot').addEventListener('click', () =>
       document.getElementById('snapshot-file').click());
+    document.getElementById('btn-draw-building').addEventListener('click', startDrawing);
+    document.getElementById('btn-finish-building').addEventListener('click', finishDrawing);
+    document.getElementById('btn-import-buildings').addEventListener('click', () => document.getElementById('building-file').click());
+    document.getElementById('building-file').addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) importBuildings(e.target.files[0]);
+      e.target.value = '';
+    });
+    document.getElementById('btn-import-overture').addEventListener('click', () => document.getElementById('overture-file').click());
+    document.getElementById('overture-file').addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) importOverture(e.target.files[0]); e.target.value = '';
+    });
+    document.getElementById('btn-registry-refresh').addEventListener('click', browseRegistry);
+    document.getElementById('btn-import-perimeter').addEventListener('click', () => document.getElementById('perimeter-file').click());
+    document.getElementById('perimeter-file').addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) importValidatedPerimeter(e.target.files[0]); e.target.value = '';
+    });
+    document.getElementById('btn-clear-perimeter').addEventListener('click', () => {
+      state.validatedPerimeter = null; settings.useValidatedPerimeter = false; S.save(settings);
+      document.getElementById('use-perimeter').checked = false; if (state.result) recompute();
+      setStatus('Validated perimeter cleared.');
+    });
+    document.getElementById('btn-clear-manual').addEventListener('click', () => {
+      state.manualBuildings = []; prepareBuildings(); recompute(); setStatus('Manual footprints cleared.');
+    });
     document.getElementById('btn-clear-overrides').addEventListener('click', () => { state.overrides.clear(); if (state.rawBuildings.length) recompute(); });
     setStatus('Enter an address (or click the map) to set the shevisa point.');
   });
