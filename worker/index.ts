@@ -208,7 +208,15 @@ async function geocode(request: Request, env: Env): Promise<Response> {
   if (!env.GEOCODER_CONTACT || env.GEOCODER_CONTACT === 'SET_BEFORE_PRODUCTION') {
     return json({ error: 'geocoder contact is not configured' }, 503);
   }
-  const normalized = query.toLowerCase().replace(/\s+/g, ' ');
+  const hasLat = url.searchParams.has('lat');
+  const hasLon = url.searchParams.has('lon');
+  const latRaw = Number(url.searchParams.get('lat'));
+  const lonRaw = Number(url.searchParams.get('lon'));
+  const hasBias = hasLat && hasLon && Number.isFinite(latRaw) && Number.isFinite(lonRaw) &&
+    latRaw >= -90 && latRaw <= 90 && lonRaw >= -180 && lonRaw <= 180;
+  const lat = hasBias ? Math.round(latRaw * 100) / 100 : 0;
+  const lon = hasBias ? Math.round(lonRaw * 100) / 100 : 0;
+  const normalized = query.toLowerCase().replace(/\s+/g, ' ') + (hasBias ? `|${lat},${lon}` : '');
   const cached = await env.DB.prepare('SELECT response FROM geocode_cache WHERE query = ?1').bind(normalized).first<{ response: string }>();
   if (cached) return new Response(cached.response, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } });
 
@@ -223,6 +231,7 @@ async function geocode(request: Request, env: Env): Promise<Response> {
   }
   const endpoint = new URL('https://nominatim.openstreetmap.org/search');
   endpoint.search = new URLSearchParams({ q: query, format: 'jsonv2', limit: '5', addressdetails: '1' }).toString();
+  if (hasBias) endpoint.searchParams.set('viewbox', `${lon - 0.5},${lat + 0.5},${lon + 0.5},${lat - 0.5}`);
   const upstream = await fetch(endpoint, { headers: {
     'User-Agent': `TechumShabbosCalculator/1.0 (${env.GEOCODER_CONTACT})`,
     'Accept': 'application/json',
@@ -235,11 +244,52 @@ async function geocode(request: Request, env: Env): Promise<Response> {
   return new Response(text, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } });
 }
 
+async function autocomplete(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const query = (url.searchParams.get('q') || '').trim().slice(0, 300);
+  if (query.length < 3) return json({ error: 'query must be at least 3 characters' }, 400);
+  const hasLat = url.searchParams.has('lat');
+  const hasLon = url.searchParams.has('lon');
+  const latRaw = Number(url.searchParams.get('lat'));
+  const lonRaw = Number(url.searchParams.get('lon'));
+  const hasBias = hasLat && hasLon && Number.isFinite(latRaw) && Number.isFinite(lonRaw) &&
+    latRaw >= -90 && latRaw <= 90 && lonRaw >= -180 && lonRaw <= 180;
+  const lat = hasBias ? Math.round(latRaw * 100) / 100 : 0;
+  const lon = hasBias ? Math.round(lonRaw * 100) / 100 : 0;
+  const cacheKey = 'photon:' + query.toLowerCase().replace(/\s+/g, ' ') + (hasBias ? `|${lat},${lon}` : '');
+  const cached = await env.DB.prepare('SELECT response FROM geocode_cache WHERE query = ?1').bind(cacheKey).first<{ response: string }>();
+  if (cached) return new Response(cached.response, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } });
+
+  const network = await hmacHex(env.IP_HASH_SECRET || 'local-development-only', request.headers.get('CF-Connecting-IP') || 'unknown');
+  const limited = await env.GEOCODE_RATE_LIMITER.limit({ key: 'autocomplete:' + network });
+  if (!limited.success) return json({ error: 'autocomplete rate limit exceeded' }, 429, { 'Retry-After': '60' });
+
+  const endpoint = new URL('https://photon.komoot.io/api/');
+  endpoint.searchParams.set('q', query);
+  endpoint.searchParams.set('limit', '5');
+  if (hasBias) {
+    endpoint.searchParams.set('lat', String(lat));
+    endpoint.searchParams.set('lon', String(lon));
+  }
+  const upstream = await fetch(endpoint, { headers: {
+    'User-Agent': `TechumShabbosCalculator/1.0 (${env.GEOCODER_CONTACT})`,
+    'Accept': 'application/json',
+  } });
+  if (!upstream.ok) return json({ error: `autocomplete HTTP ${upstream.status}` }, 502);
+  const text = await upstream.text();
+  if (text.length > 1_000_000) return json({ error: 'autocomplete response too large' }, 502);
+  await env.DB.prepare(`INSERT INTO geocode_cache (query, response, cached_at) VALUES (?1, ?2, ?3)
+    ON CONFLICT(query) DO UPDATE SET response = excluded.response, cached_at = excluded.cached_at`)
+    .bind(cacheKey, text, Date.now()).run();
+  return new Response(text, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } });
+}
+
 async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === '/api/event' && request.method === 'POST') return recordEvent(request, env);
   if (url.pathname === '/api/analytics' && request.method === 'GET') return analytics(request, env);
   if (url.pathname === '/api/geocode' && request.method === 'GET') return geocode(request, env);
+  if (url.pathname === '/api/autocomplete' && request.method === 'GET') return autocomplete(request, env);
   if (url.pathname.startsWith('/api/')) return json({ error: 'not found' }, 404);
   return env.ASSETS.fetch(request);
 }

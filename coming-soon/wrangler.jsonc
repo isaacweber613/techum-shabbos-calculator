@@ -1,0 +1,11 @@
+﻿{
+  "name": "tchumshabbos",
+  "compatibility_date": "2026-07-10",
+  "assets": {
+    "directory": "./public"
+  },
+  "routes": [
+    { "pattern": "tchumshabbos.com", "custom_domain": true },
+    { "pattern": "www.tchumshabbos.com", "custom_domain": true }
+  ]
+}

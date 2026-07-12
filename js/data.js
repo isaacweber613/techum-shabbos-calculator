@@ -51,20 +51,66 @@
   }
 
   // ---------- Nominatim geocoding ----------
-  async function geocode(query) {
+  async function geocode(query, bias) {
     // Production goes through the Worker so requests are identified, globally throttled,
     // and cached as required by the public Nominatim usage policy. The direct URL remains
     // only for local development through serve.mjs.
     const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const params = new URLSearchParams({ format: 'jsonv2', limit: '5', q: query });
+    if (bias && Number.isFinite(bias.lat) && Number.isFinite(bias.lon)) {
+      const lat = Math.round(bias.lat * 100) / 100;
+      const lon = Math.round(bias.lon * 100) / 100;
+      params.set('lat', String(lat));
+      params.set('lon', String(lon));
+      if (local) {
+        params.delete('lat');
+        params.delete('lon');
+        params.set('viewbox', `${lon - 0.5},${lat + 0.5},${lon + 0.5},${lat - 0.5}`);
+      }
+    }
     const url = local
-      ? 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=' + encodeURIComponent(query)
-      : '/api/geocode?q=' + encodeURIComponent(query);
+      ? 'https://nominatim.openstreetmap.org/search?' + params.toString()
+      : '/api/geocode?' + params.toString();
     const res = await fetch(url, { headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error('Geocoding failed: HTTP ' + res.status);
     const arr = await res.json();
     return arr.map((r) => ({
       lat: parseFloat(r.lat), lon: parseFloat(r.lon), label: r.display_name,
     }));
+  }
+
+  function photonLabel(properties) {
+    const p = properties || {};
+    const parts = [];
+    const first = p.housenumber && p.street
+      ? `${p.housenumber} ${p.street}`
+      : p.name || p.street;
+    for (const value of [first, p.locality, p.district, p.city, p.county, p.state, p.postcode, p.country]) {
+      if (!value) continue;
+      const text = String(value).trim();
+      if (text && !parts.some((part) => part.toLowerCase() === text.toLowerCase())) parts.push(text);
+    }
+    return parts.join(', ');
+  }
+
+  async function autocomplete(query, bias) {
+    const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const params = new URLSearchParams({ q: query, limit: '5' });
+    if (bias && Number.isFinite(bias.lat) && Number.isFinite(bias.lon)) {
+      params.set('lat', String(Math.round(bias.lat * 100) / 100));
+      params.set('lon', String(Math.round(bias.lon * 100) / 100));
+    }
+    const url = local
+      ? 'https://photon.komoot.io/api/?' + params.toString()
+      : '/api/autocomplete?' + params.toString();
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error('Autocomplete failed: HTTP ' + res.status);
+    const data = await res.json();
+    return (data.features || []).map((feature) => ({
+      lat: Number(feature.geometry.coordinates[1]),
+      lon: Number(feature.geometry.coordinates[0]),
+      label: photonLabel(feature.properties),
+    })).filter((result) => Number.isFinite(result.lat) && Number.isFinite(result.lon) && result.label);
   }
 
   // ---------- Overpass buildings fetch ----------
@@ -215,8 +261,8 @@ out count;`;
     throw lastErr;
   }
 
-  root.TechumData = { classify, geocode, fetchBuildings, fetchBuildingsCached,
+  root.TechumData = { classify, geocode, autocomplete, fetchBuildings, fetchBuildingsCached,
     countChangedBuildings, markCheckedCurrent,
     _tables: { DWELLING_TAGS, NON_DWELLING_TAGS, REVIEW_TAGS },
-    _internals: { parseOverpass, bboxKey } };
+    _internals: { parseOverpass, bboxKey, photonLabel } };
 })(typeof self !== 'undefined' ? self : this);
