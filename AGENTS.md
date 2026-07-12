@@ -81,6 +81,28 @@ karpef-after-ibur split, whether ribua's filled corners count as "in the city" f
 person standing there. Q2 (eruv) and Q4 (bow) are getting default mehalachim per the
 mehalich policy above.
 
+## Shipping
+
+When Isaac says **"ship it"**, treat that phrase as authorization to complete the main
+calculator's production release without asking for routine confirmations:
+
+1. Confirm the diff belongs to this repository and contains no secrets or unrelated work.
+2. Run `npm test`, `npm run typecheck`, and `npm run cf:dry-run`. Stop on any failure.
+3. Commit any intended uncommitted changes, push the branch, and create or update its PR.
+4. Merge the PR into `master` once checks pass, then update the local `master` by
+   fast-forward only. Never force-push or bypass a failing required check.
+5. Run `npm run cf:deploy` from this repository root. This deploys the Worker, D1-backed
+   API, and built static assets described by the root `wrangler.jsonc`.
+6. Verify the deployed version at `https://tchumshabbos.com`: load the app, check the
+   console and failed network requests, and exercise address search plus one calculation.
+7. Report the commit SHA, PR/merge result, Wrangler deployment/version identifier, live
+   URL, and verification results.
+
+Plain **"ship it" always means the main calculator**. The separate `coming-soon/`
+Worker claims the same custom domain and must never be deployed as part of that flow.
+Deploy it only when Isaac explicitly says **"ship the coming-soon site"**; warn that it
+will take over `tchumshabbos.com`, then deploy from `coming-soon/` and verify the domain.
+
 ## Known limits / gotchas
 
 - OSM building use-tags are sparse — most buildings show orange "untagged"; the
