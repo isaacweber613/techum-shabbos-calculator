@@ -98,10 +98,10 @@ calculator's production release without asking for routine confirmations:
 7. Report the commit SHA, PR/merge result, Wrangler deployment/version identifier, live
    URL, and verification results.
 
-Plain **"ship it" always means the main calculator**. The separate `coming-soon/`
-Worker claims the same custom domain and must never be deployed as part of that flow.
-Deploy it only when Isaac explicitly says **"ship the coming-soon site"**; warn that it
-will take over `tchumshabbos.com`, then deploy from `coming-soon/` and verify the domain.
+There is exactly one production deployment: the main calculator at
+`tchumshabbos.com`, configured by the root `wrangler.jsonc`. Do not create or maintain
+alternate coming-soon, preview, Pages, or Worker deployments unless Isaac explicitly
+requests a new deployment architecture.
 
 ## Known limits / gotchas
 
