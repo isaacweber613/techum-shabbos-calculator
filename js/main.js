@@ -109,7 +109,10 @@
       if (!pinMarker) setPin(e.latlng.lat, e.latlng.lng);
     });
     // audit rings are viewport-limited — refresh them as the reviewer pans/zooms
-    map.on('moveend', () => { if (settings.showAuditRings && state.result) renderAuditRings(); });
+    map.on('moveend', () => {
+      if (state.result) renderBuildings();
+      if (settings.showAuditRings && state.result) renderAuditRings();
+    });
   }
 
   function setPin(lat, lon) {
@@ -615,9 +618,45 @@
     non: { color: '#9aa0a6', fillColor: '#9aa0a6' },
   };
 
+  // Drawing every footprint in a metro fetch can create tens of thousands of interactive
+  // Leaflet paths and lock the browser. Geometry still uses the complete dataset; this
+  // display layer is viewport-limited and refreshes after pan/zoom.
+  function renderBuildings() {
+    layerGroups.buildings.clearLayers();
+    const res = state.result;
+    if (!res || !document.getElementById('layer-buildings').checked || !state.proj) return;
+    const bounds = map.getBounds().pad(0.2);
+    const sw = state.proj.toXY(bounds.getSouth(), bounds.getWest());
+    const ne = state.proj.toXY(bounds.getNorth(), bounds.getEast());
+    const view = { minX: Math.min(sw.x, ne.x), minY: Math.min(sw.y, ne.y), maxX: Math.max(sw.x, ne.x), maxY: Math.max(sw.y, ne.y) };
+    const homeMembers = res.mode === 'city' && res.homeCluster >= 0 && res.clusters[res.homeCluster]
+      ? new Set(res.clusters[res.homeCluster].members) : new Set();
+    state.buildings.forEach((b, i) => {
+      if (b.bbox.maxX < view.minX || b.bbox.minX > view.maxX || b.bbox.maxY < view.minY || b.bbox.minY > view.maxY) return;
+      const st = { ...(KLASS_STYLE[b.klass] || KLASS_STYLE.unknown) };
+      const ov = state.overrides.get(b.id);
+      let dash = null, weight = 1, fillOpacity = b.included ? 0.45 : 0.12, opacity = b.included ? 0.9 : 0.45;
+      if (ov) { dash = '4 3'; weight = 2.5; st.color = ov === 'exclude' ? '#ff4136' : '#0074d9'; }
+      const poly = L.polygon(b.ring.map((p) => { const ll = state.proj.toLatLon(p.x, p.y); return [ll.lat, ll.lon]; }), {
+        color: st.color, weight, fillColor: st.fillColor, fillOpacity: homeMembers.has(i) ? Math.min(0.65, fillOpacity + 0.15) : fillOpacity,
+        opacity, dashArray: dash, renderer: buildingRenderer,
+      });
+      b.mapLayer = poly;
+      poly.bindTooltip(`<b>${escapeHtml(b.klass.toUpperCase())}</b> — ${escapeHtml(b.reason)}` +
+        (ov ? `<br>manual override: ${escapeHtml(ov)}` : '') + `<br><i>click to cycle: auto → include → exclude</i>`, { sticky: true });
+      poly.on('click', () => {
+        const cur = state.overrides.get(b.id);
+        if (!cur) state.overrides.set(b.id, 'include');
+        else if (cur === 'include') state.overrides.set(b.id, 'exclude');
+        else state.overrides.delete(b.id);
+        recompute();
+      });
+      poly.addTo(layerGroups.buildings);
+    });
+  }
+
   function render() {
     document.body.classList.add('has-result');
-    layerGroups.buildings.clearLayers();
     layerGroups.rects.clearLayers();
     layerGroups.second.clearLayers();
     layerGroups.settlements.clearLayers();
@@ -625,38 +664,7 @@
     const res = state.result;
     if (!res) return;
 
-    // buildings
-    const showBuildings = document.getElementById('layer-buildings').checked;
-    const homeMembers = res.mode === 'city' && res.homeCluster >= 0 && res.clusters[res.homeCluster]
-      ? new Set(res.clusters[res.homeCluster].members) : new Set();
-    if (showBuildings) {
-      state.buildings.forEach((b, i) => {
-        const st = { ...(KLASS_STYLE[b.klass] || KLASS_STYLE.unknown) };
-        const ov = state.overrides.get(b.id);
-        let dash = null, weight = 1, fillOpacity = b.included ? 0.45 : 0.12, opacity = b.included ? 0.9 : 0.45;
-        if (ov) { dash = '4 3'; weight = 2.5; st.color = ov === 'exclude' ? '#ff4136' : '#0074d9'; }
-        const inHome = homeMembers.has(i);
-        const poly = L.polygon(b.ring.map((p) => { const ll = state.proj.toLatLon(p.x, p.y); return [ll.lat, ll.lon]; }), {
-          color: st.color, weight, fillColor: st.fillColor, fillOpacity: inHome ? Math.min(0.65, fillOpacity + 0.15) : fillOpacity,
-          opacity, dashArray: dash, renderer: buildingRenderer,
-        });
-        b.mapLayer = poly;
-        poly.bindTooltip(
-          `<b>${escapeHtml(b.klass.toUpperCase())}</b> — ${escapeHtml(b.reason)}` +
-          (ov ? `<br>manual override: ${escapeHtml(ov)}` : '') +
-          `<br><i>click to cycle: auto → include → exclude</i>`,
-          { sticky: true }
-        );
-        poly.on('click', () => {
-          const cur = state.overrides.get(b.id);
-          if (!cur) state.overrides.set(b.id, 'include');
-          else if (cur === 'include') state.overrides.set(b.id, 'exclude');
-          else state.overrides.delete(b.id);
-          recompute();
-        });
-        poly.addTo(layerGroups.buildings);
-      });
-    }
+    renderBuildings();
 
     // rectangles
     const addRect = (corners, style, label, group) => {
