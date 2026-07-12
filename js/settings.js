@@ -7,9 +7,9 @@
   'use strict';
 
   const AMOS_OPTIONS = [
-    { cm: 48, label: "R' Chaim Naeh — 48 cm (2000 amos = 960 m)" },
+    { cm: 48, label: "R' Chaim Naeh — 18.90 in (2,000 amos = 960 m)" },
     { cm: 53.98, label: "R' Moshe Feinstein — 21.25 in (2000 amos = 1,080 m)" },
-    { cm: 57.6, label: 'Chazon Ish — 57.6 cm (2000 amos = 1,152 m)' },
+    { cm: 57.6, label: 'Chazon Ish — 22.68 in (2,000 amos = 1,152 m)' },
   ];
 
   const PROFILES = {

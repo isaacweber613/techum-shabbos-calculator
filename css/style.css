@@ -58,6 +58,10 @@ button.subtle { width: 100%; font-size: 12px; color: #666; margin-bottom: 6px; }
 .calc-progress span b { display:block; margin-top:2px; font-size:10px; font-weight:650; }
 .calc-progress span.done { background:#e5f3ed; color:#176b52; }
 .calc-progress span.active { background:#176b52; color:#fff; box-shadow:0 0 0 3px rgba(23,107,82,.11); }
+.method-callout { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:4px 0; padding:8px 10px; border:1px solid #b9d8cc; background:#eef8f4; }
+.method-callout strong,.method-callout small { display:block; }.method-callout small { margin-top:2px; color:#52635d; font-size:10px; }.method-callout label { white-space:nowrap; }
+.profile-explanation,.fixed-rule { margin:5px 0; padding:6px 7px; background:#f4f7f5; color:#46534e; font-size:10px; line-height:1.35; }
+.performance-report { display:grid; grid-template-columns:1fr auto; gap:2px 8px; align-items:center; margin:3px 0; padding:6px 8px; border-left:3px solid #176b52; background:#f2f6f4; font-size:10px; }.performance-report strong,.performance-report span { display:block; }.performance-report button { grid-column:2; grid-row:1 / span 2; font-size:9px; }
 button.primary[aria-busy="true"] .calc-action { width:14px; height:14px; border:2px solid rgba(255,255,255,.45); border-top-color:#fff; border-radius:50%; font-size:0; animation:calc-spin .7s linear infinite; }
 @keyframes calc-spin { to { transform:rotate(360deg); } }
 

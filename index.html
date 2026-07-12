@@ -35,6 +35,11 @@
         <span data-stage="analyze">2 <b>Build the city</b></span>
         <span data-stage="draw">3 <b>Draw the tchum</b></span>
       </div>
+      <section class="method-callout">
+        <div><strong>See how this calculation works</strong><small>Show the house chains, 70⅔-amah joins, derived city, squaring, and final 2,000-amah boundary.</small></div>
+        <label class="check"><input id="audit-rings" type="checkbox" /> Show calculation</label>
+      </section>
+      <div id="performance-report" class="performance-report" hidden></div>
       <div class="next-step"><span class="step-number">2</span><div><strong>Confirm the pin</strong><span>You can drag it to the exact building.</span></div></div>
       <button id="btn-calc" class="primary" disabled><span class="calc-label">Calculate my tchum</span> <span class="calc-action">→</span></button>
       <div id="confidence" class="confidence" hidden></div>
@@ -53,21 +58,21 @@
             <option value="custom" disabled>Custom (edited)</option>
           </select>
         </label>
+        <div id="profile-explanation" class="profile-explanation"></div>
         <label>Amah
           <select id="amah">
-            <option value="48">R' Chaim Naeh — 48 cm (960 m)</option>
-            <option value="53.98">R' Moshe Feinstein — 54 cm (1,080 m)</option>
-            <option value="57.6">Chazon Ish — 57.6 cm (1,152 m)</option>
+            <option value="48">R' Chaim Naeh — 18.90 in (960 m)</option>
+            <option value="53.98">R' Moshe Feinstein — 21.25 in (1,080 m)</option>
+            <option value="57.6">Chazon Ish — 22.68 in (1,152 m)</option>
           </select>
         </label>
         <label class="check"><input id="karpef" type="checkbox" />
           Single-city karpef +70⅔ amos <small>(Rema; MB 398:36 — off = Mechaber)</small></label>
-        <label>Squaring angle° <small>(0 = compass; set for a natural straight edge — CI OC 110:23)</small>
+        <label>City-squaring shita (angle°) <small>0 = cardinal directions (SA 398:3). Change only when a rav determines that the city's natural rectangular alignment controls (SA 398:1; disputed for some irregular shapes).</small>
           <input id="sq-angle" type="number" step="1" min="-89" max="89" value="0" /></label>
         <label class="check"><input id="overlap" type="checkbox" />
           Merge overlapping city rectangles <small>(Chazon Ish; off = strict, R' S. Miller)</small></label>
-        <label>City minimum (houses) <small>(MB 398:38 — for the 141⅓ city-merge only)</small>
-          <input id="min-city" type="number" min="1" max="20" value="6" /></label>
+        <p class="fixed-rule"><b>City threshold: 6 houses.</b> This is a fixed rule (MB 398:38), not a user setting.</p>
       </details>
 
       <details open>
@@ -105,16 +110,12 @@
         <label>Comparison techum line
           <select id="second-amah">
             <option value="0">off</option>
-            <option value="48">@ R' Chaim Naeh 48 cm</option>
-            <option value="53.98">@ R' Moshe 54 cm</option>
-            <option value="57.6">@ Chazon Ish 57.6 cm</option>
+            <option value="48">@ R' Chaim Naeh 18.90 in</option>
+            <option value="53.98">@ R' Moshe 21.25 in</option>
+            <option value="57.6">@ Chazon Ish 22.68 in</option>
           </select>
         </label>
         <label class="check"><input id="show-12mil" type="checkbox" /> 12-mil ring (d'oraisa shita)</label>
-        <label class="check audit-toggle"><input id="audit-rings" type="checkbox" />
-          <span><b>Show how the calculation works</b><small>Advanced audit view — exact house
-          footprints, colored 70⅔-amah reach, chain numbers, settlement rectangles, and the
-          home-city boundary. Zoom in and hover any line for its calculation.</small></span></label>
         <div id="audit-guide" class="audit-guide" hidden>
           <b>Reading the audit view</b>
           <ol>

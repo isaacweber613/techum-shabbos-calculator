@@ -385,6 +385,17 @@ overwrite).
   automatic Overture extraction service. Overture bulk GeoParquet has no official no-key
   browser bbox API; reviewer-uploaded extracts are implemented instead.
 
+### Rev. 8 — 2026-07-12 (settings clarity and performance; no default changes)
+
+- The six-house city qualification remains fixed at MB 398:38 and is no longer exposed as
+  an arbitrary user control. Amah choices are displayed in inches.
+- Ribua orientation is labelled as a halachic shita: cardinal directions are the baseline
+  (SA 398:3), while an existing rectangular/natural alignment and some irregular shapes
+  require the documented SA 398:1 / poskim analysis. The choice remains because the case is
+  genuinely disputed, not as a generic map-display preference.
+- Profile descriptions now state their operative shitos, the calculation audit is promoted
+  ahead of optional settings, and per-stage timing is recorded for agent-readable diagnosis.
+
 ---
 
 ## Part 3 — Product spec

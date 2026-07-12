@@ -155,6 +155,7 @@
 
   // bbox: {south, west, north, east} in degrees.
   async function fetchBuildings(bbox, timeoutSec) {
+    const clientTimeoutSec = Math.min(timeoutSec || 45, 90);
     const bb = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
     const query = `[out:json][timeout:${timeoutSec || 90}];
 (
@@ -164,16 +165,22 @@
 out geom;`;
     let lastErr;
     for (const ep of OVERPASS_ENDPOINTS) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), clientTimeoutSec * 1000);
       try {
         const res = await fetch(ep, {
           method: 'POST',
           body: 'data=' + encodeURIComponent(query),
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          signal: controller.signal,
         });
         if (!res.ok) throw new Error('Overpass HTTP ' + res.status);
         const json = await res.json();
         return parseOverpass(json);
-      } catch (e) { lastErr = e; }
+      } catch (e) {
+        lastErr = e && e.name === 'AbortError'
+          ? new Error(`Map-data server timed out after ${clientTimeoutSec}s`) : e;
+      } finally { clearTimeout(timer); }
     }
     throw lastErr;
   }

@@ -33,4 +33,16 @@ test('grid index keeps a 20,000-footprint sparse clustering pass practical', () 
   assert.ok(Date.now() - started < 10000, '20k clustering exceeded 10 seconds');
 });
 
+test('three-villages analysis skips thousands of non-city singleton clusters', () => {
+  const buildings = [];
+  for (let i = 0; i < 3000; i++) {
+    const x = (i % 100) * 100, y = Math.floor(i / 100) * 100;
+    buildings.push({ id: String(i), included: true, klass: 'dwelling', bbox: { minX: x, minY: y, maxX: x + 8, maxY: y + 8 }, ring: [{ x, y }, { x: x + 8, y }, { x: x + 8, y: y + 8 }, { x, y: y + 8 }] });
+  }
+  const started = Date.now();
+  const result = G.runPipeline(buildings, { amahM: 0.48, karpef: true, minCityHouses: 6, overlapMerge: false, squaringAngleDeg: 0 }, { x: 0, y: 0 });
+  assert.equal(result.clusters.length, buildings.length);
+  assert.ok(Date.now() - started < 3000, 'non-city filtering exceeded 3 seconds');
+});
+
 console.log(`\n${passed} projection/performance tests passed`);

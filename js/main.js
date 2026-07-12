@@ -32,12 +32,11 @@
   function track(type, data) { if (window.TechumTrack) window.TechumTrack.send(type, data); }
 
   const SETTING_HELP = {
-    profile: 'Choose a ready-made set of commonly used halachic defaults.',
+    profile: 'Choose a documented bundle of shitos; the explanation below states what changes and why.',
     amah: 'Sets the length of an amah. This changes distances and can change which buildings connect.',
     karpef: 'Adds 70⅔ amos around a single city before measuring the 2,000-amah techum.',
-    'sq-angle': 'Rotates the city square to follow a natural straight edge. Zero keeps compass alignment.',
+    'sq-angle': 'Halachic ribua: cardinal directions are the baseline. A natural city alignment applies in defined cases and is disputed for some irregular shapes; change this only with rabbinic direction.',
     overlap: 'Controls whether overlapping squared city areas are treated as one city.',
-    'min-city': 'Minimum house footprints needed before separate groups can merge as cities.',
     'inc-unknown': 'Includes buildings whose OpenStreetMap use is not identified.',
     'inc-review': 'Includes hotels, schools, shuls and similar places that need individual review.',
     'min-size': 'Leaves out structures smaller than four by four amos.',
@@ -51,6 +50,12 @@
     'second-amah': 'Adds another techum line using a different amah length.',
     'show-12mil': 'Shows the larger twelve-mil boundary used by one Torah-law opinion.',
     'audit-rings': 'Shows exactly how nearby buildings connect into settlements and the home city.',
+  };
+  const PROFILE_EXPLANATIONS = {
+    'mishna-berura': '<b>Mishna Berurah / Ashkenazi:</b> R\' Chaim Naeh amah (18.90 in), Rema\'s 70⅔-amah karpef, cardinal-direction squaring, and the stricter view that overlapping city rectangles do not automatically merge.',
+    'chazon-ish': '<b>Chazon Ish:</b> larger 22.68-inch amah and the lenient view that overlapping city rectangles are redrawn together. Cardinal squaring remains the starting value; use a natural city angle only when that halachic case has been established.',
+    mechaber: '<b>Mechaber / Sefardi:</b> 18.90-inch amah here, no extra single-city karpef, cardinal-direction squaring, and no automatic overlapping-rectangle merge.',
+    custom: '<b>Custom:</b> one or more choices differ from the selected profile. Review every changed shita with a rav.',
   };
 
   function addSettingHelp() {
@@ -251,7 +256,8 @@
     if (document.getElementById('btn-calc').getAttribute('aria-busy') === 'true') return;
     setCalculationStage('fetch', forceFresh ? 'Refreshing map buildings…' : 'Getting nearby map buildings…');
     await nextPaint();
-    const calcStarted = Date.now();
+    const calcStarted = performance.now();
+    const perf = { passes: [], buildings: 0 };
     state.dataCapHit = false;
     state.fromCache = false;
     state.proj = G.makeProjection(state.pin.lat, state.pin.lon);
@@ -260,6 +266,7 @@
     while (true) {
       setCalculationStage('fetch', `Getting map buildings${iteration ? ` (area pass ${iteration + 1})` : ''}…`);
       await nextPaint();
+      const fetchStarted = performance.now();
       try {
         const r = await D.fetchBuildingsCached(bbox, { force: !!forceFresh });
         state.rawBuildings = r.buildings;
@@ -271,11 +278,17 @@
         finishCalculationProgress(false);
         return;
       }
+      const fetchMs = performance.now() - fetchStarted;
       state.fetchBBox = bbox;
+      const prepStarted = performance.now();
       prepareBuildings();
+      const prepMs = performance.now() - prepStarted;
       setCalculationStage('analyze', `Building the city from ${state.rawBuildings.length.toLocaleString()} footprints…`);
       await nextPaint();
+      const engineStarted = performance.now();
       recompute(true);
+      const engineMs = performance.now() - engineStarted;
+      perf.passes.push({ pass: iteration + 1, buildings: state.rawBuildings.length, fetchMs, prepMs, engineMs });
       if (state.rawBuildings.length > settings.maxBuildings) {
         state.dataCapHit = true;
         break;
@@ -293,7 +306,13 @@
     setCalculationStage('draw', 'Drawing and labeling the boundaries…');
     await nextPaint();
     snapPinToFootprint();
+    const renderStarted = performance.now();
     recompute(); // final render with cap flags
+    perf.renderMs = performance.now() - renderStarted;
+    perf.totalMs = performance.now() - calcStarted;
+    perf.buildings = state.rawBuildings.length;
+    state.performance = perf;
+    renderPerformanceReport(perf);
     if (state.result && state.result.techumCorners) {
       const pts = state.result.techumCorners.map((p) => {
         const ll = state.proj.toLatLon(p.x, p.y);
@@ -317,7 +336,7 @@
       fromCache: !!state.fromCache, fresh: !!forceFresh,
       profile: S.effectiveProfile(settings),
       nonDefaults: S.diffFromDefaults(settings),
-      ms: Date.now() - calcStarted,
+      ms: Math.round(perf.totalMs), performance: perf,
     });
     // Automatic staleness check — no user action needed. If the cached data hasn't been
     // verified against OSM within autoCheckDays, silently check; refetch only on real edits.
@@ -325,6 +344,17 @@
     if (state.fromCache && verifiedAge > (settings.autoCheckDays || 30) * 86400000) {
       await checkUpdates(true);
     }
+  }
+
+  function renderPerformanceReport(perf) {
+    const el = document.getElementById('performance-report');
+    const totals = perf.passes.reduce((a, p) => ({ fetch: a.fetch + p.fetchMs, prep: a.prep + p.prepMs, engine: a.engine + p.engineMs }), { fetch: 0, prep: 0, engine: 0 });
+    const parts = [['map-data wait', totals.fetch], ['footprint preparation', totals.prep], ['halachic engine', totals.engine], ['final draw', perf.renderMs || 0]].sort((a, b) => b[1] - a[1]);
+    const reason = parts[0][1] > 1000 ? `Most time: ${parts[0][0]} (${(parts[0][1] / 1000).toFixed(1)}s).` : 'No slow stage detected.';
+    const agentReport = { app: 'Techum Shabbos Calculator', totalMs: Math.round(perf.totalMs), buildings: perf.buildings, passes: perf.passes.map((p) => ({ ...p, fetchMs: Math.round(p.fetchMs), prepMs: Math.round(p.prepMs), engineMs: Math.round(p.engineMs) })), renderMs: Math.round(perf.renderMs || 0), diagnosis: reason };
+    el.innerHTML = `<strong>Calculation time: ${(perf.totalMs / 1000).toFixed(1)}s</strong><span>${escapeHtml(reason)} ${perf.passes.length} map pass(es), ${perf.buildings.toLocaleString()} footprints.</span><button type="button" id="btn-copy-performance">Copy agent report</button>`;
+    el.hidden = false;
+    document.getElementById('btn-copy-performance').onclick = async () => { await navigator.clipboard.writeText(JSON.stringify(agentReport, null, 2)); setStatus('Performance report copied — paste it into an agent task.'); };
   }
 
   function neededExpansion(bbox) {
@@ -671,7 +701,7 @@
         validatedCityPerimeter: projectedValidatedPerimeter(),
       }, state.proj.toXY(state.pin.lat, state.pin.lon));
       addRect(res2.techumCorners, { color: '#e040fb', weight: 2.5, dashArray: '10 6', fill: false },
-        'Comparison: techum @ ' + settings.secondAmahCm + ' cm amah', layerGroups.second);
+        'Comparison: techum @ ' + (settings.secondAmahCm / 2.54).toFixed(2) + ' in amah', layerGroups.second);
     }
 
     renderAuditRings();
@@ -1225,11 +1255,11 @@
     const $ = (id) => document.getElementById(id);
     const refreshInputs = () => {
       $('profile').value = S.effectiveProfile(settings) === 'custom' ? 'custom' : settings.profile;
+      $('profile-explanation').innerHTML = PROFILE_EXPLANATIONS[S.effectiveProfile(settings)] || PROFILE_EXPLANATIONS.custom;
       $('amah').value = String(settings.amahCm);
       $('karpef').checked = settings.karpef;
       $('sq-angle').value = settings.squaringAngleDeg;
       $('overlap').checked = settings.overlapMerge;
-      $('min-city').value = settings.minCityHouses;
       $('inc-unknown').checked = settings.includeUnknown;
       $('inc-review').checked = settings.includeReview;
       $('min-size').checked = settings.minSizeFilter;
@@ -1251,7 +1281,6 @@
     $('karpef').addEventListener('change', (e) => { settings.karpef = e.target.checked; refreshInputs(); onChange(); });
     $('sq-angle').addEventListener('change', (e) => { settings.squaringAngleDeg = parseFloat(e.target.value) || 0; refreshInputs(); onChange(); });
     $('overlap').addEventListener('change', (e) => { settings.overlapMerge = e.target.checked; refreshInputs(); onChange(); });
-    $('min-city').addEventListener('change', (e) => { settings.minCityHouses = Math.max(1, parseInt(e.target.value, 10) || 6); refreshInputs(); onChange(); });
     $('inc-unknown').addEventListener('change', (e) => { settings.includeUnknown = e.target.checked; onChange(); });
     $('inc-review').addEventListener('change', (e) => { settings.includeReview = e.target.checked; onChange(); });
     $('min-size').addEventListener('change', (e) => { settings.minSizeFilter = e.target.checked; onChange(); });
