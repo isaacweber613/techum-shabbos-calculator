@@ -31,6 +31,13 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="css/style.css" />
+  <script>
+    (() => {
+      const design = new URLSearchParams(location.search).get('design');
+      if (/^[1-5]$/.test(design || '')) document.documentElement.dataset.design = design;
+    })();
+  </script>
+  <link rel="stylesheet" href="css/design-experience.css" />
 </head>
 <body>
   <div id="banner">
@@ -224,5 +231,6 @@
   <script src="js/settings.js"></script>
   <script src="js/kml.js"></script>
   <script src="js/main.js"></script>
+  <script src="js/design-experience.js"></script>
 </body>
 </html>
