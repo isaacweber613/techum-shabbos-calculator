@@ -77,6 +77,14 @@ test('ordinary users get one automatic Overture result with optional corrections
   assert.equal(S.DEFAULTS.showVerifiedOnly, false);
 });
 
+test('audit map and city-status controls use the correct merge stage', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.match(main, /const settlementClusters = res\.clusters/);
+  assert.match(main, /const qualificationClusters = res\.qualificationClusters/);
+  assert.match(main, /visibleSettlements\.slice\(0, 40\)/);
+  assert.match(main, /qualificationClusters\.forEach/);
+});
+
 test('settings profile and non-default analytics stay deterministic', () => {
   const ci = S.applyProfile({ ...S.DEFAULTS }, 'chazon-ish');
   assert.equal(S.effectiveProfile(ci), 'chazon-ish');

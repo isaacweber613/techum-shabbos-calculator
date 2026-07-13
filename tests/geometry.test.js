@@ -120,6 +120,9 @@ function rectSpan(corners) {
   const b = grid6(cityBEdge + 5, 0);
   const res = G.runPipeline(a.concat(b), S, { x: 0, y: 0 });
   assert('two cities merge at 60m', res.clusters.length === 1, `clusters=${res.clusters.length}`);
+  assert('city-status audit preserves the two pre-merge qualification components',
+    res.qualificationClusters.length === 2 && res.qualificationClusters.every((c) => c.qualifiesAsCity),
+    `qualificationClusters=${res.qualificationClusters.length}`);
 
   // lone house at 60m: NOT merged (only 70 2/3 for a house, and 60 > 33.92)
   const c = grid6(0, 0);
@@ -259,12 +262,12 @@ function rectSpan(corners) {
       c.qualifiesAsCity === false && c.qualificationSource === 'footprint-count'));
   const reviewed = G.runPipeline(houses, {
     ...S,
-    cityQualificationOverrides: Object.fromEntries(ordinary.reviewClusters.map((c) => [c.key, true])),
+    cityQualificationOverrides: Object.fromEntries(ordinary.qualificationClusters.map((c) => [c.key, true])),
   }, { x: 0, y: 0 });
   assert('reviewer-qualified small settlements participate in 141-amah merge',
     reviewed.clusters.length === 1, `clusters=${reviewed.clusters.length}`);
   assert('merged audit preserves source cluster keys',
-    ordinary.reviewClusters.every((c) => reviewed.clusters[0].componentKeys.includes(c.key)));
+    ordinary.qualificationClusters.every((c) => reviewed.clusters[0].componentKeys.includes(c.key)));
 }
 
 {
@@ -272,7 +275,7 @@ function rectSpan(corners) {
   const baseline = G.runPipeline(houses, S, { x: 0, y: 0 });
   const blocked = G.runPipeline(houses, {
     ...S,
-    cityQualificationOverrides: { [baseline.reviewClusters[0].key]: false },
+    cityQualificationOverrides: { [baseline.qualificationClusters[0].key]: false },
   }, { x: 0, y: 0 });
   assert('reviewer disqualification prevents count-based city merge',
     blocked.clusters.length === 2 && blocked.clusters.some((c) =>
@@ -283,16 +286,16 @@ function rectSpan(corners) {
   const houses = [squareHouse(0, 0), squareHouse(15, 0), squareHouse(30, 0), squareHouse(45, 0)];
   houses.forEach((h, i) => { h.id = `way/${100 + i}`; });
   const initial = G.runPipeline(houses, S, { x: 0, y: 0 });
-  const reviewedKey = initial.reviewClusters[0].key;
-  const record = { decision: false, memberIds: initial.reviewClusters[0].memberIds };
+  const reviewedKey = initial.qualificationClusters[0].key;
+  const record = { decision: false, memberIds: initial.qualificationClusters[0].memberIds };
   const added = squareHouse(60, 0); added.id = 'way/104';
   const refreshed = G.runPipeline([added, houses[2], houses[0], houses[3], houses[1]], {
     ...S, cityQualificationOverrides: { [reviewedKey]: record },
   }, { x: 0, y: 0 });
   assert('review decision remaps across OSM ordering and a small membership change',
-    refreshed.reviewClusters[0].qualifiesAsCity === false &&
-    refreshed.reviewClusters[0].qualificationSource === 'reviewer-remapped' &&
-    refreshed.reviewClusters[0].qualificationRemapScore >= 0.8);
+    refreshed.qualificationClusters[0].qualifiesAsCity === false &&
+    refreshed.qualificationClusters[0].qualificationSource === 'reviewer-remapped' &&
+    refreshed.qualificationClusters[0].qualificationRemapScore >= 0.8);
 }
 
 // 14. Bow endpoints are review metadata only ----------------------------------

@@ -938,12 +938,15 @@
     layerGroups.settlements.clearLayers();
     if (!settings.showAuditRings || !res) return;
 
-    const reviewClusters = res.reviewClusters || res.clusters;
-    const visibleReviewClusters = reviewClusters.filter((cluster) => cluster.qualifiesAsCity ||
+    // Draw the final post-merge settlements. City-status decisions, however, must
+    // be attached to the pre-merge qualification components used by the engine.
+    const settlementClusters = res.clusters;
+    const qualificationClusters = res.qualificationClusters || res.reviewClusters || res.clusters;
+    const visibleSettlements = settlementClusters.filter((cluster) => cluster.qualifiesAsCity ||
       cluster.members.length >= Math.max(1, settings.minCityHouses - 2) ||
-      (res.clusters[res.homeCluster] && res.clusters[res.homeCluster].componentKeys || []).includes(cluster.key));
-    visibleReviewClusters.slice(0, 40).forEach((cluster) => {
-      const index = reviewClusters.indexOf(cluster);
+      settlementClusters[res.homeCluster] === cluster);
+    visibleSettlements.slice(0, 40).forEach((cluster) => {
+      const index = settlementClusters.indexOf(cluster);
       const isHome = index === res.homeCluster;
       const color = isHome ? '#00e676' : `hsl(${(index * 137.508) % 360}, 75%, 48%)`;
       const label = `Settlement #${index + 1}: ${cluster.members.length} included structure${cluster.members.length === 1 ? '' : 's'}` +
@@ -967,12 +970,12 @@
       `70⅔ amos = ${res.thresholds.joinM.toFixed(1)} m; 141⅓ amos = ${res.thresholds.t2.toFixed(1)} m.`;
     const review = document.getElementById('cluster-review');
     review.replaceChildren();
-    const title = document.createElement('b'); title.textContent = 'Settlement city-status review'; review.appendChild(title);
-    res.clusters.forEach((cluster, index) => {
+    const title = document.createElement('b'); title.textContent = 'Pre-merge city-status components'; review.appendChild(title);
+    qualificationClusters.forEach((cluster, index) => {
       const row = document.createElement('label');
       const text = document.createElement('span');
-      text.innerHTML = `#${index + 1} · ${cluster.members.length} structures<small>${cluster.qualifiesAsCity ? 'qualifies' : 'does not qualify'} via ${escapeHtml(cluster.qualificationSource)}</small>`;
-      const select = document.createElement('select'); select.setAttribute('aria-label', `Settlement ${index + 1} city status`);
+      text.innerHTML = `Component #${index + 1} · ${cluster.members.length} structures<small>${cluster.qualifiesAsCity ? 'qualifies' : 'does not qualify'} via ${escapeHtml(cluster.qualificationSource)}</small>`;
+      const select = document.createElement('select'); select.setAttribute('aria-label', `Pre-merge component ${index + 1} city status`);
       [['','Use footprint-count proxy'],['true','Rav/reviewer: qualifies'],['false','Rav/reviewer: does not qualify']].forEach(([value, label]) => {
         const option = document.createElement('option'); option.value = value; option.textContent = label; select.appendChild(option);
       });
@@ -987,10 +990,10 @@
       });
       row.append(text, select); review.appendChild(row);
     });
-    const omitted = reviewClusters.length - Math.min(40, visibleReviewClusters.length);
+    const omitted = settlementClusters.length - Math.min(40, visibleSettlements.length);
     if (omitted > 0) {
       const note = document.createElement('small'); note.className = 'muted';
-      note.textContent = `${omitted} small, non-qualifying settlements hidden to keep review focused.`; review.appendChild(note);
+      note.textContent = `${omitted} additional small, non-qualifying settlements are not drawn on the map.`; review.appendChild(note);
     }
   }
 
