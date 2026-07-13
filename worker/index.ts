@@ -1,4 +1,5 @@
 import { handleBuildings } from './buildings';
+import { submitBuildingCorrection } from './corrections';
 import { sha256Hex, validateRegistrySubmission } from './registry';
 
 interface Env {
@@ -379,6 +380,14 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/geocode' && request.method === 'GET') return geocode(request, env);
   if (url.pathname === '/api/autocomplete' && request.method === 'GET') return autocomplete(request, env);
   if (url.pathname === '/api/buildings' && request.method === 'GET') return handleBuildings(request, env);
+  if (url.pathname === '/api/building-corrections' && request.method === 'POST') {
+    const network = await hmacHex(env.IP_HASH_SECRET || 'local-development-only',
+      request.headers.get('CF-Connecting-IP') || 'unknown');
+    const limited = await env.BUILDINGS_RATE_LIMITER.limit({ key: `correction:${network}` });
+    if (!limited.success) return json({ error: 'correction rate limit exceeded' }, 429, { 'Retry-After': '60' });
+    const email = accessEmail(request);
+    return submitBuildingCorrection(request, env.DB, email || `network:${network}`, !!email);
+  }
   if (url.pathname === '/api/registry' && request.method === 'GET') return listRegistry(env);
   if (url.pathname === '/api/registry' && request.method === 'POST') return publishRegistry(request, env);
   const registryMatch = url.pathname.match(/^\/api\/registry\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
@@ -391,7 +400,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    try { return await handle(request, env); }
+    try {
+      const url = new URL(request.url);
+      if (url.protocol === 'http:' || url.hostname === 'www.tchumshabbos.com') {
+        url.protocol = 'https:';
+        url.hostname = 'tchumshabbos.com';
+        url.port = '';
+        return Response.redirect(url.toString(), 308);
+      }
+      return await handle(request, env);
+    }
     catch (error) {
       console.error(JSON.stringify({ message: 'request failed', path: new URL(request.url).pathname,
         error: error instanceof Error ? error.message : String(error) }));

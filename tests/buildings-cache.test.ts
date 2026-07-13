@@ -27,9 +27,9 @@ function test(name: string, fn: () => void) {
 
 test('tile index and key round-trip', () => {
   assert.equal(tileIndex(40.74), Math.floor(40.74 / TILE_DEG));
-  assert.equal(tileKey(2037, -3701), `v1/2037/-3701`);
-  assert.deepEqual(parseTileKey('v1/2037/-3701'), { i: 2037, j: -3701, key: 'v1/2037/-3701' });
-  assert.equal(parseTileKey('v0/1/2'), null);
+  assert.equal(tileKey(2037, -3701), `v2/2037/-3701`);
+  assert.deepEqual(parseTileKey('v2/2037/-3701'), { i: 2037, j: -3701, key: 'v2/2037/-3701' });
+  assert.equal(parseTileKey('v1/1/2'), null);
 });
 
 test('tile bbox is half-open degree cell', () => {
@@ -46,7 +46,7 @@ test('tilesForBBox covers pin-sized radius with a few cells', () => {
   const tiles = tilesForBBox(bbox);
   assert.ok(tiles.length >= 1);
   assert.ok(tiles.length <= MAX_TILES_PER_REQUEST);
-  assert.ok(tiles.every((t) => t.key.startsWith('v1/')));
+  assert.ok(tiles.every((t) => t.key.startsWith('v2/')));
 });
 
 test('bboxForTiles covers the complete cold tile group in one upstream query', () => {

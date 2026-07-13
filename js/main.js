@@ -1,6 +1,6 @@
 /*
  * Techum Calculator — app orchestration + Leaflet rendering.
- * Flow: geocode/pin -> fetch OSM buildings (auto-expanding) -> classify ->
+ * Flow: geocode/pin -> fetch Overture buildings (auto-expanding) -> classify ->
  * project -> TechumGeo.runPipeline -> render layers -> exports.
  */
 (function () {
@@ -13,13 +13,15 @@
   let state = {
     pin: null,            // {lat, lon}
     proj: null,
-    rawBuildings: [],     // from Overpass: {id, tags, ringLatLon}
-    manualBuildings: [],  // reviewer-drawn/imported corrections, never presented as OSM data
+    rawBuildings: [],     // from Overture: {id, tags, ringLatLon}
+    manualBuildings: [],  // reviewer-drawn/imported corrections
     buildings: [],        // projected + classified: {id, tags, ring, bbox, klass, included, override}
     overrides: new Map(), // id -> 'include' | 'exclude'
     result: null,
     fetchBBox: null,      // {south, west, north, east}
     dataCapHit: false,
+    dataRelease: null,
+    correctionsApplied: 0,
     snapInfo: null,
     overtureReport: null,
     validatedPerimeter: null,
@@ -43,7 +45,7 @@
     karpef: 'Adds 70⅔ amos around a single city before measuring the 2,000-amah techum.',
     'sq-angle': 'Halachic ribua: cardinal directions are the baseline. A natural city alignment applies in defined cases and is disputed for some irregular shapes; change this only with rabbinic direction.',
     overlap: 'Controls whether overlapping squared city areas are treated as one city.',
-    'inc-unknown': 'Includes buildings whose OpenStreetMap use is not identified.',
+    'inc-unknown': 'Includes detected structures whose dwelling use is not identified.',
     'inc-review': 'Includes hotels, schools, shuls and similar places that need individual review.',
     'min-size': 'Leaves out structures smaller than four by four amos.',
     'fetch-radius': 'How far from the pin the first building-data search reaches.',
@@ -304,7 +306,9 @@
       state.fetchedAt = fetched.fetchedAt;
       state.checkedAt = fetched.checkedAt;
       state.fromCache = fetched.fromCache;
-      state.dataSource = fetched.source || (fetched.fromCache ? 'local' : 'overpass');
+      state.dataSource = fetched.source || (fetched.fromCache ? 'local-overture' : 'overture');
+      state.dataRelease = fetched.release || state.dataRelease;
+      state.correctionsApplied = fetched.correctionsApplied || 0;
       state.fetchBBox = bbox;
       const prepStarted = performance.now();
       prepareBuildings();
@@ -359,11 +363,10 @@
     }
     const ageDays = state.fetchedAt ? ((Date.now() - Date.parse(state.fetchedAt)) / 86400000) : 0;
     const ageLabel = ageDays < 1 ? 'today' : ageDays.toFixed(0) + ' days old';
+    const releaseLabel = state.dataRelease ? `Overture ${state.dataRelease}` : 'Overture';
     const cacheLabel = state.fromCache
-      ? (state.dataSource === 'server-tiles'
-        ? `Data from shared city cache (${ageLabel}).`
-        : `Data from local cache (${ageLabel}).`)
-      : (state.dataSource === 'server-tiles' ? 'Fresh OSM data (stored for other users).' : 'Fresh OSM data.');
+      ? `${releaseLabel} data from cache (${ageLabel}).`
+      : `Fresh ${releaseLabel} footprints.`;
     setStatus(`Done — ${state.rawBuildings.length} buildings analyzed. ` +
       (state.result && state.result.mode === 'city'
         ? 'Techum drawn from the squared city. ' : 'Point-shevisa techum drawn. ') +
@@ -379,12 +382,8 @@
       nonDefaults: S.diffFromDefaults(settings),
       ms: Math.round(perf.totalMs), performance: perf,
     });
-    // Automatic staleness check — no user action needed. If the cached data hasn't been
-    // verified against OSM within autoCheckDays, silently check; refetch only on real edits.
-    const verifiedAge = Date.now() - Date.parse(state.checkedAt || state.fetchedAt || 0);
-    if (state.fromCache && verifiedAge > (settings.autoCheckDays || 30) * 86400000) {
-      await checkUpdates(true);
-    }
+    // Overture releases are immutable and named in every result. Updating the configured
+    // release bumps the server tile-cache version; no user-facing staleness action is needed.
   }
 
   function renderPerformanceReport(perf) {
@@ -482,33 +481,60 @@
   function addDrawingVertex(latlng) {
     drawing.points.push({ lat: latlng.lat, lon: latlng.lng });
     if (drawing.layer) drawing.layer.remove();
+    if (drawing.mode === 'rectangle' && drawing.points.length === 2) {
+      const a = drawing.points[0], b = drawing.points[1];
+      drawing.points = [a, { lat: a.lat, lon: b.lon }, b, { lat: b.lat, lon: a.lon }];
+      drawing.layer = L.polygon(drawing.points.map((p) => [p.lat, p.lon]), {
+        color: '#d43f8d', weight: 3, dashArray: '6 5', interactive: false,
+      }).addTo(map);
+      void finishDrawing();
+      return;
+    }
     drawing.layer = L.polyline(drawing.points.map((p) => [p.lat, p.lon]), {
       color: '#d43f8d', weight: 3, dashArray: '6 5', interactive: false,
     }).addTo(map);
     document.getElementById('btn-finish-building').disabled = drawing.points.length < 3;
-    setStatus(`Drawing missing footprint: ${drawing.points.length} point(s). Click each corner, then Finish shape.`);
+    setStatus(drawing.mode === 'rectangle'
+      ? 'Rectangle footprint: click the opposite roof corner.'
+      : `Drawing missing footprint: ${drawing.points.length} point(s). Click each corner, then Finish shape.`);
   }
 
-  function startDrawing() {
+  function startDrawing(mode = 'polygon') {
     if (!state.pin || !state.proj) { setStatus('Set an address and calculate before drawing a missing building.'); return; }
     cancelMapMode(false);
-    drawing = { points: [], layer: null };
+    drawing = { points: [], layer: null, mode };
     map.doubleClickZoom.disable();
-    const finish = document.getElementById('btn-finish-building'); finish.hidden = false; finish.disabled = true;
+    const finish = document.getElementById('btn-finish-building'); finish.hidden = mode === 'rectangle'; finish.disabled = true;
     document.getElementById('btn-cancel-map-mode').hidden = false;
     document.body.classList.add('map-mode-active');
-    setStatus('Drawing mode: click each corner, then Finish shape. Press Escape or Cancel to stop.');
+    setStatus(mode === 'rectangle'
+      ? 'Rectangle footprint: click two opposite roof corners. Press Escape or Cancel to stop.'
+      : 'Drawing mode: click each roof corner, then Finish shape. Press Escape or Cancel to stop.');
   }
 
-  function finishDrawing() {
+  async function shareBuildingCorrection(correction) {
+    try {
+      const saved = await D.submitBuildingCorrection(correction);
+      return saved.status === 'accepted'
+        ? ' Shared correction is active for everyone.'
+        : ' Sent for shared review; it is active in your current calculation.';
+    } catch (error) {
+      return ` Saved in this calculation; shared save failed (${error.message}).`;
+    }
+  }
+
+  async function finishDrawing() {
     if (!drawing || drawing.points.length < 3) return;
+    const ringLatLon = drawing.points.slice();
     if (drawing.layer) drawing.layer.remove();
     state.manualBuildings.push({ id: `manual-${Date.now()}-${state.manualBuildings.length + 1}`,
-      tags: { building: 'yes', source: 'manual-review' }, ringLatLon: drawing.points });
+      tags: { building: 'yes', source: 'manual-review' }, ringLatLon });
     drawing = null; map.doubleClickZoom.enable(); document.getElementById('btn-finish-building').hidden = true;
     document.getElementById('btn-cancel-map-mode').hidden = true; document.body.classList.remove('map-mode-active');
-    prepareBuildings(); recompute();
-    setStatus('Manual footprint added and flagged as untagged. Click it to include or exclude it explicitly.');
+    prepareBuildings(); await recompute();
+    const shared = await shareBuildingCorrection({ decision: 'include', ringLatLon,
+      note: 'User-drawn missing building footprint' });
+    setStatus('Missing footprint added automatically.' + shared);
   }
 
   function cancelCalculation() {
@@ -749,13 +775,19 @@
       });
       b.mapLayer = poly;
       poly.bindTooltip(`<b>${escapeHtml(b.klass.toUpperCase())}</b> — ${escapeHtml(b.reason)}` +
-        (ov ? `<br>manual override: ${escapeHtml(ov)}` : '') + `<br><i>click to cycle: auto → include → exclude</i>`, { sticky: true });
-      poly.on('click', () => {
+        (ov ? `<br>manual correction: ${escapeHtml(ov)}` : '') + `<br><i>Optional: click to correct include/exclude</i>`, { sticky: true });
+      poly.on('click', async () => {
         const cur = state.overrides.get(b.id);
         if (!cur) state.overrides.set(b.id, 'include');
         else if (cur === 'include') state.overrides.set(b.id, 'exclude');
         else state.overrides.delete(b.id);
-        recompute();
+        const decision = state.overrides.get(b.id);
+        await recompute();
+        if (!decision) { setStatus('Building returned to the automatic Overture decision.'); return; }
+        const sourceRing = b.ring.map((point) => state.proj.toLatLon(point.x, point.y));
+        const shared = await shareBuildingCorrection({ sourceId: b.id, decision, sourceRing,
+          note: 'Optional map correction from building click' });
+        setStatus(`Building marked ${decision === 'include' ? 'included' : 'excluded'}.` + shared);
       });
       poly.addTo(layerGroups.buildings);
     });
@@ -1134,9 +1166,10 @@
       `Untagged buildings: ${settings.includeUnknown ? 'included (flagged)' : 'excluded'}; ambiguous: ${settings.includeReview ? 'included (flagged)' : 'excluded'}`,
       '== Audit / reproducibility ==',
       `Engine version: ${ENGINE_VERSION} (deterministic: same data + same settings = same output)`,
-      `OSM data fetched: ${state.fetchedAt || 'n/a'} via Overpass; extent S${bb ? bb.south.toFixed(5) : '?'} W${bb ? bb.west.toFixed(5) : '?'} N${bb ? bb.north.toFixed(5) : '?'} E${bb ? bb.east.toFixed(5) : '?'}`,
+      `Building data: Overture ${state.dataRelease || 'release unknown'}, fetched ${state.fetchedAt || 'n/a'}; extent S${bb ? bb.south.toFixed(5) : '?'} W${bb ? bb.west.toFixed(5) : '?'} N${bb ? bb.north.toFixed(5) : '?'} E${bb ? bb.east.toFixed(5) : '?'}`,
       `Buildings: ${state.buildings.length} (${counts.dwelling} dwelling / ${counts.unknown} untagged / ${counts.review} ambiguous / ${counts.non} non)`,
-      `Manual missing-building footprints: ${state.manualBuildings.length} (reviewer supplied; not OSM data)`,
+      `Manual missing-building footprints: ${state.manualBuildings.length} (reviewer supplied)`,
+      `Accepted shared corrections applied: ${state.correctionsApplied || 0}`,
       `Rav-validated enclosure perimeter: ${state.validatedPerimeter ? (settings.useValidatedPerimeter ? 'ACTIVE as city edge' : 'stored but inactive') : 'none'}`,
       `Manual overrides: ${state.overrides.size}${state.overrides.size ? ' [' + [...state.overrides.entries()].map(([id, v]) => id + ':' + v).join(', ') + ']' : ''}`,
       `Search frontier closed: ${state.dataCapHit ? 'NO — data cap hit, chain may continue; techum is an inner bound in those directions' : 'yes'}`,
@@ -1479,8 +1512,9 @@
     });
     document.getElementById('btn-load-snapshot').addEventListener('click', () =>
       document.getElementById('snapshot-file').click());
-    document.getElementById('btn-draw-building').addEventListener('click', startDrawing);
-    document.getElementById('btn-finish-building').addEventListener('click', finishDrawing);
+    document.getElementById('btn-draw-rectangle').addEventListener('click', () => startDrawing('rectangle'));
+    document.getElementById('btn-draw-building').addEventListener('click', () => startDrawing('polygon'));
+    document.getElementById('btn-finish-building').addEventListener('click', () => void finishDrawing());
     document.getElementById('btn-cancel-map-mode').addEventListener('click', () => cancelMapMode());
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (drawing || bowCapture)) cancelMapMode(); });
     let resizeTimer;
@@ -1489,10 +1523,6 @@
     document.getElementById('building-file').addEventListener('change', (e) => {
       if (e.target.files && e.target.files[0]) importBuildings(e.target.files[0]);
       e.target.value = '';
-    });
-    document.getElementById('btn-import-overture').addEventListener('click', () => document.getElementById('overture-file').click());
-    document.getElementById('overture-file').addEventListener('change', (e) => {
-      if (e.target.files && e.target.files[0]) importOverture(e.target.files[0]); e.target.value = '';
     });
     document.getElementById('btn-registry-refresh').addEventListener('click', browseRegistry);
     document.getElementById('btn-import-perimeter').addEventListener('click', () => document.getElementById('perimeter-file').click());

@@ -1,11 +1,14 @@
 /**
- * Shared OSM building tile cache: fixed-degree grid → R2 payloads + D1 metadata.
- * Pure tile math is exported for unit tests; the Worker handler fills misses via Overpass.
+ * Shared Overture building tile cache: fixed-degree grid → R2 payloads + D1 metadata.
+ * Pure tile math is exported for unit tests; the Worker fills misses from Overture PMTiles.
  */
+
+import { fetchOvertureBuildings, OVERTURE_RELEASE } from './overture.ts';
+import { applyAcceptedCorrections } from './corrections.ts';
 
 export const TILE_DEG = 0.02; // ~2.2 km at mid-latitudes
 export const MAX_TILES_PER_REQUEST = 36; // 6×6 cells ≈ 7 km × 7 km
-export const BUILDINGS_CACHE_VERSION = 1;
+export const BUILDINGS_CACHE_VERSION = 2;
 
 export type BBox = { south: number; west: number; north: number; east: number };
 
@@ -260,9 +263,9 @@ async function fillTiles(
 ): Promise<Map<string, { buildings: Building[]; fetchedAt: string }>> {
   await reserveFillSlot(env);
 
-  // Fetch the cold area once, then partition the response into cache tiles. Fetching
-  // each tile separately made one user fan out into as many as 36 serial Overpass calls.
-  const allBuildings = await fetchOverpassBuildings(bboxForTiles(tiles), env.GEOCODER_CONTACT);
+  // Fetch the cold area once, then partition the response into cache tiles. The public
+  // Overture PMTiles archive serves byte ranges, so only intersecting vector tiles move.
+  const allBuildings = await fetchOvertureBuildings(bboxForTiles(tiles));
   const nowIso = new Date().toISOString();
   const filled = new Map<string, { buildings: Building[]; fetchedAt: string }>();
   for (const tile of tiles) {
@@ -285,13 +288,10 @@ export function parseBBoxParams(params: URLSearchParams): BBox | null {
 
 /**
  * GET /api/buildings?south=&west=&north=&east=&force=0|1
- * Unions fixed-degree tiles covering the bbox. Cold tiles are filled from Overpass into R2.
+ * Unions fixed-degree tiles covering the bbox. Cold tiles are filled from Overture into R2.
  */
 export async function handleBuildings(request: Request, env: BuildingsEnv): Promise<Response> {
   if (!env.BUILDINGS) return json({ error: 'building cache is not configured' }, 503);
-  if (!env.GEOCODER_CONTACT || env.GEOCODER_CONTACT === 'SET_BEFORE_PRODUCTION') {
-    return json({ error: 'geocoder contact is not configured' }, 503);
-  }
 
   const url = new URL(request.url);
   const bbox = parseBBoxParams(url.searchParams);
@@ -354,14 +354,18 @@ export async function handleBuildings(request: Request, env: BuildingsEnv): Prom
     }
   }
 
-  const buildings = filterBuildingsToBBox(mergeBuildings(groups), bbox);
+  const baseBuildings = filterBuildingsToBBox(mergeBuildings(groups), bbox);
+  const corrected = await applyAcceptedCorrections(env.DB, bbox, baseBuildings);
+  const buildings = filterBuildingsToBBox(corrected.buildings, bbox);
   const fromCache = misses === 0 && hits > 0;
   return json({
     buildings,
     fetchedAt: oldestIso(fetchedAts),
     checkedAt: oldestIso(checkedAts),
     fromCache,
-    source: 'server-tiles',
+    source: 'overture-tiles',
+    release: OVERTURE_RELEASE,
+    correctionsApplied: corrected.applied,
     tiles: { hit: hits, miss: misses, count: tiles.length, keys: tiles.map((t) => t.key) },
     tileDeg: TILE_DEG,
   }, 200, {

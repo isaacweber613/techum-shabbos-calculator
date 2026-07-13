@@ -63,6 +63,24 @@ createServer(async (req, res) => {
       }));
       return;
     }
+    // Local static development uses the production read-only Overture endpoint so it
+    // exercises the same footprint source without requiring local R2/D1 bindings.
+    if (path === '/api/buildings' && req.method === 'GET') {
+      const upstream = new URL('/api/buildings' + url.search, 'https://tchumshabbos.com');
+      const response = await fetch(upstream, { headers: { Accept: 'application/json' } });
+      const body = Buffer.from(await response.arrayBuffer());
+      res.writeHead(response.status, {
+        'Content-Type': response.headers.get('Content-Type') || 'application/json',
+        'Cache-Control': 'no-store',
+      });
+      res.end(body);
+      return;
+    }
+    if (path === '/api/building-corrections' && req.method === 'POST') {
+      await readBody(req, 32000);
+      sendJSON(res, 201, { id: 'local-preview', status: 'pending' });
+      return;
+    }
 
     // ---- static files ----
     if (path === '/') path = '/index.html';
