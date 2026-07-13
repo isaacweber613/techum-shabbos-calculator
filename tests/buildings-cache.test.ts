@@ -15,6 +15,13 @@ import {
   bboxForTiles,
   parseBBoxParams,
 } from '../worker/buildings.ts';
+import {
+  OVERTURE_RELEASE,
+  overtureFeatureToBuildings,
+  preferLargestDuplicate,
+  tilesForOvertureBBox,
+} from '../worker/overture.ts';
+import { validateCorrectionInput } from '../worker/corrections.ts';
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -112,6 +119,42 @@ test('filterBuildingsToBBox keeps intersecting footprints', () => {
 
 test('oldestIso picks earliest timestamp', () => {
   assert.equal(oldestIso(['2026-07-12T12:00:00.000Z', '2026-07-10T12:00:00.000Z']), '2026-07-10T12:00:00.000Z');
+});
+
+test('Overture bbox resolves to a bounded z14 tile set', () => {
+  const tiles = tilesForOvertureBBox({ south: 41.724, west: -74.585, north: 41.735, east: -74.560 });
+  assert.ok(tiles.length >= 1 && tiles.length <= 4, `tiles=${tiles.length}`);
+  assert.ok(tiles.every((tile) => tile.z === 14));
+});
+
+test('Overture feature preserves source identity and residential class', () => {
+  const buildings = overtureFeatureToBuildings({
+    geometry: { type: 'Polygon', coordinates: [[[-74.58, 41.72], [-74.57, 41.72], [-74.57, 41.73], [-74.58, 41.72]]] },
+    properties: { id: 'abc', class: 'detached', subtype: 'residential', '@geometry_source': 'OpenStreetMap' },
+  });
+  assert.equal(buildings.length, 1);
+  assert.equal(buildings[0].id, 'ovt:abc');
+  assert.equal(buildings[0].tags.building, 'detached');
+  assert.equal(buildings[0].tags.geometry_source, 'OpenStreetMap');
+  assert.equal(buildings[0].tags.overture_release, OVERTURE_RELEASE);
+});
+
+test('Overture duplicate fragments keep the largest geometry', () => {
+  const small = { id: 'ovt:x', tags: {}, ringLatLon: [
+    { lat: 0, lon: 0 }, { lat: 0, lon: 1 }, { lat: 1, lon: 0 },
+  ] };
+  const large = { id: 'ovt:x', tags: {}, ringLatLon: [
+    { lat: 0, lon: 0 }, { lat: 0, lon: 2 }, { lat: 2, lon: 2 }, { lat: 2, lon: 0 },
+  ] };
+  assert.equal(preferLargestDuplicate([small, large])[0].ringLatLon.length, 4);
+});
+
+test('shared correction validation requires a local bounded source ring', () => {
+  const ring = [{ lat: 41.72, lon: -74.58 }, { lat: 41.72, lon: -74.579 }, { lat: 41.721, lon: -74.579 }];
+  const valid = validateCorrectionInput({ sourceId: 'ovt:abc', decision: 'exclude', sourceRing: ring });
+  assert.equal(valid?.sourceId, 'ovt:abc');
+  assert.equal(validateCorrectionInput({ sourceId: 'ovt:abc', decision: 'exclude' }), null);
+  assert.equal(validateCorrectionInput({ decision: 'include', ringLatLon: [{ lat: 0, lon: 0 }] }), null);
 });
 
 console.log(`building tile cache: ${passed} tests passed`);

@@ -642,6 +642,7 @@
     let home = -1, bestD = Infinity, bestContainSize = -1;
     const pinRect = { minX: workPin.x, maxX: workPin.x, minY: workPin.y, maxY: workPin.y };
     clusters.forEach((c, idx) => {
+      if (!c.qualifiesAsCity) return;
       if (rectContains(c.bbox, pinRect) && c.members.length > bestContainSize) {
         bestContainSize = c.members.length;
         home = idx; bestD = 0;
@@ -649,6 +650,7 @@
     });
     if (home < 0) {
       clusters.forEach((c, idx) => {
+        if (!c.qualifiesAsCity) return;
         if (bboxGap(expandRect(c.bbox, joinM), pinRect) > 0) return;
         for (const i of c.members) {
           const d = ringDistToPoint(workPin, work[i].ring);

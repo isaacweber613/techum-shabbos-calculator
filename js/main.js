@@ -1046,8 +1046,8 @@
     }
     lines.push(`<div class="stat"><b>Mode:</b> ${res.mode === 'city' ? 'city (whole city = 4 amos)' : 'open field (point shevisa)'}</div>`);
     lines.push(`<div class="stat"><b>Buildings fetched:</b> ${state.buildings.length} — ` +
-      `<span class="sw dw"></span>${counts.dwelling} dwelling, <span class="sw un"></span>${counts.unknown} untagged, ` +
-      `<span class="sw rv"></span>${counts.review} needs-review, <span class="sw no"></span>${counts.non} non-dwelling</div>`);
+      `<span class="sw dw"></span>${counts.dwelling} identified dwelling, <span class="sw un"></span>${counts.unknown} use-unknown, ` +
+      `<span class="sw rv"></span>${counts.review} optional-review, <span class="sw no"></span>${counts.non} non-dwelling</div>`);
     if (settings.showVerifiedOnly && state.buildings.length > 10000) {
       lines.push('<div class="note"><b>Verified-dwellings comparison omitted:</b> this optional second scenario is disabled above 10,000 footprints to keep large-city calculations responsive. The primary techum still uses the complete fetched dataset.</div>');
     }
@@ -1076,11 +1076,6 @@
       const cls = type === 'point-mode' ? 'note' : 'warn';
       lines.push(`<div class="${cls}">${type === 'point-mode' ? 'ℹ' : '⚠'} ${escapeHtml(text)}${count > 1 ? ` <b>(×${count})</b>` : ''}</div>`);
     }
-    const reviewCount = counts.review + counts.unknown;
-    if (reviewCount) {
-      lines.push(`<div class="note">ℹ ${reviewCount} buildings are untagged/ambiguous (orange/purple). ` +
-        `Click any building to include/exclude it; the map recomputes instantly.</div>`);
-    }
     el.innerHTML = lines.join('');
     renderConfidence(counts);
   }
@@ -1089,16 +1084,17 @@
     const el = document.getElementById('confidence');
     const report = D.computeDataConfidence(state.buildings);
     const uncertain = report.needsReview;
-    const taggedShare = report.decidedRate;
-    const level = report.grade === 'high' && !state.dataCapHit ? 'good' : report.grade === 'medium' && !state.dataCapHit ? 'mixed' : 'poor';
-    const label = level === 'good' ? 'Higher map confidence' : level === 'mixed' ? 'Map needs review' : 'Low map confidence';
+    const level = state.dataCapHit ? 'poor' : 'good';
+    const label = state.dataCapHit ? 'Building fetch incomplete' : 'Automatic building map ready';
     el.className = `confidence ${level}`;
-    el.innerHTML = `<b>${label}</b><span>${Math.round(taggedShare * 100)}% have decisive use tags; ${uncertain} need classification review.${state.dataCapHit ? ' Fetch boundary is incomplete.' : ''} This grades map data, not the halachic ruling.</span>`;
+    el.innerHTML = `<b>${label}</b><span>${state.buildings.length.toLocaleString()} Overture footprints loaded. ` +
+      `${uncertain.toLocaleString()} structures have unknown or ambiguous use and are included automatically; review is optional.${state.dataCapHit ? ' Fetch boundary is incomplete.' : ''}</span>`;
     el.hidden = false;
   }
 
   function renderReviewQueue() {
     const el = document.getElementById('review-queue');
+    if (!settings.showAuditRings) { el.hidden = true; el.replaceChildren(); return; }
     const items = state.buildings.filter((b) => b.klass === 'unknown' || b.klass === 'review');
     const bows = (state.result && state.result.concavityAudit) || [];
     if (!items.length && !bows.length) { el.hidden = true; el.replaceChildren(); return; }
@@ -1215,7 +1211,7 @@
   }
 
   // ---------------- snapshots (determinism / offline reproducibility) ----------------
-  // The engine is pure; the only thing that changes between runs is OSM data. A snapshot
+  // The engine is pure; the only thing that changes between runs is map-release data. A snapshot
   // freezes the fetched buildings + pin + settings + overrides so the identical result is
   // reproducible forever (and shareable) without refetching.
   function saveSnapshot() {
@@ -1223,6 +1219,7 @@
     const snap = {
       format: 'techum-snapshot', version: ENGINE_VERSION,
       pin: state.pin, fetchedAt: state.fetchedAt, fetchBBox: state.fetchBBox,
+      dataRelease: state.dataRelease, dataSource: state.dataSource,
       dataCapHit: state.dataCapHit,
       settings, overrides: [...state.overrides.entries()],
       rawBuildings: state.rawBuildings, manualBuildings: state.manualBuildings,
@@ -1237,11 +1234,6 @@
       try {
         const snap = JSON.parse(reader.result);
         applySnapshot(snap);
-        // Old snapshot? Verify against today's map automatically (the snapshot file itself
-        // stays frozen; this only reports drift and redraws from fresh data if edits exist).
-        if (Date.now() - Date.parse(snap.fetchedAt || 0) > (settings.autoCheckDays || 30) * 86400000) {
-          checkUpdates(true);
-        }
       } catch (e) { setStatus('Snapshot load failed: ' + e.message); }
     };
     reader.readAsText(file);
@@ -1250,6 +1242,7 @@
   function applySnapshot(snap, registryEntry) {
     if (!snap || snap.format !== 'techum-snapshot' || !snap.pin || !Array.isArray(snap.rawBuildings)) throw new Error('not a techum snapshot');
     state.pin = snap.pin; state.fetchedAt = snap.fetchedAt; state.fetchBBox = snap.fetchBBox;
+    state.dataRelease = snap.dataRelease || null; state.dataSource = snap.dataSource || 'snapshot';
     state.dataCapHit = !!snap.dataCapHit; state.rawBuildings = snap.rawBuildings;
     state.manualBuildings = snap.manualBuildings || []; state.overrides = new Map(snap.overrides || []);
     state.validatedPerimeter = snap.validatedPerimeter || null;
