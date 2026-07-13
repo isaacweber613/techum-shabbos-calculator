@@ -99,22 +99,29 @@ attended** (SA HaRav 398:8, 10; under 4 amos wide is not a dwelling even if very
 *(rev. 3: "RESOLVED" retracted — the existence of ribua is settled; the universal
 algorithm for deriving it from a real metropolitan footprint is not.)*
 
-Baseline: the city polygon (after ibur) is enclosed in the **smallest bounding rectangle
-aligned to the four directions of the world** (true compass N–S/E–W; Bamidbar 35:5).
-A pure kula: residents gain the corners and concavities. **But orientation is a decision
-stage, not a constant:** an already-rectangular city may keep its own orientation; a
-trapezoid may follow its own sides; a natural straight edge (shoreline) can establish an
-orientation; genuinely ambiguous intermediate shapes are disputed — the Chazon Ish even
-suggests, where orientation cannot be resolved, using only the area common to both
-candidate techumin (or the smaller result). **Implementation: the squaring angle is an
-explicit reviewer decision** (0° = compass default; manual angle = a documented
-orientation choice recorded in every export), not an automatic inference.
+Baseline: first decide whether the city already has a halachic rectangular orientation.
+An existing four-right-cornered square/rectangle is **left in its own orientation**, even
+when diagonal to the directions of the world (Eruvin 55a; SA OC 398:1; SA HaRav 398:1;
+Aruch HaShulchan 398:9). When a virtual rectangle must instead be imposed on a round,
+triangular, or many-sided city, that new rectangle is aligned to the four directions of
+the world (true compass N–S/E–W; SA OC 398:2–3; Bamidbar 35:5). A pure kula: residents gain
+the corners and concavities.
+
+**Orientation is therefore a classification stage, not a constant:** a trapezoid may
+follow its own parallel sides; a natural straight edge can establish an orientation; and
+genuinely ambiguous intermediate shapes are disputed. The Chazon Ish suggests that where
+orientation cannot be resolved, one may use only the area common to both candidate
+techumin, or possibly the orientation producing the smaller added area. The accepted
+mainstream synthesis reported by Peninei Halakha follows a clear full-length straight side
+or a clear right angle, while SA HaRav and Chayei Adam require the stronger case and use
+world directions for intermediate bow/L shapes. A local rav/mumcheh must decide a genuinely
+ambiguous real outline.
 
 Rules by shape:
 - Circle / triangle / any non-rectangle → compass-aligned bounding rectangle.
 - Already a compass-aligned rectangle → left as-is.
-- **A square/rectangle rotated off the compass → re-squared to the larger compass-aligned
-  bounding rectangle** (SA 398:1 explicitly).
+- **A square/rectangle rotated off the compass → left in its existing orientation**
+  (SA 398:1 explicitly).
 - Trapezoid → short side extended to match the long side.
 - Irregular protrusions → each face is squared to a straight line through its
   furthest-outward point (one jutting house pulls the whole side out to it) (SA 398:2).
@@ -132,9 +139,16 @@ Rules by shape:
   rectangles overlap (even though the houses don't come within 141⅓) is disputed; poskim
   lean strict (Minchas Yitzchak 8:33). Default **off**, flag when it would trigger.
 
-**Computation:** compass-aligned bounding box of the cluster polygon. Material concavities
-are detected and warned; filling awaits reviewer-designated endpoints. The implemented local
-true-north tangent projection makes its axes cardinal (never magnetic north).
+**Computation:** derive the minimum-area rectangle of the cluster's convex hull. Preserve
+that orientation automatically only when the hull fills at least 94% of it; otherwise use
+the compass-aligned bounding rectangle. **The 94% threshold is an engineering confidence
+guard, not a halachic shiur.** It prevents an arbitrary long diagonal edge on an irregular
+city from silently choosing the orientation, and the selected method, angle, and
+rectangularity score are included in the calculation audit. The reviewer-angle control
+remains the documented override for a rav-selected natural edge/right angle. Material
+concavities are detected and warned; filling awaits reviewer-designated endpoints. The
+implemented local true-north tangent projection makes compass axes cardinal (never
+magnetic north).
 
 ### 1.6 Karpef — the extra 70⅔ buffer (SA OC 398:5; MB 398:21, 398:36)
 
@@ -243,7 +257,7 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 |---|---|---|---|
 | Amah | 48 cm (R' Chaim Naeh) → 960 m | 57.6 cm → 1,152 m | 48 cm → 960 m |
 | Single-city karpef (+70⅔ before 2000) | **on** (Rema; MB 398:36) | on ⚠ confirm CI's own position | off (Mechaber/Rambam) |
-| Squaring alignment | compass (Chayei Adam 68:14) | natural straight edge permitted (CI OC 110:23; user sets the reference angle) | compass |
+| Squaring alignment | automatic SA/MB shape rule: preserve a clear existing rectangle; otherwise world directions | same automatic rule; reviewer may set a sourced natural edge (CI OC 110:23) | automatic SA shape rule; reviewer override available |
 | Overlapping-squares rect merge | **off** + warning (R' S. Miller) | on (CI redraw) | off + warning |
 | City minimum for the 141⅓ merge | 6 houses (MB 398:38) | 6 + CI courtyard qualifications ⚠ | 6 |
 | Bow/concavity fill (< 4000 amos endpoints) | din applies (SA 398:3, all profiles); v1 detect-and-flag — endpoints are a reviewer decision (rev 3/4) | ” | ” |
@@ -415,6 +429,27 @@ overwrite).
   fenced yards/courtyards remain separate, inactive reviewer geometry unless a rav validates
   the applicable *hukaf l'dira* facts and ruling.
 
+### Rev. 10 — 2026-07-13 (ribua orientation source correction + implementation)
+
+- **Corrected a reversed reading of SA OC 398:1.** The earlier §1.5 bullet said that an
+  already rectangular city rotated off the compass must be re-squared to a larger cardinal
+  bounding rectangle. Eruvin 55a, SA 398:1, SA HaRav 398:1, and Aruch HaShulchan 398:9 say
+  the opposite: a city that already has four square corners is left as it is, even when its
+  sides are not aligned to the directions of the world. Cardinal alignment in SA 398:3
+  governs the new virtual rectangle imposed on a round, triangular, or many-sided city.
+- **Intermediate shapes remain a real machlokes/classification problem.** Peninei Halakha
+  30:6 and its source expansion collect the majority approach that a full-length straight
+  side or a clear right angle can establish the city's direction; SA HaRav 398:3 and Chayei
+  Adam 76:14 use world directions in the intermediate bow/L cases; Chazon Ish 110:23 limits
+  doubtful cases to the overlap of candidate techumin or possibly the smaller addition.
+- **Implemented a deliberately narrow automatic mehalich.** The engine preserves the
+  minimum-area-rectangle orientation only for a high-confidence rectangle (convex-hull
+  rectangularity ≥94%); all other shapes retain the established compass default, with the
+  rav-facing manual angle available for a sourced natural edge/right angle. The threshold
+  is disclosed as an engineering heuristic rather than psak, and every result records the
+  method, effective angle, and score. Added golden coverage for an off-compass rectangular
+  city and retained the circle/world-direction case.
+
 ---
 
 ## Part 3 — Product spec
@@ -443,7 +478,7 @@ overwrite).
 3. Layers rendered on satellite map, each toggleable and inspectable:
    - **L1** dwellings used (click to include/exclude → instant recompute)
    - **L2** halachic city polygon (post-ibur clusters, merge passes)
-   - **L3** ribua rectangle (true-north aligned)
+   - **L3** ribua rectangle (existing rectangular orientation when clear; otherwise true-north aligned)
    - **L4** techum boundary (rectangle + 2000 amos)
    - **L5** optional machmir/meikil band (e.g. 960 m vs 1,152 m lines)
 4. Export **KML, KMZ, GeoJSON, PNG, and annotated PDF** with config/audit metadata and the
@@ -459,7 +494,8 @@ address ─► geocode ─► snap to footprint + disclosed confirmation require
         ─► ibur: buffer by (70⅔·amah)/2, union, dissolve → city clusters
         ─► merge passes: two-cities ≤141⅓ (cities only) ; three-villages test
         ─► concavity detection + warning + reviewer endpoint record [rule application awaits rav]
-        ─► ribua: compass-aligned bounding rectangle (convergence-corrected true north)
+        ─► ribua: preserve a high-confidence existing rectangle; otherwise compass-aligned
+            bounding rectangle (local tangent true north); reviewer angle can override
         ─► [karpef toggle: inflate rectangle 70⅔]
         ─► techum: expand rectangle 2000·amah on all four sides (square corners)
         ─► reproject WGS84 ─► render in Leaflet ─► KML/KMZ/GeoJSON/PNG/PDF

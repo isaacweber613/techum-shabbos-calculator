@@ -62,6 +62,9 @@ function rectSpan(corners) {
   }
   const res = G.runPipeline(houses, S, { x: R, y: 0 });
   assert('circle: city mode', res.mode === 'city');
+  assert('circle: irregular shape uses world-direction squaring',
+    res.squaring.method === 'world-aligned' && approx(res.squaring.angleDeg, 0, 0.01),
+    JSON.stringify(res.squaring));
   const span = rectSpan(res.cityCorners);
   assert('circle: squared to ~diameter', approx(span.w, 2 * R + 10, 1) && approx(span.h, 2 * R + 10, 1),
     JSON.stringify(span));
@@ -73,7 +76,7 @@ function rectSpan(corners) {
   assert('circle: square corners give 2000*sqrt(2) reach', approx(diag, TECHUM * Math.SQRT2, 0.5), `diag=${diag}`);
 }
 
-// 2. Rotated square city -> re-squared bigger (SA 398:1) ---------------------
+// 2. Existing rotated rectangle keeps its own orientation (SA/MB 398:1) ------
 {
   // one big diamond-oriented block of houses: build a 200m square of houses rotated 45deg
   const houses = [];
@@ -83,10 +86,17 @@ function rectSpan(corners) {
     houses.push(squareHouse(rx, ry));
   }
   const res = G.runPipeline(houses, S, { x: 0, y: 0 });
-  const span = rectSpan(res.cityCorners);
-  // centers span 200 rotated 45 -> 200*sqrt2, houses stay axis-aligned (+10 total)
-  assert('rotated square: re-squared larger (bbox ~ side*sqrt2)',
-    span.w > 260 && approx(span.w, 200 * Math.SQRT2 + 10, 0.5), `w=${span.w}`);
+  const c = res.cityCorners;
+  const side = Math.hypot(c[1].x - c[0].x, c[1].y - c[0].y);
+  assert('rotated rectangle: its existing orientation is preserved',
+    approx(side, 200 + 10 * Math.SQRT2, 0.5), `side=${side}`);
+  assert('rotated rectangle: automatic squaring is auditable',
+    res.squaring.method === 'preserved-rectangle' && approx(Math.abs(res.squaring.angleDeg), 45, 0.1),
+    JSON.stringify(res.squaring));
+  const t = res.techumCorners;
+  const techumSide = Math.hypot(t[1].x - t[0].x, t[1].y - t[0].y);
+  assert('rotated rectangle: techum expands in the preserved frame',
+    approx(techumSide, side + 2 * TECHUM, 0.5), `techumSide=${techumSide}`);
 }
 
 // 3. Ibur chain: gaps just under/over 70 2/3 amos ----------------------------
