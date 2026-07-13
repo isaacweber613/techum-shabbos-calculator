@@ -317,15 +317,31 @@ html[data-design="9"] .location-button,html[data-design="10"] .location-button {
 html[data-design="9"] #status,html[data-design="10"] #status {
   margin:8px 0 9px; padding:8px 10px; min-height:31px; background:rgba(238,244,240,.9); font-size:11px;
 }
+html[data-design="9"] body.has-result .intro,html[data-design="10"] body.has-result .intro,
+html[data-design="9"] body.has-result #status,html[data-design="10"] body.has-result #status { display:none; }
+html[data-design="9"] body.has-result .brand,html[data-design="10"] body.has-result .brand { margin-bottom:2px; }
+html[data-design="9"] body.has-result #address,html[data-design="10"] body.has-result #address { height:50px; box-shadow:none; }
 html[data-design="9"] .calc-progress,html[data-design="10"] .calc-progress { margin:7px 0 10px; }
 html[data-design="9"] .calc-progress span,html[data-design="10"] .calc-progress span { padding:7px 3px; font-size:9px; }
 
 html[data-design="9"] #simple-quick-settings,html[data-design="10"] #simple-quick-settings {
-  display:grid; grid-template-columns:auto 1fr 1fr auto; align-items:end; gap:8px;
-  margin:7px 0 12px; padding:9px; border:1px solid var(--dx-line); border-radius:14px; background:rgba(255,255,255,.72);
+  display:block; margin:7px 0 10px; border:1px solid var(--dx-line); border-radius:14px; background:rgba(255,255,255,.72);
 }
-html[data-design="9"] .quick-settings-label,html[data-design="10"] .quick-settings-label {
-  align-self:center; color:var(--dx-muted); font-size:10px; font-weight:750; letter-spacing:.04em; text-transform:uppercase;
+html[data-design="9"] #simple-quick-settings > summary,html[data-design="10"] #simple-quick-settings > summary {
+  display:flex; align-items:center; justify-content:space-between; min-height:43px; padding:7px 11px; border:0; list-style:none;
+  color:var(--dx-ink); cursor:pointer;
+}
+html[data-design="9"] #simple-quick-settings > summary::-webkit-details-marker,html[data-design="10"] #simple-quick-settings > summary::-webkit-details-marker { display:none; }
+html[data-design="9"] #simple-quick-settings > summary span,html[data-design="10"] #simple-quick-settings > summary span { display:grid; gap:1px; }
+html[data-design="9"] #simple-quick-settings > summary small,html[data-design="10"] #simple-quick-settings > summary small {
+  color:var(--dx-muted); font-size:8px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+}
+html[data-design="9"] #simple-quick-settings > summary b,html[data-design="10"] #simple-quick-settings > summary b { font-size:11px; }
+html[data-design="9"] #simple-quick-settings > summary em,html[data-design="10"] #simple-quick-settings > summary em {
+  margin-left:auto; margin-right:9px; color:var(--dx-accent); font-size:10px; font-style:normal; font-weight:800;
+}
+html[data-design="9"] .simple-settings-body,html[data-design="10"] .simple-settings-body {
+  display:grid; grid-template-columns:1fr 1fr auto; align-items:end; gap:8px; padding:9px; border-top:1px solid var(--dx-line);
 }
 html[data-design="9"] #simple-quick-settings label,html[data-design="10"] #simple-quick-settings label { display:block; min-width:0; }
 html[data-design="9"] #simple-quick-settings label span,html[data-design="10"] #simple-quick-settings label span {
@@ -343,18 +359,17 @@ html[data-design="9"] .simple-result-card,html[data-design="10"] .simple-result-
   margin:0 0 8px; padding:17px; border:1px solid rgba(23,107,76,.16); border-radius:18px; background:#fff;
   box-shadow:0 14px 35px rgba(23,55,41,.09);
 }
-html[data-design="9"] .simple-result-kicker,html[data-design="10"] .simple-result-kicker {
-  color:var(--dx-accent); font-size:10px; font-weight:850; letter-spacing:.1em; text-transform:uppercase;
-}
 html[data-design="9"] .simple-result-card h3,html[data-design="10"] .simple-result-card h3 {
-  margin:5px 0 7px; color:var(--dx-ink); font-size:20px; line-height:1.12; letter-spacing:-.025em;
+  margin:0 0 7px; color:var(--dx-ink); font-size:20px; line-height:1.12; letter-spacing:-.025em;
 }
 html[data-design="9"] .simple-result-card > p,html[data-design="10"] .simple-result-card > p { margin:0; color:var(--dx-muted); line-height:1.48; }
 html[data-design="9"] .simple-result-explainer,html[data-design="10"] .simple-result-explainer,
+html[data-design="9"] .simple-review-notes,html[data-design="10"] .simple-review-notes,
 html[data-design="9"] .simple-technical-details,html[data-design="10"] .simple-technical-details {
   margin-top:12px; border-top:1px solid var(--dx-line);
 }
 html[data-design="9"] .simple-result-explainer summary,html[data-design="10"] .simple-result-explainer summary,
+html[data-design="9"] .simple-review-notes summary,html[data-design="10"] .simple-review-notes summary,
 html[data-design="9"] .simple-technical-details summary,html[data-design="10"] .simple-technical-details summary {
   min-height:38px; border:0; color:var(--dx-ink); font-size:11px; font-weight:750;
 }
@@ -364,7 +379,7 @@ html[data-design="9"] .simple-result-explainer summary span,html[data-design="10
 html[data-design="9"] .simple-result-explainer p,html[data-design="10"] .simple-result-explainer p { color:var(--dx-muted); line-height:1.5; }
 html[data-design="9"] #results .warn,html[data-design="10"] #results .warn,
 html[data-design="9"] #results .simple-important-note,html[data-design="10"] #results .simple-important-note {
-  margin:8px 0; padding:10px 11px; border-radius:12px; background:#fff4dd; color:#654a13; line-height:1.4;
+  margin:0 0 6px; padding:8px 9px; border-radius:9px; background:#fff4dd; color:#654a13; font-size:10px; line-height:1.4;
 }
 html[data-design="9"] .simple-technical-details .stat,html[data-design="10"] .simple-technical-details .stat,
 html[data-design="9"] .simple-technical-details .note,html[data-design="10"] .simple-technical-details .note {
@@ -395,16 +410,16 @@ html[data-design="9"] .leaflet-control-layers-separator,html[data-design="10"] .
 html[data-design="9"] #app { display:block; position:relative; }
 html[data-design="9"] #map { position:absolute; inset:0; width:100%; height:100%; border:0; border-radius:0; box-shadow:none; }
 html[data-design="9"] #sidebar {
-  position:relative; z-index:1000; width:455px; min-width:455px; height:calc(100% - 28px); margin:14px; padding:21px 23px;
+  position:relative; z-index:1000; width:410px; min-width:410px; height:calc(100% - 28px); margin:14px; padding:18px 20px;
   border:1px solid rgba(24,35,30,.1); border-radius:24px; background:rgba(252,254,252,.94); overflow:auto;
   box-shadow:0 24px 70px rgba(18,50,34,.16); backdrop-filter:blur(20px);
 }
 html[data-design="9"] #design-experience-nav { background:transparent; }
 
 /* Direction 10: a calm answer rail beside a generous map. */
-html[data-design="10"] #app { display:grid; grid-template-columns:minmax(390px,455px) 1fr; }
+html[data-design="10"] #app { display:grid; grid-template-columns:minmax(360px,410px) 1fr; }
 html[data-design="10"] #sidebar {
-  width:auto; min-width:0; height:100%; padding:22px 27px; border:0; border-radius:0; background:#fbfdfb; overflow:auto;
+  width:auto; min-width:0; height:100%; padding:18px 22px; border:0; border-radius:0; background:#fbfdfb; overflow:auto;
   box-shadow:12px 0 44px rgba(18,50,34,.1);
 }
 html[data-design="10"] #map { width:100%; height:100%; border:0; border-radius:0; box-shadow:none; }
@@ -429,8 +444,6 @@ html[data-design="10"] #simple-quick-settings { border-radius:8px; }
     left:10px; right:10px; bottom:34px; justify-content:center; gap:8px; transform:none; padding:9px 8px; font-size:9px;
   }
   html[data-design="9"] #simple-map-key b,html[data-design="10"] #simple-map-key b { display:none; }
-  html[data-design="9"] #simple-quick-settings,html[data-design="10"] #simple-quick-settings { grid-template-columns:1fr 1fr auto; }
-  html[data-design="9"] .quick-settings-label,html[data-design="10"] .quick-settings-label { display:none; }
   html[data-design="9"] .intro h2,html[data-design="10"] .intro h2 { font-size:30px; }
 }
 
@@ -442,6 +455,6 @@ html[data-design="10"] #simple-quick-settings { border-radius:8px; }
   html[data-design="9"] #simple-map-key span,html[data-design="10"] #simple-map-key span { gap:3px; }
   html[data-design="9"] #simple-map-key strong,html[data-design="10"] #simple-map-key strong { display:none; }
   html[data-design="9"] .key-line,html[data-design="10"] .key-line { width:20px; }
-  html[data-design="9"] #simple-quick-settings,html[data-design="10"] #simple-quick-settings { grid-template-columns:1fr 1fr; }
+  html[data-design="9"] .simple-settings-body,html[data-design="10"] .simple-settings-body { grid-template-columns:1fr 1fr; }
   html[data-design="9"] #simple-more-settings,html[data-design="10"] #simple-more-settings { grid-column:1 / -1; }
 }

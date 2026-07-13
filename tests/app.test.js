@@ -50,13 +50,16 @@ test('Photon autocomplete labels are readable and deduplicated', () => {
   }), '10 Downing Street, London, SW1A 2AA, United Kingdom');
 });
 
-test('address entry requires choosing an autocomplete suggestion', () => {
+test('address entry requires choosing an autocomplete suggestion and location fills the address', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
   assert.doesNotMatch(html, /id=["']btn-search["']/);
   assert.doesNotMatch(main, /function onSearch\s*\(/);
   assert.match(main, /Choose one of the suggested addresses before continuing/);
-  assert.doesNotMatch(main, /\.value\s*=\s*["']My location["']/);
+  assert.match(main, /const result = await D\.reverseGeocode\(lat, lon\)/);
+  assert.match(main, /document\.getElementById\('address'\)\.value = label/);
+  assert.match(main, /scheduleAutomaticCalculation\(\)/);
+  assert.equal(typeof D.reverseGeocode, 'function');
 });
 
 test('simplified design directions calculate automatically and keep advanced controls progressive', () => {
@@ -69,8 +72,19 @@ test('simplified design directions calculate automatically and keep advanced con
   assert.match(main, /params\.has\('draftLat'\) && params\.has\('draftLon'\)/);
   assert.match(main, /'Illustrated map': illustrated, 'Realistic view': realistic/);
   assert.match(experience, /quickSettings\.id = 'simple-quick-settings'/);
+  assert.match(experience, /simple-settings-summary/);
   assert.match(experience, /mapKey\.id = 'simple-map-key'/);
+  assert.match(experience, /simple-review-notes/);
   assert.match(experience, /Calculation details/);
+});
+
+test('reverse geocoding is proxied and validated by the Worker', () => {
+  const worker = fs.readFileSync(path.join(__dirname, '..', 'worker', 'index.ts'), 'utf8');
+  const data = fs.readFileSync(path.join(__dirname, '..', 'js', 'data.js'), 'utf8');
+  assert.match(worker, /async function reverseGeocode\(request: Request, env: Env\)/);
+  assert.match(worker, /url\.pathname === '\/api\/reverse-geocode'/);
+  assert.match(worker, /reverse:\$\{lat\.toFixed\(5\)\},\$\{lon\.toFixed\(5\)\}/);
+  assert.match(data, /'\/api\/reverse-geocode\?' \+ params\.toString\(\)/);
 });
 
 test('agent performance reports stay out of the public calculator UI', () => {

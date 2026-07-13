@@ -271,27 +271,54 @@
 
   function useMyLocation() {
     if (!navigator.geolocation) { setStatus('Location is not available in this browser — click the map instead.'); return; }
-    setStatus('Getting your location…');
+    const button = document.getElementById('btn-location');
+    const idleLabel = button.dataset.idleLabel || button.textContent;
+    button.dataset.idleLabel = idleLabel;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.textContent = 'Finding your location…';
+    setStatus('Finding your location…');
+
+    const finish = () => {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.textContent = idleLabel;
+    };
+
     navigator.geolocation.getCurrentPosition((position) => {
-      const { latitude: lat, longitude: lon, accuracy } = position.coords;
-      state.locationBias = { lat, lon };
-      state.lastQuery = 'My location';
-      state.lastLabel = 'My location';
-      document.getElementById('address').value = '';
-      setPin(lat, lon, { invalidateResult: isSimplifiedDirection && !!state.rawBuildings.length });
-      map.setView([lat, lon], 17);
-      closeSuggestions();
-      if (isSimplifiedDirection) {
-        setStatus(`Location found (accuracy about ${Math.round(accuracy)} m) — calculating your techum…`);
-        scheduleAutomaticCalculation();
-      } else {
-        setStatus(`Pin set from your location (accuracy about ${Math.round(accuracy)} m) — confirm it on the map, then Calculate.`);
-      }
+      void applyCurrentLocation(position).finally(finish);
     }, (error) => {
       setStatus(error.code === error.PERMISSION_DENIED
         ? 'Location permission was denied — enter an address or click the map.'
         : 'Could not get your location — enter an address or click the map.');
+      finish();
     }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+  }
+
+  async function applyCurrentLocation(position) {
+    const { latitude: lat, longitude: lon, accuracy } = position.coords;
+    state.locationBias = { lat, lon };
+    const fallbackLabel = `Current location (${lat.toFixed(5)}, ${lon.toFixed(5)})`;
+    let label = fallbackLabel;
+    setStatus('Location found — finding the street address…');
+    try {
+      const result = await D.reverseGeocode(lat, lon);
+      if (result && result.label) label = result.label;
+    } catch {
+      // The coordinate is still usable when the public address service is unavailable.
+    }
+    state.lastQuery = 'My current location';
+    state.lastLabel = label;
+    document.getElementById('address').value = label;
+    setPin(lat, lon, { invalidateResult: isSimplifiedDirection && !!state.rawBuildings.length });
+    map.setView([lat, lon], 17);
+    closeSuggestions();
+    if (isSimplifiedDirection) {
+      setStatus(`Found ${label} — calculating your techum…`);
+      scheduleAutomaticCalculation();
+    } else {
+      setStatus(`${label} found (accuracy about ${Math.round(accuracy)} m). Confirm the pin, then Calculate.`);
+    }
   }
 
   // ---------------- fetch + auto-expand ----------------

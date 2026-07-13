@@ -269,6 +269,55 @@ async function geocode(request: Request, env: Env): Promise<Response> {
   return new Response(text, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } });
 }
 
+async function reverseGeocode(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const lat = Number(url.searchParams.get('lat'));
+  const lon = Number(url.searchParams.get('lon'));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    return json({ error: 'valid latitude and longitude required' }, 400);
+  }
+  if (!env.GEOCODER_CONTACT || env.GEOCODER_CONTACT === 'SET_BEFORE_PRODUCTION') {
+    return json({ error: 'geocoder contact is not configured' }, 503);
+  }
+
+  const cacheKey = `reverse:${lat.toFixed(5)},${lon.toFixed(5)}`;
+  const cached = await env.DB.prepare('SELECT response FROM geocode_cache WHERE query = ?1')
+    .bind(cacheKey).first<{ response: string }>();
+  if (cached) {
+    return new Response(cached.response, {
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' },
+    });
+  }
+
+  const network = await hmacHex(env.IP_HASH_SECRET || 'local-development-only', request.headers.get('CF-Connecting-IP') || 'unknown');
+  const limited = await env.GEOCODE_RATE_LIMITER.limit({ key: `reverse:${network}` });
+  if (!limited.success) return json({ error: 'geocoder rate limit exceeded' }, 429, { 'Retry-After': '60' });
+  const second = Math.floor(Date.now() / 1000);
+  try {
+    await env.DB.prepare('INSERT INTO geocode_slots (second) VALUES (?1)').bind(second).run();
+  } catch {
+    return json({ error: 'geocoder is busy; retry in one second' }, 429, { 'Retry-After': '1' });
+  }
+
+  const endpoint = new URL('https://nominatim.openstreetmap.org/reverse');
+  endpoint.search = new URLSearchParams({
+    lat: String(lat), lon: String(lon), format: 'jsonv2', zoom: '18', addressdetails: '1',
+  }).toString();
+  const upstream = await fetch(endpoint, { headers: {
+    'User-Agent': `TechumShabbosCalculator/1.0 (${env.GEOCODER_CONTACT})`,
+    'Accept': 'application/json',
+  } });
+  if (!upstream.ok) return json({ error: `geocoder HTTP ${upstream.status}` }, 502);
+  const text = await upstream.text();
+  if (text.length > 100_000) return json({ error: 'geocoder response too large' }, 502);
+  await env.DB.prepare(`INSERT INTO geocode_cache (query, response, cached_at) VALUES (?1, ?2, ?3)
+    ON CONFLICT(query) DO UPDATE SET response = excluded.response, cached_at = excluded.cached_at`)
+    .bind(cacheKey, text, Date.now()).run();
+  return new Response(text, {
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' },
+  });
+}
+
 async function autocomplete(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const query = (url.searchParams.get('q') || '').trim().slice(0, 300);
@@ -378,6 +427,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/event' && request.method === 'POST') return recordEvent(request, env);
   if (url.pathname === '/api/analytics' && request.method === 'GET') return analytics(request, env);
   if (url.pathname === '/api/geocode' && request.method === 'GET') return geocode(request, env);
+  if (url.pathname === '/api/reverse-geocode' && request.method === 'GET') return reverseGeocode(request, env);
   if (url.pathname === '/api/autocomplete' && request.method === 'GET') return autocomplete(request, env);
   if (url.pathname === '/api/buildings' && request.method === 'GET') return handleBuildings(request, env);
   if (url.pathname === '/api/building-corrections' && request.method === 'POST') {
