@@ -59,6 +59,20 @@ test('address entry requires choosing an autocomplete suggestion', () => {
   assert.doesNotMatch(main, /\.value\s*=\s*["']My location["']/);
 });
 
+test('simplified design directions calculate automatically and keep advanced controls progressive', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const experience = fs.readFileSync(path.join(__dirname, '..', 'js', 'design-experience.js'), 'utf8');
+  assert.match(html, /\(\?:\[1-9\]\|10\)/);
+  assert.match(main, /const isSimplifiedDirection = \/\^\(9\|10\)\$\//);
+  assert.match(main, /scheduleAutomaticCalculation\(\)/);
+  assert.match(main, /params\.has\('draftLat'\) && params\.has\('draftLon'\)/);
+  assert.match(main, /'Illustrated map': illustrated, 'Realistic view': realistic/);
+  assert.match(experience, /quickSettings\.id = 'simple-quick-settings'/);
+  assert.match(experience, /mapKey\.id = 'simple-map-key'/);
+  assert.match(experience, /Calculation details/);
+});
+
 test('agent performance reports stay out of the public calculator UI', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
   const analytics = fs.readFileSync(path.join(__dirname, '..', 'analytics.html'), 'utf8');

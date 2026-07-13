@@ -280,3 +280,168 @@ html[data-design="8"] .method-callout { font-family:Inter,ui-sans-serif,system-u
   html[data-design="6"] #horizon-progress i { animation:none; }
   html[data-design="8"] #table-glow { transition:none; }
 }
+
+/* 9 + 10 — product directions, not skins. Both are automatic, map-readable, and progressive. */
+html[data-design="9"],html[data-design="10"] {
+  --dx-accent:#176b4c;
+  --dx-ink:#18231e;
+  --dx-muted:#66736d;
+  --dx-panel:#fff;
+  --dx-soft:#eef4f0;
+  --dx-line:rgba(24,35,30,.12);
+  color-scheme:light;
+}
+html[data-design="9"] body,html[data-design="10"] body { background:#dfe8e1; }
+html[data-design="9"] #banner,html[data-design="10"] #banner {
+  min-height:34px; padding:7px 48px 7px 14px; background:#173128; color:#dfe9e3; font-size:11px;
+}
+html[data-design="9"] #app,html[data-design="10"] #app { height:calc(100dvh - 34px); padding:0; gap:0; }
+html[data-design="9"] .method-callout,html[data-design="10"] .method-callout,
+html[data-design="9"] .next-step,html[data-design="10"] .next-step,
+html[data-design="9"] #btn-calc,html[data-design="10"] #btn-calc,
+html[data-design="9"] #performance-report,html[data-design="10"] #performance-report,
+html[data-design="9"] #confidence,html[data-design="10"] #confidence { display:none !important; }
+html[data-design="9"] .brand,html[data-design="10"] .brand { margin-bottom:6px; }
+html[data-design="9"] .brand p,html[data-design="10"] .brand p { display:none; }
+html[data-design="9"] .intro,html[data-design="10"] .intro { margin:18px 0 15px; }
+html[data-design="9"] .intro h2,html[data-design="10"] .intro h2 {
+  margin:3px 0 7px; font-size:clamp(28px,3vw,40px); line-height:1.03; letter-spacing:-.045em;
+}
+html[data-design="9"] .intro p,html[data-design="10"] .intro p { max-width:440px; font-size:13px; line-height:1.45; }
+html[data-design="9"] #address,html[data-design="10"] #address {
+  height:58px; padding-left:47px; border-radius:18px; background:#fff; font-size:16px;
+  box-shadow:0 12px 34px rgba(25,55,40,.1);
+}
+html[data-design="9"] .search-icon,html[data-design="10"] .search-icon { left:17px; font-size:22px; }
+html[data-design="9"] .location-button,html[data-design="10"] .location-button { margin-top:7px; padding:5px 2px; }
+html[data-design="9"] #status,html[data-design="10"] #status {
+  margin:8px 0 9px; padding:8px 10px; min-height:31px; background:rgba(238,244,240,.9); font-size:11px;
+}
+html[data-design="9"] .calc-progress,html[data-design="10"] .calc-progress { margin:7px 0 10px; }
+html[data-design="9"] .calc-progress span,html[data-design="10"] .calc-progress span { padding:7px 3px; font-size:9px; }
+
+html[data-design="9"] #simple-quick-settings,html[data-design="10"] #simple-quick-settings {
+  display:grid; grid-template-columns:auto 1fr 1fr auto; align-items:end; gap:8px;
+  margin:7px 0 12px; padding:9px; border:1px solid var(--dx-line); border-radius:14px; background:rgba(255,255,255,.72);
+}
+html[data-design="9"] .quick-settings-label,html[data-design="10"] .quick-settings-label {
+  align-self:center; color:var(--dx-muted); font-size:10px; font-weight:750; letter-spacing:.04em; text-transform:uppercase;
+}
+html[data-design="9"] #simple-quick-settings label,html[data-design="10"] #simple-quick-settings label { display:block; min-width:0; }
+html[data-design="9"] #simple-quick-settings label span,html[data-design="10"] #simple-quick-settings label span {
+  display:block; margin:0 0 3px 2px; color:var(--dx-muted); font-size:9px; font-weight:700; text-transform:uppercase;
+}
+html[data-design="9"] #simple-quick-settings select,html[data-design="10"] #simple-quick-settings select {
+  width:100%; height:34px; padding:0 24px 0 8px; border:1px solid var(--dx-line); border-radius:9px; background:#fff; font-size:10px;
+}
+html[data-design="9"] #simple-more-settings,html[data-design="10"] #simple-more-settings {
+  height:34px; padding:0 10px; border:1px solid var(--dx-line); border-radius:9px; background:var(--dx-soft); color:var(--dx-ink); font-size:10px; font-weight:700;
+}
+
+html[data-design="9"] #results,html[data-design="10"] #results { margin:7px 0 0; padding:0; font-size:12px; }
+html[data-design="9"] .simple-result-card,html[data-design="10"] .simple-result-card {
+  margin:0 0 8px; padding:17px; border:1px solid rgba(23,107,76,.16); border-radius:18px; background:#fff;
+  box-shadow:0 14px 35px rgba(23,55,41,.09);
+}
+html[data-design="9"] .simple-result-kicker,html[data-design="10"] .simple-result-kicker {
+  color:var(--dx-accent); font-size:10px; font-weight:850; letter-spacing:.1em; text-transform:uppercase;
+}
+html[data-design="9"] .simple-result-card h3,html[data-design="10"] .simple-result-card h3 {
+  margin:5px 0 7px; color:var(--dx-ink); font-size:20px; line-height:1.12; letter-spacing:-.025em;
+}
+html[data-design="9"] .simple-result-card > p,html[data-design="10"] .simple-result-card > p { margin:0; color:var(--dx-muted); line-height:1.48; }
+html[data-design="9"] .simple-result-explainer,html[data-design="10"] .simple-result-explainer,
+html[data-design="9"] .simple-technical-details,html[data-design="10"] .simple-technical-details {
+  margin-top:12px; border-top:1px solid var(--dx-line);
+}
+html[data-design="9"] .simple-result-explainer summary,html[data-design="10"] .simple-result-explainer summary,
+html[data-design="9"] .simple-technical-details summary,html[data-design="10"] .simple-technical-details summary {
+  min-height:38px; border:0; color:var(--dx-ink); font-size:11px; font-weight:750;
+}
+html[data-design="9"] .simple-result-explainer summary span,html[data-design="10"] .simple-result-explainer summary span {
+  display:inline-grid; place-items:center; width:17px; height:17px; margin-left:4px; border-radius:50%; background:var(--dx-soft); color:var(--dx-accent); font-size:10px;
+}
+html[data-design="9"] .simple-result-explainer p,html[data-design="10"] .simple-result-explainer p { color:var(--dx-muted); line-height:1.5; }
+html[data-design="9"] #results .warn,html[data-design="10"] #results .warn,
+html[data-design="9"] #results .simple-important-note,html[data-design="10"] #results .simple-important-note {
+  margin:8px 0; padding:10px 11px; border-radius:12px; background:#fff4dd; color:#654a13; line-height:1.4;
+}
+html[data-design="9"] .simple-technical-details .stat,html[data-design="10"] .simple-technical-details .stat,
+html[data-design="9"] .simple-technical-details .note,html[data-design="10"] .simple-technical-details .note {
+  display:block; margin:0; padding:7px 0; border-bottom:1px solid var(--dx-line); color:var(--dx-muted); font-size:10px;
+}
+
+html[data-design="9"] #simple-map-key,html[data-design="10"] #simple-map-key {
+  position:absolute; z-index:900; left:50%; bottom:20px; display:flex; align-items:center; gap:12px;
+  transform:translateX(-50%); padding:10px 13px; border:1px solid rgba(24,35,30,.12); border-radius:14px;
+  background:rgba(255,255,255,.94); box-shadow:0 12px 35px rgba(20,45,33,.14); backdrop-filter:blur(14px);
+  color:#405049; font-size:10px; pointer-events:auto;
+}
+html[data-design="9"] #simple-map-key b,html[data-design="10"] #simple-map-key b { color:#18231e; }
+html[data-design="9"] #simple-map-key span,html[data-design="10"] #simple-map-key span { display:flex; align-items:center; gap:4px; white-space:nowrap; }
+html[data-design="9"] .key-line,html[data-design="10"] .key-line { display:inline-block; width:24px; height:0; border-top:3px solid; }
+html[data-design="9"] .key-line.techum,html[data-design="10"] .key-line.techum { border-color:#ff2222; }
+html[data-design="9"] .key-line.city,html[data-design="10"] .key-line.city { border-color:#00a913; }
+html[data-design="9"] .key-line.karpef,html[data-design="10"] .key-line.karpef { border-color:#00a9a9; border-top-style:dashed; }
+html[data-design="9"] .key-line.alternate,html[data-design="10"] .key-line.alternate { border-color:#e5a000; border-top-style:dashed; }
+html[data-design="9"] .leaflet-control-layers,html[data-design="10"] .leaflet-control-layers {
+  border:1px solid rgba(24,35,30,.12); border-radius:12px; box-shadow:0 8px 25px rgba(20,45,33,.12); font:700 10px/1.35 Inter,system-ui,sans-serif;
+}
+html[data-design="9"] .leaflet-control-layers-base,html[data-design="10"] .leaflet-control-layers-base { display:flex; gap:5px; }
+html[data-design="9"] .leaflet-control-layers-base label,html[data-design="10"] .leaflet-control-layers-base label { margin:0; padding:5px 7px; border-radius:7px; background:#f1f5f2; }
+html[data-design="9"] .leaflet-control-layers-separator,html[data-design="10"] .leaflet-control-layers-separator { display:none; }
+
+/* Direction 9: the map is the answer; controls float above it. */
+html[data-design="9"] #app { display:block; position:relative; }
+html[data-design="9"] #map { position:absolute; inset:0; width:100%; height:100%; border:0; border-radius:0; box-shadow:none; }
+html[data-design="9"] #sidebar {
+  position:relative; z-index:1000; width:455px; min-width:455px; height:calc(100% - 28px); margin:14px; padding:21px 23px;
+  border:1px solid rgba(24,35,30,.1); border-radius:24px; background:rgba(252,254,252,.94); overflow:auto;
+  box-shadow:0 24px 70px rgba(18,50,34,.16); backdrop-filter:blur(20px);
+}
+html[data-design="9"] #design-experience-nav { background:transparent; }
+
+/* Direction 10: a calm answer rail beside a generous map. */
+html[data-design="10"] #app { display:grid; grid-template-columns:minmax(390px,455px) 1fr; }
+html[data-design="10"] #sidebar {
+  width:auto; min-width:0; height:100%; padding:22px 27px; border:0; border-radius:0; background:#fbfdfb; overflow:auto;
+  box-shadow:12px 0 44px rgba(18,50,34,.1);
+}
+html[data-design="10"] #map { width:100%; height:100%; border:0; border-radius:0; box-shadow:none; }
+html[data-design="10"] .simple-result-card { padding:20px; border-radius:8px; border-left:4px solid var(--dx-accent); }
+html[data-design="10"] #address { border-radius:8px; }
+html[data-design="10"] #simple-quick-settings { border-radius:8px; }
+
+@media (max-width:900px) {
+  html[data-design="9"] body,html[data-design="10"] body { overflow-y:auto; }
+  html[data-design="9"] #app,html[data-design="10"] #app {
+    display:flex; flex-direction:column; height:auto; min-height:calc(100dvh - 34px); padding:0;
+  }
+  html[data-design="9"] #map,html[data-design="10"] #map {
+    position:relative; inset:auto; order:1; width:100%; height:52dvh; min-height:390px; border:0; border-radius:0;
+  }
+  html[data-design="9"] #sidebar,html[data-design="10"] #sidebar {
+    position:relative; order:2; z-index:1000; width:calc(100% - 20px); min-width:0; height:auto; margin:-26px 10px 10px;
+    padding:20px 18px 34px; overflow:visible; border:0; border-radius:25px; background:#fbfdfb;
+    box-shadow:0 -15px 42px rgba(18,50,34,.14);
+  }
+  html[data-design="9"] #simple-map-key,html[data-design="10"] #simple-map-key {
+    left:10px; right:10px; bottom:34px; justify-content:center; gap:8px; transform:none; padding:9px 8px; font-size:9px;
+  }
+  html[data-design="9"] #simple-map-key b,html[data-design="10"] #simple-map-key b { display:none; }
+  html[data-design="9"] #simple-quick-settings,html[data-design="10"] #simple-quick-settings { grid-template-columns:1fr 1fr auto; }
+  html[data-design="9"] .quick-settings-label,html[data-design="10"] .quick-settings-label { display:none; }
+  html[data-design="9"] .intro h2,html[data-design="10"] .intro h2 { font-size:30px; }
+}
+
+@media (max-width:520px) {
+  html[data-design="9"] #simple-map-key,html[data-design="10"] #simple-map-key {
+    display:grid; grid-template-columns:1fr 1fr; row-gap:5px; padding:7px 9px;
+  }
+  html[data-design="9"] #simple-map-key span,html[data-design="10"] #simple-map-key span { justify-content:center; }
+  html[data-design="9"] #simple-map-key span,html[data-design="10"] #simple-map-key span { gap:3px; }
+  html[data-design="9"] #simple-map-key strong,html[data-design="10"] #simple-map-key strong { display:none; }
+  html[data-design="9"] .key-line,html[data-design="10"] .key-line { width:20px; }
+  html[data-design="9"] #simple-quick-settings,html[data-design="10"] #simple-quick-settings { grid-template-columns:1fr 1fr; }
+  html[data-design="9"] #simple-more-settings,html[data-design="10"] #simple-more-settings { grid-column:1 / -1; }
+}

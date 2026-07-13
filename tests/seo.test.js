@@ -43,4 +43,8 @@ assert.match(read('_headers'), /\/TECHUM-SPEC\.md[\s\S]*X-Robots-Tag: noindex/i)
 assert.match(read('scripts/build-static.mjs'), /'robots\.txt'.*'sitemap\.xml'.*'_headers'.*'_redirects'/s);
 assert.match(read('he/index.html'), /תחום שבת/);
 
+for (const design of ['9', '10']) {
+  assert.match(read(`designtest/${design}/index.html`), /name="robots" content="noindex,nofollow"/i);
+}
+
 console.log(`\n${pages.length} indexable pages passed SEO contract checks`);

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow"><title>Design 9 — Map First</title>
+  <link rel="stylesheet" href="/designtest/shared.css">
+  <style>
+    :root { --ink:#18231e; --muted:#64736c; --green:#176b4c; --line:rgba(24,35,30,.12); }
+    body { background:#dfe9e1; }
+    .map-bg iframe { opacity:.76; }
+    .map-wash { background:linear-gradient(90deg,rgba(239,246,241,.76),rgba(239,246,241,.08) 58%,transparent); }
+    .topbar { position:relative; z-index:3; }
+    .hero { place-items:center start; padding:4vh 5vw 12vh; }
+    .search-card { width:min(560px,100%); padding:34px; border:1px solid var(--line); border-radius:26px; background:rgba(255,255,255,.94); box-shadow:0 28px 80px rgba(18,50,34,.17); backdrop-filter:blur(20px); }
+    h1 { font-size:clamp(38px,6vw,66px); }
+    .subhead { margin:16px 0 25px; }
+    .search-box { border-radius:18px; }
+    .go-btn { background:var(--green); }
+    .promise { display:flex; gap:8px; align-items:center; margin-top:18px; color:var(--muted); font-size:12px; }
+    .promise i { width:8px; height:8px; border-radius:50%; background:#22a56d; box-shadow:0 0 0 5px rgba(34,165,109,.1); }
+    @media (max-width:700px) {
+      .map-wash { background:linear-gradient(180deg,rgba(239,246,241,.15),rgba(239,246,241,.85)); }
+      .hero { align-items:end; padding:80px 10px 10px; }
+      .search-card { padding:25px 18px 34px; border-radius:25px; }
+      h1 { font-size:40px; }
+      .search-box { display:grid; grid-template-columns:auto 1fr; }
+      .go-btn { grid-column:1/-1; width:100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="map-bg"><iframe title="Illustrated neighborhood map" loading="eager" src="https://www.openstreetmap.org/export/embed.html?bbox=-74.24%2C40.56%2C-73.72%2C40.94&amp;layer=mapnik"></iframe></div>
+  <div class="map-wash"></div>
+  <main class="shell">
+    <header class="topbar">
+      <a class="mini-brand" href="/"><span class="mark">ת</span><span>Techum Shabbos</span></a>
+      <a class="quiet-btn" href="/designtest/">All concepts</a>
+    </header>
+    <section class="hero">
+      <div class="search-card">
+        <p class="eyebrow">Map-first direction</p>
+        <h1>Where will you be for Shabbos?</h1>
+        <p class="subhead">Enter the address. The map calculates immediately—no confirmation step and no setup.</p>
+        <form id="search-form" class="search-box">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+          <input id="place-search" aria-label="Address or place" aria-expanded="false" aria-controls="suggestions" placeholder="Enter an address or place" autocomplete="street-address" autofocus>
+          <button class="go-btn" type="submit">Show my techum</button>
+          <div class="suggestions" id="suggestions" role="listbox" hidden></div>
+        </form>
+        <button class="location-link" id="location-button">Use my current location</button>
+        <div class="promise"><i></i><span>Automatic calculation · Drag the pin anytime to update</span></div>
+      </div>
+    </section>
+  </main>
+  <div class="draft-note">Draft decision-support map · Review with a qualified rav</div>
+  <script src="/designtest/shared.js"></script>
+</body>
+</html>
