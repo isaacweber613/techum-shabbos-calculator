@@ -41,15 +41,30 @@
       const buildingsLayer = document.getElementById('layer-buildings');
       if (buildingsLayer) buildingsLayer.checked = false;
 
-      const quickSettings = document.createElement('section');
+      const quickSettings = document.createElement('details');
       quickSettings.id = 'simple-quick-settings';
       quickSettings.setAttribute('aria-label', 'Common settings');
       quickSettings.innerHTML = `
-        <span class="quick-settings-label">Common settings</span>
-        <label><span>Profile</span><select id="quick-profile" aria-label="Halachic profile"></select></label>
-        <label><span>Amah</span><select id="quick-amah" aria-label="Amah measurement"></select></label>
-        <button id="simple-more-settings" type="button">All settings</button>`;
+        <summary><span><small>Settings</small><b id="simple-settings-summary">Mishna Berurah · 18.90 in</b></span><em>Change</em></summary>
+        <div class="simple-settings-body">
+          <label><span>Profile</span><select id="quick-profile" aria-label="Halachic profile"></select></label>
+          <label><span>Amah</span><select id="quick-amah" aria-label="Amah measurement"></select></label>
+          <button id="simple-more-settings" type="button">All settings</button>
+        </div>`;
       document.getElementById('status')?.after(quickSettings);
+
+      const updateSettingsSummary = () => {
+        const profile = document.getElementById('quick-profile');
+        const amah = document.getElementById('quick-amah');
+        const summary = document.getElementById('simple-settings-summary');
+        if (!profile || !amah || !summary) return;
+        const profileNames = {
+          'mishna-berura': 'Mishna Berurah', 'chazon-ish': 'Chazon Ish',
+          mechaber: 'Mechaber', custom: 'Custom',
+        };
+        const amahLabel = amah.selectedOptions[0]?.textContent?.match(/\d+\.\d+ in/)?.[0] || 'custom amah';
+        summary.textContent = `${profileNames[profile.value] || 'Custom'} · ${amahLabel}`;
+      };
 
       const syncSelect = (sourceId, quickId) => {
         const source = document.getElementById(sourceId);
@@ -60,11 +75,13 @@
         quick.addEventListener('change', () => {
           source.value = quick.value;
           source.dispatchEvent(new Event('change', { bubbles: true }));
+          updateSettingsSummary();
         });
-        source.addEventListener('change', () => { quick.value = source.value; });
+        source.addEventListener('change', () => { quick.value = source.value; updateSettingsSummary(); });
       };
       syncSelect('profile', 'quick-profile');
       syncSelect('amah', 'quick-amah');
+      updateSettingsSummary();
 
       const mapKey = document.createElement('div');
       mapKey.id = 'simple-map-key';
@@ -88,11 +105,10 @@
           const card = document.createElement('section');
           card.className = 'simple-result-card';
           card.innerHTML = `
-            <span class="simple-result-kicker">Draft map ready</span>
-            <h3>${isCity ? 'Your techum starts from the squared city' : 'Your techum starts from this point'}</h3>
-            <p>The <b>red line</b> is the 2,000-amah boundary. Drag the pin if your exact building is different—the result recalculates automatically.</p>
+            <h3>Your techum is ready</h3>
+            <p><b>Red line = your boundary.</b> Drag the pin to update it automatically.</p>
             <details class="simple-result-explainer">
-              <summary>What does this mean? <span aria-hidden="true">i</span></summary>
+              <summary>How was this calculated? <span aria-hidden="true">i</span></summary>
               <p>${isCity
                 ? 'Nearby qualifying homes are joined into a halachic city, that city is squared, and the techum is measured outward from the square.'
                 : 'The map did not derive a qualifying city at this point, so the techum is measured from the shevisa point.'}</p>
@@ -101,23 +117,23 @@
             </details>`;
           results.prepend(card);
 
-          const technical = original.filter((node) => {
-            if (node.classList.contains('warn')) {
-              const isActionable = /data limit|incomplete|review|concav|overlap|outside|missing|uncertain/i.test(node.textContent);
-              return !isActionable;
-            }
-            if (node.classList.contains('note') && /point|data limit|incomplete/i.test(node.textContent)) {
-              node.classList.add('simple-important-note');
-              return false;
-            }
-            return true;
-          });
+          const reviewNotes = original.filter((node) =>
+            (node.classList.contains('warn') && /data limit|incomplete|review|concav|overlap|outside|missing|uncertain/i.test(node.textContent)) ||
+            (node.classList.contains('note') && /point|data limit|incomplete/i.test(node.textContent)));
+          if (reviewNotes.length) {
+            const review = document.createElement('details');
+            review.className = 'simple-review-notes';
+            review.innerHTML = `<summary>${reviewNotes.length} review ${reviewNotes.length === 1 ? 'note' : 'notes'}</summary>`;
+            reviewNotes.forEach((node) => review.append(node));
+            card.append(review);
+          }
+          const technical = original.filter((node) => !reviewNotes.includes(node));
           if (technical.length) {
             const details = document.createElement('details');
             details.className = 'simple-technical-details';
             details.innerHTML = '<summary>Calculation details</summary>';
             technical.forEach((node) => details.append(node));
-            results.append(details);
+            card.append(details);
           }
         };
         new MutationObserver(simplifyResults).observe(results, { childList: true });

@@ -113,6 +113,22 @@
     }));
   }
 
+  async function reverseGeocode(lat, lon) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error('Valid coordinates are required');
+    const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const params = new URLSearchParams({
+      format: 'jsonv2', zoom: '18', addressdetails: '1', lat: String(lat), lon: String(lon),
+    });
+    const url = local
+      ? 'https://nominatim.openstreetmap.org/reverse?' + params.toString()
+      : '/api/reverse-geocode?' + params.toString();
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error('Reverse geocoding failed: HTTP ' + res.status);
+    const result = await res.json();
+    if (!result || !result.display_name) throw new Error('No address found for this location');
+    return { lat: parseFloat(result.lat), lon: parseFloat(result.lon), label: result.display_name };
+  }
+
   function photonLabel(properties) {
     const p = properties || {};
     const parts = [];
@@ -487,7 +503,7 @@ out count;`;
     throw lastErr;
   }
 
-  root.TechumData = { classify, computeDataConfidence, geocode, autocomplete, fetchBuildings, fetchBuildingsCached,
+  root.TechumData = { classify, computeDataConfidence, geocode, reverseGeocode, autocomplete, fetchBuildings, fetchBuildingsCached,
     fetchBuildingsFromServer, submitBuildingCorrection, countChangedBuildings, markCheckedCurrent,
     _tables: { DWELLING_TAGS, NON_DWELLING_TAGS, REVIEW_TAGS },
     parseOvertureGeoJSON, compareBuildingSources,
