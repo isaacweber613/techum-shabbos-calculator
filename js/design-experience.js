@@ -1,6 +1,6 @@
 (() => {
   const design = new URLSearchParams(location.search).get('design');
-  if (!/^[1-8]$/.test(design || '')) return;
+  if (!/^(?:[1-9]|10)$/.test(design || '')) return;
 
   const concepts = {
     1: { name: 'Quiet Search', title: 'Confirm the place', copy: 'Make sure the pin is on the building where you will be for Shabbos.' },
@@ -11,6 +11,8 @@
     6: { name: 'Soft Horizon', title: 'Is the pin on your place?', copy: 'A gentle check before we measure. When it looks right, continue — nothing else is required.' },
     7: { name: 'Studio Draft', title: 'Confirm pin placement', copy: 'Lock the building. The workspace will measure the city, square the edges, and draft the 2,000-amah line.' },
     8: { name: 'Shabbos Table', title: 'Is this where you’re staying?', copy: 'Confirm the home or hotel. We’ll set the table with a clear map and plain explanation for your rav.' },
+    9: { name: 'Map First', title: 'See your techum right away', copy: 'Type an address and the boundary appears automatically. Drag the pin anytime and the map updates itself.' },
+    10: { name: 'Clear Answer', title: 'One address. One clear answer.', copy: 'We calculate automatically, then explain only what matters in plain language.' },
   };
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -31,6 +33,97 @@
     nav.id = 'design-experience-nav';
     nav.innerHTML = `<a href="/designtest/${design}/" aria-label="Back to ${concept.name}">←</a><span><b>Concept ${design}</b>${concept.name}</span><button id="design-settings-button" type="button" aria-expanded="false" aria-controls="design-drawer">Review tools</button>`;
     brand?.after(nav);
+
+    const isSimpleDirection = design === '9' || design === '10';
+    if (isSimpleDirection) {
+      const locationButton = document.getElementById('btn-location');
+      if (locationButton) locationButton.textContent = 'Use my current location';
+      const buildingsLayer = document.getElementById('layer-buildings');
+      if (buildingsLayer) buildingsLayer.checked = false;
+
+      const quickSettings = document.createElement('section');
+      quickSettings.id = 'simple-quick-settings';
+      quickSettings.setAttribute('aria-label', 'Common settings');
+      quickSettings.innerHTML = `
+        <span class="quick-settings-label">Common settings</span>
+        <label><span>Profile</span><select id="quick-profile" aria-label="Halachic profile"></select></label>
+        <label><span>Amah</span><select id="quick-amah" aria-label="Amah measurement"></select></label>
+        <button id="simple-more-settings" type="button">All settings</button>`;
+      document.getElementById('status')?.after(quickSettings);
+
+      const syncSelect = (sourceId, quickId) => {
+        const source = document.getElementById(sourceId);
+        const quick = document.getElementById(quickId);
+        if (!source || !quick) return;
+        quick.replaceChildren(...[...source.options].map((option) => option.cloneNode(true)));
+        quick.value = source.value;
+        quick.addEventListener('change', () => {
+          source.value = quick.value;
+          source.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        source.addEventListener('change', () => { quick.value = source.value; });
+      };
+      syncSelect('profile', 'quick-profile');
+      syncSelect('amah', 'quick-amah');
+
+      const mapKey = document.createElement('div');
+      mapKey.id = 'simple-map-key';
+      mapKey.setAttribute('aria-label', 'Map line key');
+      mapKey.innerHTML = `
+        <b>Map lines</b>
+        <span><i class="key-line techum"></i><strong>Red</strong> Your techum</span>
+        <span><i class="key-line city"></i><strong>Green</strong> Starting city</span>
+        <span><i class="key-line karpef"></i><strong>Teal</strong> Extra city space</span>
+        <span><i class="key-line alternate"></i><strong>Amber</strong> Alternate, when shown</span>`;
+      document.getElementById('map')?.append(mapKey);
+
+      const results = document.getElementById('results');
+      if (results) {
+        const simplifyResults = () => {
+          if (!results.textContent.trim() || results.querySelector('.simple-result-card')) return;
+          const original = [...results.children];
+          const modeStat = original.find((node) => node.classList.contains('stat') && node.textContent.includes('Mode:'));
+          const isCity = modeStat?.textContent.includes('city (') || false;
+          const confidence = document.getElementById('confidence')?.textContent.trim() || '';
+          const card = document.createElement('section');
+          card.className = 'simple-result-card';
+          card.innerHTML = `
+            <span class="simple-result-kicker">Draft map ready</span>
+            <h3>${isCity ? 'Your techum starts from the squared city' : 'Your techum starts from this point'}</h3>
+            <p>The <b>red line</b> is the 2,000-amah boundary. Drag the pin if your exact building is different—the result recalculates automatically.</p>
+            <details class="simple-result-explainer">
+              <summary>What does this mean? <span aria-hidden="true">i</span></summary>
+              <p>${isCity
+                ? 'Nearby qualifying homes are joined into a halachic city, that city is squared, and the techum is measured outward from the square.'
+                : 'The map did not derive a qualifying city at this point, so the techum is measured from the shevisa point.'}</p>
+              ${confidence ? `<p>${confidence}</p>` : ''}
+              <p>This remains a draft for review with a qualified rav.</p>
+            </details>`;
+          results.prepend(card);
+
+          const technical = original.filter((node) => {
+            if (node.classList.contains('warn')) {
+              const isActionable = /data limit|incomplete|review|concav|overlap|outside|missing|uncertain/i.test(node.textContent);
+              return !isActionable;
+            }
+            if (node.classList.contains('note') && /point|data limit|incomplete/i.test(node.textContent)) {
+              node.classList.add('simple-important-note');
+              return false;
+            }
+            return true;
+          });
+          if (technical.length) {
+            const details = document.createElement('details');
+            details.className = 'simple-technical-details';
+            details.innerHTML = '<summary>Calculation details</summary>';
+            technical.forEach((node) => details.append(node));
+            results.append(details);
+          }
+        };
+        new MutationObserver(simplifyResults).observe(results, { childList: true });
+        simplifyResults();
+      }
+    }
 
     // Concept-specific cherry enhancements on the live calculator shell.
     if (design === '6') {
@@ -99,11 +192,15 @@
         6: 'Quiet tools',
         7: 'Inspector',
         8: 'For your rav',
+        9: 'All settings',
+        10: 'All settings',
       };
       const drawerIntros = {
         6: 'Profiles, layers, building review, and exports. Most people never open this — the map already has what they need.',
         7: 'Method, map layers, building overrides, audit geometry, and exports. Keep the canvas clean; open the inspector only when reviewing.',
         8: 'Halachic profiles, map layers, and exports for careful review. Guests can leave these untouched; hosts (rabbis) will find everything here.',
+        9: 'The two common choices stay beside the result. Every layer, shita, correction, audit control, and export remains easy to reach here.',
+        10: 'Common choices stay visible. Open this organized panel for comparison lines, building review, audit tools, and exports.',
       };
       const title = drawerTitles[design] || 'Review tools';
       const introText = drawerIntros[design] || 'Profiles, map layers, building review, audit geometry, and exports. Most people can leave these untouched.';
@@ -120,7 +217,7 @@
       backdrop.setAttribute('aria-label', 'Close review tools');
       document.body.append(backdrop);
 
-      const btnLabel = design === '7' ? 'Inspector' : design === '8' ? 'For your rav' : design === '6' ? 'Quiet tools' : 'Review tools';
+      const btnLabel = design === '7' ? 'Inspector' : design === '8' ? 'For your rav' : design === '6' ? 'Quiet tools' : isSimpleDirection ? 'All settings' : 'Review tools';
       const settingsBtn = document.getElementById('design-settings-button');
       if (settingsBtn) settingsBtn.textContent = btnLabel;
 
@@ -130,6 +227,7 @@
         document.getElementById('design-settings-button')?.setAttribute('aria-expanded', String(open));
       };
       document.getElementById('design-settings-button')?.addEventListener('click', () => toggle(true));
+      document.getElementById('simple-more-settings')?.addEventListener('click', () => toggle(true));
       document.getElementById('design-drawer-close')?.addEventListener('click', () => toggle(false));
       backdrop.addEventListener('click', () => toggle(false));
       document.addEventListener('keydown', (event) => { if (event.key === 'Escape') toggle(false); });

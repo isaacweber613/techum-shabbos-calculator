@@ -7,6 +7,7 @@
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
   const ENGINE_VERSION = '1.1.0 (2026-07-10)';
+  const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
   let map, pinMarker, buildingRenderer;
@@ -36,6 +37,7 @@
   let analysisRequestId = 0;
   let latestAnalysisId = 0;
   let activeCalculationId = 0;
+  let automaticCalculationTimer = null;
   const analysisPending = new Map();
   function track(type, data) { if (window.TechumTrack) window.TechumTrack.send(type, data); }
 
@@ -103,14 +105,28 @@
     // Thousands of footprint paths are substantially cheaper on one canvas than as
     // thousands of live SVG nodes; boundary lines remain SVG for crisp interaction.
     buildingRenderer = L.canvas({ padding: 0.35 });
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    const imagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 20, maxNativeZoom: 19,
       crossOrigin: true,
       attribution: 'Imagery © Esri | Map data © OpenStreetMap contributors',
-    }).addTo(map);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+    });
+    const imageryLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
       maxZoom: 20, opacity: 0.9, crossOrigin: true, attribution: '© CARTO',
-    }).addTo(map);
+    });
+    if (isSimplifiedDirection) {
+      const illustrated = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20, crossOrigin: true,
+        attribution: '© OpenStreetMap contributors © CARTO',
+      });
+      const realistic = L.layerGroup([imagery, imageryLabels]);
+      illustrated.addTo(map);
+      L.control.layers({ 'Illustrated map': illustrated, 'Realistic view': realistic }, null, {
+        collapsed: false, position: 'topright',
+      }).addTo(map);
+    } else {
+      imagery.addTo(map);
+      imageryLabels.addTo(map);
+    }
     layerGroups.buildings = L.layerGroup().addTo(map);
     layerGroups.rects = L.layerGroup().addTo(map);
     layerGroups.second = L.layerGroup().addTo(map);
@@ -123,7 +139,10 @@
       if (bowCapture) { addBowEndpoint(e.latlng); return; }
       const invalidatesResult = !!state.rawBuildings.length;
       setPin(e.latlng.lat, e.latlng.lng, { invalidateResult: invalidatesResult });
-      if (!invalidatesResult) setStatus('Pin set from the map. Confirm its position, then Calculate. Click elsewhere to move it.');
+      if (isSimplifiedDirection) {
+        setStatus('Pin moved — updating your techum automatically…');
+        scheduleAutomaticCalculation();
+      } else if (!invalidatesResult) setStatus('Pin set from the map. Confirm its position, then Calculate. Click elsewhere to move it.');
     });
     // audit rings are viewport-limited — refresh them as the reviewer pans/zooms
     map.on('moveend', () => {
@@ -142,10 +161,20 @@
         const p = pinMarker.getLatLng();
         state.pin = { lat: p.lat, lon: p.lng };
         if (state.rawBuildings.length) invalidateCalculationForMovedPin();
+        if (isSimplifiedDirection) scheduleAutomaticCalculation();
       });
     } else pinMarker.setLatLng([lat, lon]);
     document.getElementById('btn-calc').disabled = false;
     if (options && options.invalidateResult) invalidateCalculationForMovedPin();
+  }
+
+  function scheduleAutomaticCalculation() {
+    if (!isSimplifiedDirection) return;
+    clearTimeout(automaticCalculationTimer);
+    automaticCalculationTimer = window.setTimeout(() => {
+      if (document.getElementById('btn-calc').getAttribute('aria-busy') === 'true') cancelCalculation();
+      void calculate(false);
+    }, 280);
   }
 
   // ---------------- geocode ----------------
@@ -168,10 +197,15 @@
     document.getElementById('address').value = r.label;
     state.lastQuery = query || r.label;
     state.lastLabel = r.label;
-    setPin(r.lat, r.lon);
+    setPin(r.lat, r.lon, { invalidateResult: isSimplifiedDirection && !!state.rawBuildings.length });
     map.setView([r.lat, r.lon], 16);
     closeSuggestions();
-    setStatus('Pin set: ' + r.label + ' — confirm the pin is on the right building (drag it if not), then Calculate.');
+    if (isSimplifiedDirection) {
+      setStatus('Found ' + r.label + ' — calculating your techum…');
+      scheduleAutomaticCalculation();
+    } else {
+      setStatus('Pin set: ' + r.label + ' — confirm the pin is on the right building (drag it if not), then Calculate.');
+    }
   }
 
   function renderSuggestions(results) {
@@ -226,7 +260,9 @@
     if (e.key === 'Escape') { closeSuggestions(); return; }
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (activeSuggestion >= 0) applyGeocodeResult(suggestions[activeSuggestion], document.getElementById('address').value.trim());
+      if (activeSuggestion >= 0 || (isSimplifiedDirection && suggestions.length)) {
+        applyGeocodeResult(suggestions[Math.max(0, activeSuggestion)], document.getElementById('address').value.trim());
+      }
       else setStatus(suggestions.length
         ? 'Choose one of the suggested addresses before continuing.'
         : 'Wait for address suggestions, then choose the correct address.');
@@ -242,10 +278,15 @@
       state.lastQuery = 'My location';
       state.lastLabel = 'My location';
       document.getElementById('address').value = '';
-      setPin(lat, lon);
+      setPin(lat, lon, { invalidateResult: isSimplifiedDirection && !!state.rawBuildings.length });
       map.setView([lat, lon], 17);
       closeSuggestions();
-      setStatus(`Pin set from your location (accuracy about ${Math.round(accuracy)} m) — confirm it on the map, then Calculate.`);
+      if (isSimplifiedDirection) {
+        setStatus(`Location found (accuracy about ${Math.round(accuracy)} m) — calculating your techum…`);
+        scheduleAutomaticCalculation();
+      } else {
+        setStatus(`Pin set from your location (accuracy about ${Math.round(accuracy)} m) — confirm it on the map, then Calculate.`);
+      }
     }, (error) => {
       setStatus(error.code === error.PERMISSION_DENIED
         ? 'Location permission was denied — enter an address or click the map.'
@@ -1561,7 +1602,8 @@
       const params = new URLSearchParams(location.search);
       const lat = Number(params.get('draftLat'));
       const lon = Number(params.get('draftLon'));
-      if (Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lon) && lon >= -180 && lon <= 180) {
+      const hasDraftCoordinates = params.has('draftLat') && params.has('draftLon');
+      if (hasDraftCoordinates && Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lon) && lon >= -180 && lon <= 180) {
         applyGeocodeResult({ lat, lon, label: query }, query);
       } else {
         setStatus('Finding ' + query + '…');

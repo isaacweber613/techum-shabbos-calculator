@@ -62,7 +62,7 @@ $('#search-form')?.addEventListener('submit', (event) => {
   const query = input.value.trim();
   if (!query) { input.focus(); return; }
   sessionStorage.setItem('techum-design-draft-address', query);
-  const design = location.pathname.match(/\/designtest\/([1-8])/)?.[1];
+  const design = location.pathname.match(/\/designtest\/(10|[1-9])/)?.[1];
   const params = new URLSearchParams({ draftAddress: query });
   if (design) params.set('design', design);
   if (input.dataset.lat && input.dataset.lon) {

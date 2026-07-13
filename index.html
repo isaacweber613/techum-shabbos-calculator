@@ -34,7 +34,7 @@
   <script>
     (() => {
       const design = new URLSearchParams(location.search).get('design');
-      if (/^[1-8]$/.test(design || '')) document.documentElement.dataset.design = design;
+      if (/^(?:[1-9]|10)$/.test(design || '')) document.documentElement.dataset.design = design;
     })();
   </script>
   <link rel="stylesheet" href="css/design-experience.css" />
