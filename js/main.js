@@ -1551,6 +1551,22 @@
       if (!confirm(`Clear ${state.overrides.size} manual building override(s)?`)) return;
       state.overrides.clear(); if (state.rawBuildings.length) recompute(); setStatus('Manual building overrides cleared.');
     });
-    setStatus('Enter an address (or click the map) to set the shevisa point.');
+    const draftAddress = new URLSearchParams(location.search).get('draftAddress');
+    if (draftAddress) {
+      const query = draftAddress.trim().slice(0, 300);
+      document.getElementById('address').value = query;
+      const params = new URLSearchParams(location.search);
+      const lat = Number(params.get('draftLat'));
+      const lon = Number(params.get('draftLon'));
+      if (Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lon) && lon >= -180 && lon <= 180) {
+        applyGeocodeResult({ lat, lon, label: query }, query);
+      } else {
+        setStatus('Finding ' + query + '…');
+        void D.geocode(query, state.locationBias).then((results) => {
+          if (results.length) applyGeocodeResult(results[0], query);
+          else setStatus('We could not find that place — try a more specific address.');
+        }).catch(() => setStatus('We could not find that place — check the address and try again.'));
+      }
+    } else setStatus('Enter an address (or click the map) to set the shevisa point.');
   });
 })();

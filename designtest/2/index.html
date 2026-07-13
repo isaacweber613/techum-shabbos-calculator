@@ -1,0 +1,34 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow"><title>Design 2 — The Atlas</title>
+  <link rel="stylesheet" href="/designtest/shared.css">
+  <style>
+    :root { --ink:#29271f; --muted:#736e5e; --green:#435b42; --paper:#fbf7ed; --line:rgba(52,48,34,.15); }
+    body { font-family: "Avenir Next", Avenir, ui-sans-serif, system-ui, sans-serif; }
+    .map-bg iframe { opacity:.4; transform:scale(1.04) rotate(-1deg); }
+    .map-wash { background: linear-gradient(90deg, rgba(246,240,225,.92) 0%,rgba(246,240,225,.74) 46%,rgba(242,237,223,.27) 78%), repeating-linear-gradient(0deg,transparent 0 39px,rgba(57,53,37,.028) 40px); }
+    .topbar { border-bottom:1px solid rgba(52,48,34,.11); }
+    .hero { place-items:center start; padding:8vh clamp(24px,9vw,140px) 14vh; }
+    .search-wrap { max-width:640px; text-align:left; }
+    .eyebrow { color:#8e5d3b; }
+    .search-wrap h1 { max-width:620px; font:500 clamp(56px,8vw,102px)/.86 Georgia,"Times New Roman",serif; letter-spacing:-.055em; }
+    .search-wrap h1 span { display:block; margin-left:clamp(25px,5vw,75px); font-style:italic; color:var(--green); }
+    .subhead { max-width:470px; margin:24px 0 32px; font-size:17px; }
+    .search-box { border-radius:3px; padding:10px 10px 10px 18px; box-shadow:10px 14px 0 rgba(67,91,66,.13),0 20px 55px rgba(39,37,28,.12); }
+    .go-btn { border-radius:2px; background:#8e5d3b; }
+    .mark { border-radius:50%; background:#8e5d3b; }
+    .draft-note { left:auto; right:22px; transform:none; background:rgba(251,247,237,.82); }
+    @media (max-width:640px) { .hero{padding:11vh 20px 14vh;align-items:start}.search-wrap h1{font-size:58px}.search-wrap h1 span{margin-left:23px}.draft-note{right:12px}.search-box{border-radius:3px}.go-btn{border-radius:2px} }
+  </style>
+</head>
+<body>
+  <div class="map-bg"><iframe title="Faded map of the New York region" loading="eager" src="https://www.openstreetmap.org/export/embed.html?bbox=-74.24%2C40.56%2C-73.72%2C40.94&amp;layer=mapnik"></iframe></div><div class="map-wash"></div>
+  <main class="shell"><header class="topbar"><a class="mini-brand" href="/"><span class="mark">ת</span><span>THE TECHUM ATLAS</span></a><div class="top-actions"><nav class="concept-nav" aria-label="Design concepts"><a href="/designtest/1">1</a><a href="/designtest/2" aria-current="page">2</a><a href="/designtest/3">3</a><a href="/designtest/4">4</a><a href="/designtest/5">5</a></nav><button class="quiet-btn" id="settings-button">Method & options</button></div></header>
+    <section class="hero"><div class="search-wrap"><p class="eyebrow">A map for erev Shabbos</p><h1>Find your <span>boundary.</span></h1><p class="subhead">Begin with the place you will stay. We’ll trace the city, square its edges, and show the 2,000-amah techum for review.</p>
+      <form id="search-form" class="search-box"><svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19h16M7 16l10-10M9 6h8v8"/></svg><input id="place-search" aria-label="Address or place" aria-expanded="false" aria-controls="suggestions" placeholder="Street address, shul, hotel, or place" autocomplete="street-address"><button class="go-btn">Plot place →</button><div class="suggestions" id="suggestions" role="listbox" hidden></div></form><button class="location-link" id="location-button">◎ Locate me on the atlas</button></div></section>
+  </main><div class="concept-label">Concept 2 · Editorial atlas</div><div class="draft-note"><b>For review, not psak</b> · Consult a qualified rav</div>
+  <div class="backdrop" id="backdrop"></div><aside class="settings-panel" id="settings-panel" aria-hidden="true"><div class="panel-head"><h2>Method & options</h2><button class="close-btn" id="close-settings" aria-label="Close">×</button></div><div class="setting"><strong>Default tradition</strong><small>Mishna Berurah / Ashkenazi</small><select><option>Mishna Berurah / Ashkenazi</option><option>Chazon Ish</option><option>Mechaber / Sefardi</option></select></div><div class="setting"><strong>Amah</strong><small>R' Chaim Naeh · 48 cm</small></div><div class="setting"><strong>Advanced review</strong><small>Detailed shitos, data review, and map layers stay out of the way until a calculation is open.</small></div></aside><script src="/designtest/shared.js"></script>
+</body></html>
+

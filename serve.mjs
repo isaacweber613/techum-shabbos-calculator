@@ -86,6 +86,8 @@ createServer(async (req, res) => {
     if (path === '/') path = '/index.html';
     if (path === '/analytics') path = '/analytics.html';
     if (path === '/about') path = '/about.html';
+    if (path === '/designtest' || path === '/designtest/') path = '/designtest/index.html';
+    if (/^\/designtest\/[1-5]\/?$/.test(path)) path = path.replace(/\/$/, '') + '/index.html';
     if (path.startsWith('/data/')) { res.writeHead(403); res.end(); return; } // logged events are not public
     const file = normalize(join(root, path));
     const rel = relative(root, file);
