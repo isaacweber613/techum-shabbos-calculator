@@ -184,8 +184,11 @@
       </details>
       <details>
         <summary>Validated enclosure <small>Rav-supplied perimeter only</small></summary>
-        <p class="muted">Import a rav-validated hukaf-l'dira wall/eruv perimeter. It remains inactive until you explicitly enable it and is never inferred from an ordinary carrying eruv.</p>
-        <button id="btn-import-perimeter">Import validated GeoJSON</button>
+        <p class="muted">Draw or import a rav-validated hukaf-l'dira wall/eruv perimeter. A yard is not assumed to count merely because it appears fenced in imagery. It remains inactive until you explicitly enable it.</p>
+        <div class="row">
+          <button id="btn-draw-perimeter">Draw enclosure</button>
+          <button id="btn-import-perimeter">Import validated GeoJSON</button>
+        </div>
         <input id="perimeter-file" type="file" accept=".json,.geojson,application/geo+json" hidden />
         <label class="check"><input id="use-perimeter" type="checkbox" /> Use validated perimeter as the city edge</label>
         <button id="btn-clear-perimeter">Clear validated perimeter</button>

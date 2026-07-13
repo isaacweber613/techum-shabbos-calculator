@@ -94,6 +94,14 @@ test('KML escapes dynamic description and names', () => {
   assert.ok(kml.includes('&lt;script&gt;alert(1)&lt;/script&gt;&amp;'));
 });
 
+test('validated enclosures can be drawn easily but remain inactive by default', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const mainJs = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.match(html, /id="btn-draw-perimeter"/);
+  assert.match(mainJs, /startDrawing\('enclosure'\)/);
+  assert.match(mainJs, /settings\.useValidatedPerimeter = false/);
+});
+
 test('Overture GeoJSON parser preserves source identity without guessing dwelling status', () => {
   const parsed = D.parseOvertureGeoJSON({ type: 'FeatureCollection', features: [{
     type: 'Feature', id: 'abc', properties: { subtype: 'residential' },
