@@ -496,11 +496,13 @@
     document.getElementById('btn-finish-building').disabled = drawing.points.length < 3;
     setStatus(drawing.mode === 'rectangle'
       ? 'Rectangle footprint: click the opposite roof corner.'
-      : `Drawing missing footprint: ${drawing.points.length} point(s). Click each corner, then Finish shape.`);
+      : drawing.mode === 'enclosure'
+        ? `Drawing validated enclosure: ${drawing.points.length} point(s). Click each corner, then Finish shape.`
+        : `Drawing missing footprint: ${drawing.points.length} point(s). Click each corner, then Finish shape.`);
   }
 
   function startDrawing(mode = 'polygon') {
-    if (!state.pin || !state.proj) { setStatus('Set an address and calculate before drawing a missing building.'); return; }
+    if (!state.pin || !state.proj) { setStatus('Set an address and calculate before drawing on the map.'); return; }
     cancelMapMode(false);
     drawing = { points: [], layer: null, mode };
     map.doubleClickZoom.disable();
@@ -509,7 +511,9 @@
     document.body.classList.add('map-mode-active');
     setStatus(mode === 'rectangle'
       ? 'Rectangle footprint: click two opposite roof corners. Press Escape or Cancel to stop.'
-      : 'Drawing mode: click each roof corner, then Finish shape. Press Escape or Cancel to stop.');
+      : mode === 'enclosure'
+        ? 'Validated enclosure: click each perimeter corner, then Finish shape. It will stay inactive until explicitly enabled.'
+        : 'Drawing mode: click each roof corner, then Finish shape. Press Escape or Cancel to stop.');
   }
 
   async function shareBuildingCorrection(correction) {
@@ -526,11 +530,21 @@
   async function finishDrawing() {
     if (!drawing || drawing.points.length < 3) return;
     const ringLatLon = drawing.points.slice();
+    const mode = drawing.mode;
     if (drawing.layer) drawing.layer.remove();
-    state.manualBuildings.push({ id: `manual-${Date.now()}-${state.manualBuildings.length + 1}`,
-      tags: { building: 'yes', source: 'manual-review' }, ringLatLon });
     drawing = null; map.doubleClickZoom.enable(); document.getElementById('btn-finish-building').hidden = true;
     document.getElementById('btn-cancel-map-mode').hidden = true; document.body.classList.remove('map-mode-active');
+    if (mode === 'enclosure') {
+      state.validatedPerimeter = ringLatLon;
+      settings.useValidatedPerimeter = false;
+      document.getElementById('use-perimeter').checked = false;
+      S.save(settings);
+      await recompute();
+      setStatus('Validated enclosure stored but inactive. Enable it only after a rav confirms that this perimeter counts for techum.');
+      return;
+    }
+    state.manualBuildings.push({ id: `manual-${Date.now()}-${state.manualBuildings.length + 1}`,
+      tags: { building: 'yes', source: 'manual-review' }, ringLatLon });
     prepareBuildings(); await recompute();
     const shared = await shareBuildingCorrection({ decision: 'include', ringLatLon,
       note: 'User-drawn missing building footprint' });
@@ -1507,6 +1521,7 @@
       document.getElementById('snapshot-file').click());
     document.getElementById('btn-draw-rectangle').addEventListener('click', () => startDrawing('rectangle'));
     document.getElementById('btn-draw-building').addEventListener('click', () => startDrawing('polygon'));
+    document.getElementById('btn-draw-perimeter').addEventListener('click', () => startDrawing('enclosure'));
     document.getElementById('btn-finish-building').addEventListener('click', () => void finishDrawing());
     document.getElementById('btn-cancel-map-mode').addEventListener('click', () => cancelMapMode());
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (drawing || bowCapture)) cancelMapMode(); });
