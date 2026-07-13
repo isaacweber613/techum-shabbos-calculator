@@ -108,6 +108,21 @@
     }
     return inside;
   }
+  function pointInOrOnRing(p, ring) {
+    return pointInRing(p, ring) || ringDistToPoint(p, ring) < 0.01;
+  }
+  function ringsOverlap(r1, r2) {
+    if (pointInOrOnRing(r1[0], r2) || pointInOrOnRing(r2[0], r1)) return true;
+    for (let i = 0; i < r1.length; i++) {
+      for (let j = 0; j < r2.length; j++) {
+        if (segsIntersect(r1[i], r1[(i + 1) % r1.length], r2[j], r2[(j + 1) % r2.length])) return true;
+      }
+    }
+    return false;
+  }
+  function ringContainsRing(outer, inner) {
+    return inner.every((p) => pointInOrOnRing(p, outer));
+  }
   // Minimum edge-to-edge distance between two polygon rings (0 if touching/overlapping).
   function ringDist(r1, r2) {
     if (pointInRing(r1[0], r2) || pointInRing(r2[0], r1)) return 0;
@@ -349,6 +364,89 @@
       }
     }
     return best;
+  }
+
+  // A city that is already rectangular keeps its own orientation, even when it is
+  // diagonal to the world's directions (SA/MB OC 398:1).  These helpers find the
+  // minimum-area rectangle around the settlement, then use a deliberately strict
+  // fill-ratio test before calling the settlement "already rectangular".  Irregular
+  // shapes fall back to the true-north/world-direction rectangle (SA OC 398:2-3).
+  function convexHull(points) {
+    const unique = [...new Map(points.map((p) => [`${p.x},${p.y}`, p])).values()]
+      .sort((a, b) => a.x - b.x || a.y - b.y);
+    if (unique.length <= 2) return unique;
+    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    const lower = [];
+    for (const p of unique) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+      lower.push(p);
+    }
+    const upper = [];
+    for (let i = unique.length - 1; i >= 0; i--) {
+      const p = unique[i];
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+      upper.push(p);
+    }
+    lower.pop(); upper.pop();
+    return lower.concat(upper);
+  }
+  function ringArea(ring) {
+    let twice = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      twice += a.x * b.y - b.x * a.y;
+    }
+    return Math.abs(twice) / 2;
+  }
+  function toOrientedFrame(p, angleRad) {
+    const c = Math.cos(angleRad), s = Math.sin(angleRad);
+    return { x: p.x * c + p.y * s, y: -p.x * s + p.y * c };
+  }
+  function fromOrientedFrame(p, angleRad) {
+    const c = Math.cos(angleRad), s = Math.sin(angleRad);
+    return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
+  }
+  function normalizeRectAngle(angleRad) {
+    while (angleRad <= -Math.PI / 4) angleRad += Math.PI / 2;
+    while (angleRad > Math.PI / 4) angleRad -= Math.PI / 2;
+    return angleRad;
+  }
+  function rectCornersInFrame(rect, angleRad) {
+    return [
+      fromOrientedFrame({ x: rect.minX, y: rect.minY }, angleRad),
+      fromOrientedFrame({ x: rect.maxX, y: rect.minY }, angleRad),
+      fromOrientedFrame({ x: rect.maxX, y: rect.maxY }, angleRad),
+      fromOrientedFrame({ x: rect.minX, y: rect.maxY }, angleRad),
+    ];
+  }
+  function minimumAreaRect(points) {
+    const hull = convexHull(points);
+    if (hull.length < 3) return null;
+    let best = null;
+    for (let i = 0; i < hull.length; i++) {
+      const a = hull[i], b = hull[(i + 1) % hull.length];
+      const angleRad = normalizeRectAngle(Math.atan2(b.y - a.y, b.x - a.x));
+      const rect = bboxOfRing(hull.map((p) => toOrientedFrame(p, angleRad)));
+      const area = (rect.maxX - rect.minX) * (rect.maxY - rect.minY);
+      if (!best || area < best.area) best = { angleRad, rect, area, hull };
+    }
+    return best;
+  }
+  function deriveSquaring(points, options) {
+    const opts = options || {};
+    if (opts.reviewerAngleApplied) {
+      const rect = bboxOfRing(points);
+      return { method: 'reviewer-angle', angleRad: 0, rect, rectangularity: null };
+    }
+    const min = minimumAreaRect(points);
+    const hullArea = min ? ringArea(min.hull) : 0;
+    const rectangularity = min && min.area > 0 ? hullArea / min.area : 0;
+    // High confidence only: a chamfered/irregular town must not acquire a favorable
+    // diagonal merely because its convex hull happens to have one long sloping edge.
+    if (min && rectangularity >= 0.94) {
+      return { method: 'preserved-rectangle', angleRad: min.angleRad, rect: min.rect, rectangularity };
+    }
+    return { method: 'world-aligned', angleRad: 0, rect: bboxOfRing(points), rectangularity };
   }
 
   function clusterGapIndexed(cA, cB, buildings, upperBound, buildingGrid) {
@@ -634,6 +732,15 @@
     warnings.push(...threeVillages(clusters, work, settings));
     markStage('threeVillages');
 
+    const squaringCache = new Map();
+    const clusterPoints = (cluster) => cluster.members.flatMap((i) => work[i].ring);
+    const getClusterSquaring = (cluster) => {
+      if (!squaringCache.has(cluster)) {
+        squaringCache.set(cluster, deriveSquaring(clusterPoints(cluster), { reviewerAngleApplied: angle !== 0 }));
+      }
+      return squaringCache.get(cluster);
+    };
+
     // Locate the pin's cluster. Priority:
     //  1. A settlement whose RECTANGLE contains the pin — being inside the squared city
     //     bounds makes him a resident (whole city = 4 amos); among several containing
@@ -643,7 +750,11 @@
     const pinRect = { minX: workPin.x, maxX: workPin.x, minY: workPin.y, maxY: workPin.y };
     clusters.forEach((c, idx) => {
       if (!c.qualifiesAsCity) return;
-      if (rectContains(c.bbox, pinRect) && c.members.length > bestContainSize) {
+      const sq = getClusterSquaring(c);
+      const squareRing = rectCornersInFrame(sq.rect, sq.angleRad);
+      if (!rectContains(bboxOfRing(squareRing), pinRect)) return;
+      const containsPin = pointInOrOnRing(workPin, squareRing);
+      if (containsPin && c.members.length > bestContainSize) {
         bestContainSize = c.members.length;
         home = idx; bestD = 0;
       }
@@ -665,24 +776,47 @@
     markStage('homeSelection');
 
     let cityRect = null, karpefRect = null, techumRect = null, concavity = [];
+    let boundaryAngleRad = 0;
+    let squaring = null;
     if (mode === 'city') {
       const cluster = perimeterActive ? { bbox: bboxOfRing(validatedPerimeter), members: [] } : clusters[home];
-      cityRect = { ...cluster.bbox };                 // ribua — SA 398:1-3
+      squaring = perimeterActive
+        ? deriveSquaring(validatedPerimeter, { reviewerAngleApplied: angle !== 0 })
+        : getClusterSquaring(cluster);
+      boundaryAngleRad = squaring.angleRad;
+      cityRect = { ...squaring.rect };                // ribua — SA 398:1-3
       karpefRect = settings.karpef ? expandRect(cityRect, karpefM) : null; // MB 398:36
       techumRect = expandRect(karpefRect || cityRect, techumM);            // SA 399, square corners
-      concavity = perimeterActive ? [] : concavityWarnings(cluster, work, settings);
+      if (perimeterActive) {
+        concavity = [];
+      } else {
+        const framedWork = boundaryAngleRad === 0 ? work : work.map((b) => {
+          const ring = b.ring.map((p) => toOrientedFrame(p, boundaryAngleRad));
+          return { ...b, ring, bbox: bboxOfRing(ring) };
+        });
+        concavity = concavityWarnings({ ...cluster, bbox: cityRect }, framedWork, settings);
+      }
       warnings.push(...concavity);
       if (perimeterActive) warnings.push({ type: 'validated-perimeter', text: 'A reviewer-supplied validated enclosure is being used as the city edge. The app did not infer its hukaf-l\'dira status; confirm the supplied perimeter and ruling.' });
 
       // Overlapping-squares machlokes (CI redraw vs R' S. Miller):
       const otherRects = clusters
-        .map((c, i) => ({ i, rect: settings.karpef ? expandRect(c.bbox, karpefM) : c.bbox,
-          size: c.members.length, qualifiesAsCity: c.qualifiesAsCity }))
-        .filter((o) => o.i !== home && o.qualifiesAsCity);
+        .map((c, i) => ({ c, i }))
+        .filter(({ c, i }) => i !== home && c.qualifiesAsCity)
+        .map(({ c, i }) => {
+          const otherSq = getClusterSquaring(c);
+          const expanded = settings.karpef ? expandRect(otherSq.rect, karpefM) : otherSq.rect;
+          const ring = rectCornersInFrame(expanded, otherSq.angleRad)
+            .map((p) => toOrientedFrame(p, boundaryAngleRad));
+          const cityRing = rectCornersInFrame(otherSq.rect, otherSq.angleRad)
+            .map((p) => toOrientedFrame(p, boundaryAngleRad));
+          return { i, ring, cityRing,
+            size: c.members.length, qualifiesAsCity: c.qualifiesAsCity };
+        });
       for (const o of otherRects) {
-        if (rectsOverlap(karpefRect || cityRect, o.rect)) {
+        if (ringsOverlap(rectCornersInFrame(karpefRect || cityRect, 0), o.ring)) {
           if (settings.overlapMerge) {
-            cityRect = bboxUnion(cityRect, clusters[o.i].bbox);
+            cityRect = bboxUnion(cityRect, bboxOfRing(o.cityRing));
             cluster.members = [...new Set(cluster.members.concat(clusters[o.i].members))];
             karpefRect = settings.karpef ? expandRect(cityRect, karpefM) : null;
             techumRect = expandRect(karpefRect || cityRect, techumM);
@@ -695,7 +829,7 @@
       // Ir mubla'as: another settlement fully inside the techum counts as 4 amos — the
       // techum may effectively extend beyond the line on that side (SA 408). Warn only.
       for (const o of otherRects) {
-        if (rectContains(techumRect, o.rect)) {
+        if (ringContainsRing(rectCornersInFrame(techumRect, 0), o.ring)) {
           warnings.push({ type: 'ir-mublaas', text: 'A settlement lies entirely inside the techum: it counts as 4 amos, so one may effectively continue beyond the line on that side (ir mubla’as). Not drawn; ask a rav.' });
         }
       }
@@ -705,14 +839,13 @@
       const base = { minX: workPin.x - half, maxX: workPin.x + half, minY: workPin.y - half, maxY: workPin.y + half };
       techumRect = expandRect(base, techumM);
       cityRect = base;
+      squaring = { method: pointAngle === 0 ? 'world-aligned-point' : 'reviewer-angle-point', angleRad: 0, rectangularity: null };
       warnings.push({ type: 'point-mode', text: 'No settlement found joining this point (within 70 2/3 amos) — treated as shevisa in an open field: 4 amos + 2000-amos square. The square may be rotated (settings).' });
     }
     markStage('boundaryAndWarnings');
 
-    const rectToCorners = (r) => r == null ? null : [
-      unrot({ x: r.minX, y: r.minY }), unrot({ x: r.maxX, y: r.minY }),
-      unrot({ x: r.maxX, y: r.maxY }), unrot({ x: r.minX, y: r.maxY }),
-    ];
+    const rectToCorners = (r, localAngleRad) => r == null ? null
+      : rectCornersInFrame(r, localAngleRad || 0).map(unrot);
     const rotatePointCorners = (corners) => {
       if (mode !== 'point' || pointAngle === 0 || !corners) return corners;
       const center = unrot(workPin);
@@ -725,10 +858,10 @@
       });
     };
 
-    const cityCorners = rotatePointCorners(rectToCorners(cityRect));
-    const techumCorners = rotatePointCorners(rectToCorners(techumRect));
+    const cityCorners = rotatePointCorners(rectToCorners(cityRect, boundaryAngleRad));
+    const techumCorners = rotatePointCorners(rectToCorners(techumRect, boundaryAngleRad));
     const mil12Corners = rotatePointCorners(mode === 'city'
-      ? rectToCorners(expandRect(karpefRect || cityRect, AMOS.MIL12 * settings.amahM))
+      ? rectToCorners(expandRect(karpefRect || cityRect, AMOS.MIL12 * settings.amahM), boundaryAngleRad)
       : rectToCorners(expandRect(cityRect, AMOS.MIL12 * settings.amahM)));
 
     const result = {
@@ -736,15 +869,17 @@
       validatedPerimeterActive: perimeterActive,
       labels,
       homeCluster: home,
-      clusters: clusters.map((c) => ({
+      clusters: clusters.map((c) => {
+        const clusterSq = c.qualifiesAsCity ? getClusterSquaring(c) : null;
+        return ({
         members: c.members,
-        corners: rectToCorners(c.bbox),
+        corners: clusterSq ? rectToCorners(clusterSq.rect, clusterSq.angleRad) : rectToCorners(c.bbox),
         key: c.key,
         qualifiesAsCity: c.qualifiesAsCity,
         qualificationSource: c.qualificationSource,
         qualificationRemapScore: c.qualificationRemapScore,
         componentKeys: c.componentKeys,
-      })),
+      }); }),
       // These are the original 70⅔-amah components whose city status is decided
       // before the 141⅓-amah and three-villages merge stages. Keep them separate
       // from `clusters`, which is the final settlement list shown on the map.
@@ -752,13 +887,21 @@
         corners: rectToCorners(c.bbox), qualifiesAsCity: c.qualifiesAsCity,
         qualificationSource: c.qualificationSource, qualificationRemapScore: c.qualificationRemapScore })),
       cityCorners,
-      karpefCorners: rectToCorners(karpefRect),
+      karpefCorners: rectToCorners(karpefRect, boundaryAngleRad),
       techumCorners,
       mil12Corners,
-      concavityRegions: concavity.map((w) => rectToCorners(w.region)),
+      squaring: {
+        method: squaring.method,
+        angleDeg: mode === 'city'
+          ? (settings.squaringAngleDeg || 0) + boundaryAngleRad * 180 / Math.PI
+          : (settings.pointRotationDeg || 0),
+        rectangularity: squaring.rectangularity,
+        reviewRequired: concavity.length > 0,
+      },
+      concavityRegions: concavity.map((w) => rectToCorners(w.region, boundaryAngleRad)),
       concavityAudit: concavity.map((w) => ({
         reviewKey: w.reviewKey,
-        regionCorners: rectToCorners(w.region),
+        regionCorners: rectToCorners(w.region, boundaryAngleRad),
         reviewerEndpoints: w.reviewerEndpoints ? w.reviewerEndpoints.map(unrot) : null,
         reviewStatus: w.reviewStatus,
         appliedToBoundary: false,
@@ -778,6 +921,8 @@
       bboxOfRing, bboxGap, expandRect, rectsOverlap, rectContains, ringDist,
       ringDistToPoint, clusterBuildings, buildClusters, mergeCities, GridIndex,
       pointInRing, segSegDist, annotateCityQualification, concavityWarnings,
+      ringsOverlap, ringContainsRing,
+      convexHull, minimumAreaRect, deriveSquaring, toOrientedFrame, fromOrientedFrame,
     },
   };
 });

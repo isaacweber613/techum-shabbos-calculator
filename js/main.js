@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.1.0 (2026-07-10)';
+  const ENGINE_VERSION = '1.2.0 (2026-07-13)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -45,7 +45,7 @@
     profile: 'Choose a documented bundle of shitos; the explanation below states what changes and why.',
     amah: 'Sets the length of an amah. This changes distances and can change which buildings connect.',
     karpef: 'Adds 70⅔ amos around a single city before measuring the 2,000-amah techum.',
-    'sq-angle': 'Halachic ribua: cardinal directions are the baseline. A natural city alignment applies in defined cases and is disputed for some irregular shapes; change this only with rabbinic direction.',
+    'sq-angle': 'Automatic ribua preserves a clearly rectangular city in its existing direction; irregular cities are squared to true north. A nonzero value is a reviewer override.',
     overlap: 'Controls whether overlapping squared city areas are treated as one city.',
     'inc-unknown': 'Includes detected structures whose dwelling use is not identified.',
     'inc-review': 'Includes hotels, schools, shuls and similar places that need individual review.',
@@ -62,9 +62,9 @@
     'audit-rings': 'Shows exactly how nearby buildings connect into settlements and the home city.',
   };
   const PROFILE_EXPLANATIONS = {
-    'mishna-berura': '<b>Mishna Berurah / Ashkenazi:</b> R\' Chaim Naeh amah (18.90 in), Rema\'s 70⅔-amah karpef, cardinal-direction squaring, and the stricter view that overlapping city rectangles do not automatically merge.',
-    'chazon-ish': '<b>Chazon Ish:</b> larger 22.68-inch amah and the lenient view that overlapping city rectangles are redrawn together. Cardinal squaring remains the starting value; use a natural city angle only when that halachic case has been established.',
-    mechaber: '<b>Mechaber / Sefardi:</b> 18.90-inch amah here, no extra single-city karpef, cardinal-direction squaring, and no automatic overlapping-rectangle merge.',
+    'mishna-berura': '<b>Mishna Berurah / Ashkenazi:</b> R\' Chaim Naeh amah (18.90 in), Rema\'s 70⅔-amah karpef, shape-aware SA/MB squaring, and the stricter view that overlapping city rectangles do not automatically merge.',
+    'chazon-ish': '<b>Chazon Ish:</b> larger 22.68-inch amah and the lenient view that overlapping city rectangles are redrawn together. Shape-aware automatic squaring is the starting value; a reviewer can set a controlling natural angle.',
+    mechaber: '<b>Mechaber / Sefardi:</b> 18.90-inch amah here, no extra single-city karpef, shape-aware SA squaring, and no automatic overlapping-rectangle merge.',
     custom: '<b>Custom:</b> one or more choices differ from the selected profile. Review every changed shita with a rav.',
   };
 
@@ -1130,6 +1130,15 @@
       else lines.push(`<div class="note"><b>Pin check:</b> ${escapeHtml(state.snapInfo.reason || 'Already on a mapped footprint')}. Confirm against imagery.</div>`);
     }
     lines.push(`<div class="stat"><b>Mode:</b> ${res.mode === 'city' ? 'city (whole city = 4 amos)' : 'open field (point shevisa)'}</div>`);
+    if (res.mode === 'city' && res.squaring) {
+      const angleText = `${Math.abs(res.squaring.angleDeg || 0).toFixed(1)}°`;
+      const squareText = res.squaring.method === 'preserved-rectangle'
+        ? `existing rectangular direction preserved (${angleText}; SA/MB 398:1)`
+        : res.squaring.method === 'reviewer-angle'
+          ? `reviewer-set direction (${angleText})`
+          : 'irregular city squared to the world directions (SA 398:2–3)';
+      lines.push(`<div class="stat"><b>City squaring:</b> ${squareText}</div>`);
+    }
     lines.push(`<div class="stat"><b>Buildings fetched:</b> ${state.buildings.length} — ` +
       `<span class="sw dw"></span>${counts.dwelling} identified dwelling, <span class="sw un"></span>${counts.unknown} use-unknown, ` +
       `<span class="sw rv"></span>${counts.review} optional-review, <span class="sw no"></span>${counts.non} non-dwelling</div>`);
@@ -1235,12 +1244,16 @@
     const counts = { dwelling: 0, unknown: 0, review: 0, non: 0 };
     for (const b of state.buildings) counts[b.klass] = (counts[b.klass] || 0) + 1;
     const bb = state.fetchBBox;
+    const sq = state.result && state.result.squaring;
+    const squaringAudit = sq
+      ? `${sq.method} @ ${(sq.angleDeg || 0).toFixed(2)}°${sq.rectangularity == null ? '' : `; rectangularity ${(sq.rectangularity * 100).toFixed(1)}%`}${sq.reviewRequired ? '; REQUIRES REVIEW' : ''}`
+      : (settings.squaringAngleDeg ? `reviewer angle @ ${settings.squaringAngleDeg}°` : 'automatic');
     return [
       '== Psak configuration ==',
       `Profile: ${eff === 'custom' ? 'CUSTOM' : S.PROFILES[settings.profile].label}`,
       `Amah: ${settings.amahCm} cm (2000 amos = ${(20 * settings.amahCm).toFixed(0)} m)`,
       `Single-city karpef: ${settings.karpef ? 'ON (Rema / MB 398:36)' : 'OFF (Mechaber)'}`,
-      `Squaring orientation: ${settings.squaringAngleDeg ? 'natural edge @ ' + settings.squaringAngleDeg + '° (manual orientation decision)' : 'compass (true north)'}`,
+      `Squaring orientation: ${squaringAudit}`,
       `Overlapping-rectangles merge: ${settings.overlapMerge ? 'ON (Chazon Ish)' : 'OFF (strict)'}`,
       `City minimum: ${settings.minCityHouses} footprints (MB 398:38 — COUNT-BASED APPROXIMATION of the 3-chatzeros model; courtyard structure not modeled)`,
       `Min dwelling size 4x4 amos filter: ${settings.minSizeFilter ? 'on' : 'off'}`,

@@ -17,7 +17,7 @@
       label: 'Mishna Berurah / Ashkenazi (default)',
       amahCm: 48,          // R' Chaim Naeh
       karpef: true,        // Rema, recorded MB 398:36
-      squaringAngleDeg: 0, // compass (Chayei Adam 68:14)
+      squaringAngleDeg: 0, // automatic: preserve a clear rectangle; otherwise compass
       overlapMerge: false, // strict (R' S. Miller) + warning
       minCityHouses: 6,    // MB 398:38
     },
@@ -25,7 +25,7 @@
       label: 'Chazon Ish',
       amahCm: 57.6,
       karpef: true,        // CONFIRM CI's own karpef position with a posek (spec Part 2)
-      squaringAngleDeg: 0, // natural-edge PERMITTED — user sets the angle (CI OC 110:23)
+      squaringAngleDeg: 0, // same automatic SA/MB shape rule; nonzero is reviewer override
       overlapMerge: true,  // CI redraws the joint rectangle
       minCityHouses: 6,
     },
