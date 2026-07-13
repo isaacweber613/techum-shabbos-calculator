@@ -83,8 +83,27 @@ mehalich policy above.
 
 ## Shipping
 
-When Isaac says **"ship it"**, treat that phrase as authorization to complete the main
-calculator's production release without asking for routine confirmations:
+**Shipping is the default for implementation requests.** When Isaac asks to fix, change,
+add, remove, or build something, finish by releasing it to production unless he explicitly
+says `local only`, `don't ship`, or asks only for analysis/review. Do not wait for the
+phrase "ship it" and do not stop after making a local change.
+
+Standing release authorization:
+
+- Include all current changes in this repository unless Isaac explicitly excludes some.
+  Do not pause merely because other in-repo changes predate the current task; still check
+  for secrets, generated junk, or files that clearly belong to another repository.
+- Use the existing GitHub and Cloudflare authentication without routine confirmation.
+- Keep release narration brief and act immediately. Report only failures that actually
+  block safe progress.
+- Prefer the shortest representative live verification. For a calculation smoke test,
+  use a small/rural location or a cached snapshot; do not choose a metro-scale address
+  unless the change specifically concerns large-city behavior.
+- Reuse current browser and CLI sessions. A stale `CLOUDFLARE_API_TOKEN` environment
+  override may mask Wrangler's stored OAuth login; retry with that process-level override
+  removed before declaring Cloudflare authentication blocked.
+
+Default release path:
 
 1. Confirm the diff belongs to this repository and contains no secrets or unrelated work.
 2. Run `npm test`, `npm run typecheck`, and `npm run cf:dry-run`. Stop on any failure.
@@ -94,7 +113,8 @@ calculator's production release without asking for routine confirmations:
 5. Run `npm run cf:deploy` from this repository root. This deploys the Worker, D1-backed
    API, and built static assets described by the root `wrangler.jsonc`.
 6. Verify the deployed version at `https://tchumshabbos.com`: load the app, check the
-   console and failed network requests, and exercise address search plus one calculation.
+   console and failed network requests, and exercise the changed behavior plus the
+   smallest relevant calculation smoke test.
 7. Report the commit SHA, PR/merge result, Wrangler deployment/version identifier, live
    URL, and verification results.
 
