@@ -67,6 +67,16 @@ test('agent performance reports stay out of the public calculator UI', () => {
   assert.match(analytics, /Copy report/);
 });
 
+test('ordinary users get one automatic Overture result with optional corrections', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.doesNotMatch(html, /Compare Overture GeoJSON|btn-import-overture/);
+  assert.match(html, /Two-click rectangle/);
+  assert.match(main, /Automatic building map ready/);
+  assert.match(main, /submitBuildingCorrection/);
+  assert.equal(S.DEFAULTS.showVerifiedOnly, false);
+});
+
 test('settings profile and non-default analytics stay deterministic', () => {
   const ci = S.applyProfile({ ...S.DEFAULTS }, 'chazon-ish');
   assert.equal(S.effectiveProfile(ci), 'chazon-ish');

@@ -44,7 +44,7 @@
     ...PROFILES['mishna-berura'],
     includeUnknown: true,   // data policy (just-works default); flagged in UI
     includeReview: true,    // hotels/shuls/schools etc — flagged, open question Q5
-    showVerifiedOnly: true, // second scenario line: verified dwellings only (neither is authoritative)
+    showVerifiedOnly: false, // optional reviewer scenario; ordinary users get one automatic result
     minSizeFilter: true,    // exclude structures below 4x4 amos (SA HaRav 398:10)
     secondAmahCm: 0,        // 0 = off; draws a comparison techum line
     show12mil: false,
@@ -57,6 +57,7 @@
     maxBuildings: 40000,
     maxExpandIterations: 4,
     autoCheckDays: 30,      // auto change-check when cached data is older than this; no user button
+    dataSourceVersion: 2,   // migrates prior OSM-era display defaults once
   };
 
   const KEY = 'techum-settings-v1';
@@ -69,6 +70,10 @@
         // 30,000 was the old built-in metro cap, not a user/halachic choice. Migrate it
         // so Brooklyn-sized calculations can finish their boundary expansion.
         if (saved.maxBuildings === 30000 || saved.maxBuildings === 60000) saved.maxBuildings = DEFAULTS.maxBuildings;
+        if (saved.dataSourceVersion !== 2) {
+          saved.showVerifiedOnly = false;
+          saved.dataSourceVersion = 2;
+        }
         return { ...DEFAULTS, ...saved };
       }
     } catch (e) { /* fresh defaults */ }

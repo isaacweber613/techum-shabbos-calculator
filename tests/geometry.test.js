@@ -151,6 +151,15 @@ function rectSpan(corners) {
   assert('point techum = 4 amos + 2*2000 amos', approx(t.w, 4 * RCN + 2 * TECHUM, 0.01), `w=${t.w}`);
 }
 
+// 6b. A footprint is not automatically a qualifying city ---------------------
+{
+  const loneHouse = [squareHouse(0, 0)];
+  const res = G.runPipeline(loneHouse, S, { x: 0, y: 0 });
+  assert('sub-city cluster at the pin does not become a city',
+    res.mode === 'point' && res.clusters[0].qualifiesAsCity === false,
+    `mode=${res.mode}`);
+}
+
 // 7. Natural-edge squaring (rotation) -----------------------------------------
 {
   // same rotated-diamond city as #2, but squared to its own 45deg edge:

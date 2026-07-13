@@ -1,7 +1,7 @@
 # Techum Shabbos Calculator
 
 > ⚠ **DRAFT TOOL — not a psak halacha.** Techum measurement requires an expert (MB 399:7).
-> Every output depends on the psak settings shown and on OpenStreetMap data quality.
+> Every output depends on the psak settings shown and on Overture map-data quality.
 > Verify with a rav before relying on anything this tool draws.
 
 ## License
@@ -11,7 +11,7 @@ purposes (personal use, learning, shuls, schools, charities, religious observanc
 **Selling products built with this software is not allowed.** See [LICENSE](LICENSE).
 Commercial licensing: contact the author.
 
-Type an address → the app fetches the real buildings around it from OpenStreetMap,
+Type an address → the app fetches the detected buildings around it from Overture Maps,
 derives the halachic city (ibur ha'ir chaining at 70⅔ amos, city merges at 141⅓,
 three-villages rule), squares it to a true-north rectangle (ribua ha'ir), and draws the
 2000-amos techum with square corners — all shitos configurable, all uncertainty flagged.
@@ -37,7 +37,7 @@ npx wrangler d1 migrations apply techum-analytics --local
 npm run cf:dev
 ```
 
-Data: OSM Overpass (buildings), Nominatim (geocoding through an identified/cached production
+Data: Overture Buildings PMTiles (fused OSM + ML footprint sources), Nominatim (geocoding through an identified/cached production
 proxy), and Esri World Imagery (satellite tiles).
 
 ## Using it
@@ -50,21 +50,18 @@ proxy), and Esri World Imagery (satellite tiles).
    every setting individually overridable (profile shows "Custom").
 5. Optional comparison line: draw the techum under a second amah simultaneously.
 6. Export KML (opens in Google Earth for review) or GeoJSON — both embed the full config
-   **plus an audit block** (engine version, OSM data timestamp, extent, counts, overrides,
+   **plus an audit block** (engine version, Overture release/timestamp, extent, counts, overrides,
    whether the search frontier closed, projection, orientation choice).
 7. **Save/Load snapshot** — freezes the fetched buildings + settings + overrides to a JSON
    for a deterministic replay: the engine is pure, so same data + same settings = same
-   lines, forever. (OSM data changes over time; halachos don't.)
-7a. **Building data cache (local + shared)** — raw OSM footprints are cached, never the
+   lines, forever. (Map releases change over time; halachos don't.)
+7a. **Building data cache (local + shared)** — raw Overture footprints are cached, never the
    computed techum lines (settings-dependent). **L1:** browser IndexedDB for the same pin.
    **L2 (production):** Worker `/api/buildings` unions ~2 km grid tiles from R2 so the
-   second user in the same city skips Overpass. Cold tiles fill once from Overpass and
-   stay until **"Fresh data"** or the automatic 30-day change-check finds edits.
-   When cached data is **older than 30 days**, the app asks OSM whether any building in
-   the area was edited (`newer:` count — cheap). No edits → stamp verified-current and
-   reset the clock; edits → refetch + report whether the techum line moved (meters).
-   Caveat: deletions don't appear in `newer:` — occasional explicit refresh is the backstop.
-   Localhost (`node serve.mjs`) still talks to Overpass directly.
+   second user in the same city skips upstream PMTiles ranges. Cold tiles fill once from
+   an immutable named Overture release. Updating the release bumps the cache version.
+   Accepted shared corrections are applied from D1; public corrections remain pending
+   until an authenticated reviewer accepts them.
 8. The **amber dashed line** is the verified-dwellings-only scenario — it brackets the
    uncertainty from untagged buildings. It is a *scenario*, not a machmir line: changing
    which buildings count can move the city topology in either direction.
@@ -74,7 +71,8 @@ proxy), and Esri World Imagery (satellite tiles).
 | File | What it does |
 |---|---|
 | `js/geometry.js` | The halachic engine (pure, no deps, node-testable): local true-north projection, 70⅔ clustering, city merges, ribua bounding rectangle, karpef, techum, concavity warnings |
-| `js/data.js` | Overpass fetch, Nominatim geocode, the auditable dwelling-classification tag table |
+| `js/data.js` | Overture fetch/cache client, Nominatim geocode, the auditable dwelling-classification tag table |
+| `worker/overture.ts` | Range-fetches and decodes the public Overture Buildings PMTiles archive |
 | `js/settings.js` | Psak profiles (spec Part 2) + persistence |
 | `js/main.js` | App flow, Leaflet rendering, auto-expanding fetch, per-building overrides |
 | `js/kml.js` | KML/GeoJSON export with embedded config + disclaimer |
@@ -82,8 +80,8 @@ proxy), and Esri World Imagery (satellite tiles).
 
 ## Known limits (v1)
 
-- OSM building **use-tags are sparse** (most buildings are "untagged" orange) — the
-  include-untagged default + per-building override is the intended workflow.
+- Building **use classifications are sparse**, especially on ML-detected footprints. These
+  structures are included automatically; optional per-building corrections remain available.
 - City-merge distance checks are exact but O(pairs) — metro-scale runs (>20k buildings)
   may be slow; the fetch cap (settings) is a **data limit, not a halachic cap**, and the
   app says so when hit.

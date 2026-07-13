@@ -6,7 +6,7 @@ folder as the working directory.
 
 ## What this is
 
-A techum Shabbos (תחום שבת) calculator: address → OSM building footprints → halachic city
+A techum Shabbos (תחום שבת) calculator: address → Overture building footprints → halachic city
 derivation (ibur ha'ir chaining at 70⅔ amos, 141⅓ city merges, three-villages rule) →
 ribua (true-north squared rectangle) → 2000-amos techum with square corners. Client-side
 static app, no build step, no API keys. v1 built + live-verified 2026-07-10.
@@ -30,7 +30,8 @@ permanent draft banner, never present output as psak.
 | File | Role |
 |---|---|
 | `js/geometry.js` | Pure halachic engine (no deps, node-testable): projection, clustering, merges, ribua, karpef, techum, concavity warnings |
-| `js/data.js` | Overpass fetch + IndexedDB cache + change detection (`newer:` queries), Nominatim geocode, auditable dwelling-classification tag table |
+| `js/data.js` | Overture client + IndexedDB cache, Nominatim geocode, auditable dwelling-classification tag table |
+| `worker/overture.ts` | Public Overture PMTiles range fetch + vector-tile decoding |
 | `js/settings.js` | Psak profiles (MB/Ashkenazi default, Chazon Ish, Mechaber/Sefardi) + persistence |
 | `js/main.js` | App flow, Leaflet render, auto-expanding fetch, per-building overrides, snapshots, auto staleness check |
 | `js/kml.js` | KML/GeoJSON export with embedded config + audit block |
@@ -42,11 +43,9 @@ permanent draft banner, never present output as psak.
   6-footprint city minimum (count-based APPROXIMATION of MB 398:38's 3-chatzeros model).
 - Every disputed rule is a user-changeable setting; profiles are documented defaults.
 - Determinism: engine is pure — same data + settings = same output. Cache the INPUT
-  (raw OSM data, IndexedDB), always recompute boundaries (cheap, settings-dependent).
-- Staleness is AUTOMATIC (Isaac: no user-facing check button): data >30 days old triggers
-  a background Overpass `newer:` edit count; 0 edits → checkedAt stamped, clock resets;
-  edits → auto refetch + report whether the techum line moved (meters). OSM deletions
-  escape `newer:` — the "Fresh data" button is the deletion backstop.
+  (raw Overture release data, IndexedDB), always recompute boundaries (cheap, settings-dependent).
+- Overture releases are immutable and named in the audit output. Updating the configured
+  release bumps the shared tile-cache version; there is no user-facing staleness workflow.
 - Snapshots (JSON: buildings + pin + settings + overrides) = the reviewable/approvable
   artifact; old snapshots auto-verify against today's map on load. v2 idea: shared
   library of rav-approved snapshots ("database of cities" = psak registry, not a cache).
@@ -125,9 +124,8 @@ requests a new deployment architecture.
 
 ## Known limits / gotchas
 
-- OSM building use-tags are sparse — most buildings show orange "untagged"; the
-  include-untagged default + per-building click-override is the intended workflow.
-  Israel OSM ≈ 42% complete; expect heavy manual review there.
+- Overture building use classes are sparse, especially on ML footprints. Use-unknown
+  structures are included automatically; corrections are optional and share-reviewable.
 - Metro-scale (>20k buildings) merge passes may be slow (O(pairs) with bbox pruning).
 - Multipolygon relations are exploded into pseudo-buildings per outer ring (slightly
   inflates footprint counts — flagged re the 6-count city minimum).

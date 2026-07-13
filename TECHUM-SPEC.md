@@ -398,6 +398,23 @@ overwrite).
 - Profile descriptions now state their operative shitos, the calculation audit is promoted
   ahead of optional settings, and per-stage timing is recorded for agent-readable diagnosis.
 
+### Rev. 9 — 2026-07-12 (Overture-first footprint coverage; no halachic default changes)
+
+- The automatic footprint source changes from raw OSM Overpass to the fused Overture
+  Buildings release. Overture retains OSM-derived footprints and adds machine-detected
+  sources such as Microsoft ML Buildings. At the reported Woodridge/Fallsburg failure area,
+  release `2026-06-17.0` supplied 49 additional roof-aligned footprints alongside 23 OSM
+  footprints in the immediate comparison extent.
+- Unknown-use Overture structures remain included by the existing default. A user is not
+  required to classify them before receiving a result; optional corrections stay available
+  by clicking a footprint or drawing a missing roof.
+- Accepted shared corrections are applied from D1. Public corrections are stored as pending;
+  authenticated reviewer corrections become shared defaults. Every correction retains its
+  source identity or explicit reviewer-drawn geometry.
+- This is a data-source and review-workflow change only. It does not answer open question 6:
+  fenced yards/courtyards remain separate, inactive reviewer geometry unless a rav validates
+  the applicable *hukaf l'dira* facts and ruling.
+
 ---
 
 ## Part 3 — Product spec
@@ -405,12 +422,12 @@ overwrite).
 ### 3.0 Scope & users
 
 - **Designed for any address, any city, worldwide** — no per-city setup. The implemented
-  source is OSM Overpass; coverage, tags, fetch limits, and local geometry can make a result
-  incomplete. Reviewer-uploaded Overture comparison and a computed confidence score are implemented.
+  source is the worldwide Overture Buildings release (including its OSM and ML-derived
+  sources); fetch limits, source age, classification, and local geometry can still matter.
 - **Two personas, one app:**
   - **Regular person:** types an address, gets the map with the locked defaults (Part 2).
-    No halachic decisions asked of them. The standing “verify with a rav” banner and data
-    warnings and a computed green/yellow/red classification-confidence indicator are implemented.
+    No halachic decisions asked of them. The standing “verify with a rav” banner remains;
+    unknown structure use is included automatically and optional review is collapsed.
   - **Rav / mumcheh (advanced mode):** the full config matrix, per-building
     include/exclude, calculation-explanation layers, warnings, a unified flagged-review
     queue, manual bow endpoints, city-status review, and annotated PDF/PNG/KMZ exports.
@@ -496,12 +513,11 @@ engineering is easy; the psak configuration is the project.**
 
 ## Part 6 — Technical stack (implemented and planned; audited 2026-07-12)
 
-- **Footprints — implemented:** OSM Overpass, expanding fetch, IndexedDB + R2 tile input cache,
-  change checks, per-building overrides, manual footprint drawing/import, and uploaded
-  Overture comparison extracts. **Planned:** an operated automatic Overture extraction service.
-  Microsoft/Open Buildings remain research candidates,
-  not runtime sources.
-- **Dwelling tags:** most OSM buildings are bare `building=yes`; Overture inherits the gap.
+- **Footprints — implemented:** automatic Overture Buildings PMTiles, expanding fetch,
+  IndexedDB + R2 tile input cache, per-building overrides, shared reviewed corrections,
+  and manual two-click rectangle/polygon drawing. Overture fuses OSM and ML-derived sources.
+- **Dwelling tags:** many Overture buildings have no decisive use class, especially ML
+  footprints. They are included automatically and remain optionally reviewable.
   US parcel land-use data would solve it but national licensing ≈ $80k/yr (Regrid);
   per-county assessor portals are free but inconsistent. → tags where present + manual
   review; zoning ≠ use.
@@ -517,12 +533,12 @@ engineering is easy; the psak configuration is the project.**
 ## Part 7 — Status, recommendation & open questions
 
 **BUILT — v1 shipped 2026-07-10.** Static web app in this folder (`node serve.mjs`,
-see README.md). Implements: geocode → OSM footprint fetch with auto-expansion →
+see README.md). Implements: geocode → Overture footprint fetch with auto-expansion →
 classification (auditable tag table) → 70⅔ ibur clustering → 141⅓ city merge (6-house
 minimum) → three-villages rule (flagged) → compass/natural-edge ribua → karpef toggle →
 2000-amos square-cornered techum → psak profiles → per-building overrides → comparison
 shita line → KML/GeoJSON export. The golden geometry suite covers the canonical
-shapes). Live-verified on New Square, NY (real OSM data, both amah shitos, city-mode
+shapes). Live-verified on New Square, NY (real map data, both amah shitos, city-mode
 detection, overlap + ir-mubla'as warnings).
 
 **Original recommendation (kept for the record): build it.** The automation gap is confirmed — nobody has the footprint → dwelling filter →
