@@ -194,7 +194,6 @@ h2 { margin:9px 0 8px; max-width:300px; font-size:27px; line-height:1.12; letter
 .search-row { display:flex; gap:8px; }.search-icon { position:absolute; left:13px; top:50%; z-index:1; transform:translateY(-52%); color:#7b8581; font-size:21px; }
 #address { height:50px; padding:0 14px 0 40px; border-color:#cfd7d3; border-radius:12px; font-size:15px; outline:none; }
 #address:focus { border-color:var(--accent); box-shadow:0 0 0 4px rgba(23,107,82,.1); }
-#btn-search { height:50px; padding:0 17px; border:0; border-radius:12px; background:var(--ink); color:#fff; font-weight:650; }
 .suggestions { top:calc(100% + 7px); padding:5px; border-color:var(--line); border-radius:12px; box-shadow:0 18px 40px rgba(20,35,29,.16); }
 .suggestion { padding:10px 11px; border:0; border-radius:8px; }.suggestion:hover,.suggestion.active { background:#eaf4f0; }
 button { border-color:#ccd4d0; border-radius:10px; }.text-button { width:auto; padding:9px 2px; border:0; background:transparent; color:var(--muted); font-size:12.5px; }
@@ -220,7 +219,7 @@ input[type="number"],select { min-height:37px; margin-top:5px; border-color:#d4d
 .intro h2 { max-width:none; margin:0; font-size:21px; white-space:nowrap; }
 .intro p { max-width:none; margin-left:auto; font-size:11.5px; white-space:nowrap; }
 .intro .eyebrow { display:none; }
-#address, #btn-search { height:40px; }
+#address { height:40px; }
 .text-button { min-height:24px; padding:2px; }
 #status { min-height:15px; margin:0 0 3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .next-step { float:left; width:41%; min-height:38px; margin:0 7px 6px 0; padding:6px 9px; }
@@ -268,7 +267,7 @@ footer { margin-top:3px; padding-top:3px; font-size:9.5px; }
   #sidebar { padding:6px 10px 4px; }
   .brand { margin-bottom:3px; }.brand-mark { width:30px; height:30px; border-radius:8px; font-size:17px; }.brand p { display:none; }
   .intro { margin-bottom:4px; }.intro h2 { font-size:17px; }.intro p { display:none; }
-  #address,#btn-search { height:34px; }.text-button { min-height:18px; padding:0; font-size:10.5px; }
+  #address { height:34px; }.text-button { min-height:18px; padding:0; font-size:10.5px; }
   #status { min-height:12px; margin:0 0 2px; font-size:10px; }
   .calc-progress { gap:3px; margin:0 0 3px; }.calc-progress span { padding:3px; }.calc-progress span b { display:inline; margin-left:3px; }
   .next-step,button.primary { min-height:31px; height:31px; margin-bottom:3px; padding-top:3px; padding-bottom:3px; }
@@ -303,7 +302,6 @@ footer { margin-top:3px; padding-top:3px; font-size:9.5px; }
 .search-row { gap:4px; margin:0; }
 #address { height:34px; padding-left:31px; border-radius:4px; font-size:12px; }
 .search-icon { left:10px; font-size:16px; }
-#btn-search { height:34px; padding:0 12px; border-radius:4px; font-size:11px; }
 .location-button { min-height:18px; margin:1px 0 0; padding:1px 0; font-size:10px; }
 #status { min-height:15px; margin:0 0 3px; font-size:10px; }
 .calc-progress { gap:2px; margin:0 0 3px; }

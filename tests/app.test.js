@@ -2,6 +2,8 @@ const assert = require('node:assert/strict');
 const D = require('../js/data.js').TechumData;
 const S = require('../js/settings.js').TechumSettings;
 const K = require('../js/kml.js').TechumKML;
+const fs = require('node:fs');
+const path = require('node:path');
 
 let passed = 0;
 function test(name, fn) {
@@ -46,6 +48,23 @@ test('Photon autocomplete labels are readable and deduplicated', () => {
     housenumber: '10', street: 'Downing Street', city: 'London', state: 'London',
     postcode: 'SW1A 2AA', country: 'United Kingdom',
   }), '10 Downing Street, London, SW1A 2AA, United Kingdom');
+});
+
+test('address entry requires choosing an autocomplete suggestion', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.doesNotMatch(html, /id=["']btn-search["']/);
+  assert.doesNotMatch(main, /function onSearch\s*\(/);
+  assert.match(main, /Choose one of the suggested addresses before continuing/);
+  assert.doesNotMatch(main, /\.value\s*=\s*["']My location["']/);
+});
+
+test('agent performance reports stay out of the public calculator UI', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const analytics = fs.readFileSync(path.join(__dirname, '..', 'analytics.html'), 'utf8');
+  assert.doesNotMatch(main, /Copy agent report|btn-copy-performance|paste it into an agent task/);
+  assert.match(analytics, /Calculation performance reports/);
+  assert.match(analytics, /Copy report/);
 });
 
 test('settings profile and non-default analytics stay deterministic', () => {
