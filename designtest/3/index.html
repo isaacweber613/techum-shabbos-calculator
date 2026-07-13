@@ -1,0 +1,45 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow"><title>Design 3 — Night Compass</title>
+  <link rel="stylesheet" href="/designtest/shared.css">
+  <style>
+    :root { color-scheme:dark; --ink:#f4f5ee; --muted:#aab7b0; --green:#70d7a6; --line:rgba(230,246,237,.13); }
+    body { background:#081510; }
+    .map-bg { background:#081510; }
+    .map-bg iframe { opacity:.18; }
+    .map-wash { background:radial-gradient(circle at 50% 45%,rgba(8,21,16,.18),rgba(5,14,10,.7) 68%),linear-gradient(rgba(4,13,9,.2),rgba(4,13,9,.74)); }
+    .topbar { background:linear-gradient(rgba(5,15,10,.5),transparent); }
+    .mark { color:#0b2419; background:var(--green); box-shadow:0 0 32px rgba(112,215,166,.28); }
+    .quiet-btn,.concept-nav a { color:var(--ink); background:rgba(11,28,21,.72); border-color:var(--line); }
+    .concept-nav a[aria-current="page"] { color:#092117; background:var(--green); }
+    .search-wrap { width:min(760px,100%); }
+    .eyebrow { color:var(--green); }
+    .search-wrap h1 { font-size:clamp(48px,7.5vw,86px); font-weight:580; text-shadow:0 4px 30px rgba(0,0,0,.5); }
+    .search-wrap h1 span { color:var(--green); }
+    .subhead { max-width:530px; color:#b7c4bd; font-size:17px; }
+    .search-box { padding:10px 11px 10px 21px; color:var(--ink); background:rgba(9,27,19,.88); border:1px solid rgba(112,215,166,.25); border-radius:18px; box-shadow:0 24px 75px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.05); backdrop-filter:blur(22px); }
+    .search-box:focus-within { border-color:rgba(112,215,166,.72); box-shadow:0 24px 75px rgba(0,0,0,.48),0 0 0 4px rgba(112,215,166,.1); }
+    .search-box input { color:var(--ink); }
+    .search-box input::placeholder { color:#82958b; }
+    .go-btn { color:#082018; background:var(--green); }
+    .location-link { color:#aab7b0; }
+    .location-link:hover { color:var(--green); }
+    .suggestions { color:#eaf2ed; background:rgba(8,24,17,.98); border-color:var(--line); }
+    .suggestion:hover,.suggestion:focus { background:#123526; }
+    .draft-note { color:#a6b5ad; background:rgba(8,24,17,.74); border-color:var(--line); }
+    .concept-label { color:rgba(217,236,226,.5); }
+    .settings-panel { color:#17231d; }
+    @media(max-width:640px){.search-wrap h1{font-size:48px}.subhead{font-size:15px}.hero{padding-top:17vh}.search-box{border-radius:16px}.go-btn{border-radius:12px}}
+  </style>
+</head>
+<body>
+  <div class="map-bg"><iframe title="Faded map of the New York region" loading="eager" src="https://www.openstreetmap.org/export/embed.html?bbox=-74.24%2C40.56%2C-73.72%2C40.94&amp;layer=mapnik"></iframe></div><div class="map-wash"></div>
+  <main class="shell"><header class="topbar"><a class="mini-brand" href="/"><span class="mark">ת</span><span>Techum</span></a><div class="top-actions"><nav class="concept-nav" aria-label="Design concepts"><a href="/designtest/1">1</a><a href="/designtest/2">2</a><a href="/designtest/3" aria-current="page">3</a><a href="/designtest/4">4</a><a href="/designtest/5">5</a></nav><button class="quiet-btn" id="settings-button">Preferences</button></div></header>
+    <section class="hero"><div class="search-wrap"><p class="eyebrow">Plan with clarity</p><h1>Your Shabbos map<br><span>starts here.</span></h1><p class="subhead">Search any place. See the city boundary and techum in a focused, step-by-step map.</p>
+      <form id="search-form" class="search-box"><svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2.2 4.8-4.8 2.2 2.2-4.8 4.8-2.2Z"/></svg><input id="place-search" aria-label="Address or place" aria-expanded="false" aria-controls="suggestions" placeholder="Where will you be for Shabbos?" autocomplete="street-address"><button class="go-btn">Start →</button><div class="suggestions" id="suggestions" role="listbox" hidden></div></form><button class="location-link" id="location-button">⌖ Use precise location</button></div></section>
+  </main><div class="concept-label">Concept 3 · Night compass</div><div class="draft-note"><b>Draft boundary</b> · A qualified rav must review the result</div>
+  <div class="backdrop" id="backdrop"></div><aside class="settings-panel" id="settings-panel" aria-hidden="true"><div class="panel-head"><h2>Preferences</h2><button class="close-btn" id="close-settings" aria-label="Close">×</button></div><div class="setting"><strong>Calculation profile</strong><small>Mishna Berurah / Ashkenazi</small><select><option>Mishna Berurah / Ashkenazi</option><option>Chazon Ish</option><option>Mechaber / Sefardi</option></select></div><div class="setting"><strong>Measurement</strong><small>48 cm amah · compass squaring</small></div><div class="setting"><strong>Everything else</strong><small>Review tools and advanced controls become available with the result, not before it.</small></div></aside><script src="/designtest/shared.js"></script>
+</body></html>
+
