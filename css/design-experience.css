@@ -1,4 +1,4 @@
-/* Full-workflow treatments for the five /designtest concepts. Inert on the production homepage. */
+/* Full-workflow treatments for /designtest concepts 1–8. Inert on the production homepage. */
 html[data-design] { overflow-x:hidden; --dx-accent:#176b52; --dx-ink:#17231e; --dx-muted:#68736e; --dx-panel:#fff; --dx-soft:#eef5f1; --dx-line:rgba(25,45,36,.13); }
 html[data-design] body { overflow-x:hidden; background:#e9efeb; color:var(--dx-ink); }
 html[data-design] #banner { min-height:31px; padding:7px 44px 7px 18px; background:#24332d; color:#dce7e1; font-size:11px; text-align:center; }
@@ -109,27 +109,174 @@ html[data-design="5"] #status { text-align:center; }
 html[data-design="5"] button.primary { background:#245f4a; }
 html[data-design="5"] #results { padding:12px; border:1px solid var(--dx-line); border-radius:15px; background:rgba(255,255,255,.55); }
 
+/* 6 — Soft Horizon: airy sky palette, map-primary floating glass, time-soft calm. */
+html[data-design="6"] { --dx-accent:#2a7aa8; --dx-ink:#1a2a36; --dx-muted:#5d7384; --dx-panel:rgba(255,255,255,.92); --dx-soft:#e8f2f8; --dx-line:rgba(28,54,72,.12); }
+html[data-design="6"] body { background:linear-gradient(180deg,#cfe6f5 0%,#e8f2f8 38%,#f4efe6 100%); }
+html[data-design="6"] #app { display:block; padding:18px; }
+html[data-design="6"] #map { position:absolute; inset:0; border:0; border-radius:0; box-shadow:none; }
+html[data-design="6"] #sidebar {
+  position:relative; z-index:500; width:460px; min-width:460px; height:calc(100% - 28px);
+  margin:14px; padding:26px 28px; border-radius:24px;
+  background:rgba(255,255,255,.9); backdrop-filter:blur(20px);
+  box-shadow:0 28px 70px rgba(40,90,120,.14);
+}
+html[data-design="6"] .brand-mark { background:linear-gradient(145deg,#3a8fbe,#2a6f9a); border-radius:12px; }
+html[data-design="6"] .intro h2 { font-weight:620; letter-spacing:-.04em; }
+html[data-design="6"] button.primary { border-radius:999px; background:#2a7aa8; }
+html[data-design="6"] #address { border-radius:999px; }
+html[data-design="6"] #horizon-progress {
+  height:3px; margin:0 0 14px; border-radius:99px; overflow:hidden;
+  background:linear-gradient(90deg,transparent,rgba(42,122,168,.15),transparent);
+}
+html[data-design="6"] #horizon-progress i {
+  display:block; height:100%; width:28%; border-radius:99px;
+  background:linear-gradient(90deg,transparent,#2a7aa8,transparent);
+  animation:horizon-drift 2.8s ease-in-out infinite;
+}
+html[data-design="6"] .calculating #horizon-progress i,
+html[data-design="6"] body:has(.calc-progress span.active) #horizon-progress i { width:70%; }
+html[data-design="6"] #results .warn { background:#fff6e8; border-radius:12px; }
+html[data-design="6"] #results .note { background:#e8f2f8; border-radius:12px; }
+html[data-design="6"] #status { text-align:center; border-radius:999px; }
+@keyframes horizon-drift {
+  0%,100% { transform:translateX(-20%); opacity:.55; }
+  50% { transform:translateX(180%); opacity:1; }
+}
+
+/* 7 — Studio Draft: indigo precision workspace, command bar, inspector drawer. */
+html[data-design="7"] { --dx-accent:#3d4fd8; --dx-ink:#14171c; --dx-muted:#5f6772; --dx-panel:#ffffff; --dx-soft:#eef0f6; --dx-line:rgba(20,24,32,.12); }
+html[data-design="7"] body { background:#e8eaef; font-family:"IBM Plex Sans",Inter,ui-sans-serif,system-ui,sans-serif; }
+html[data-design="7"] #banner { background:#14171c; color:#d7dbe3; font-family:"IBM Plex Mono",ui-monospace,monospace; letter-spacing:.02em; }
+html[data-design="7"] #app { gap:0; padding:0; }
+html[data-design="7"] #sidebar {
+  width:420px; min-width:420px; padding:22px 24px; border:0; border-radius:0;
+  box-shadow:12px 0 40px rgba(20,30,50,.1); background:#fafbfc;
+}
+html[data-design="7"] #map { border:0; border-radius:0; box-shadow:none; }
+html[data-design="7"] .brand-mark { border-radius:8px; background:#14171c; }
+html[data-design="7"] .intro h2 { font-size:28px; letter-spacing:-.04em; font-weight:680; }
+html[data-design="7"] #address,html[data-design="7"] button.primary { border-radius:8px; }
+html[data-design="7"] button.primary { background:#3d4fd8; font-weight:700; }
+html[data-design="7"] #status {
+  border-radius:0; border-left:3px solid #3d4fd8; background:#eef0f6;
+  font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:11px;
+}
+html[data-design="7"] #studio-readout {
+  display:flex; align-items:center; gap:10px; margin:0 0 14px; padding:10px 12px;
+  border:1px dashed rgba(61,79,216,.35); border-radius:8px; background:#fff;
+  font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:11px; color:#3d4fd8;
+}
+html[data-design="7"] #studio-readout .stamp {
+  flex:none; padding:3px 7px; border:1px solid #3d4fd8; border-radius:4px;
+  font-weight:800; letter-spacing:.12em; font-size:10px;
+}
+html[data-design="7"] #studio-readout-text { min-width:0; color:var(--dx-muted); line-height:1.35; }
+html[data-design="7"] .calc-progress span { border-radius:6px; font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:10px; }
+html[data-design="7"] #results .stat { font-family:"IBM Plex Mono",ui-monospace,monospace; }
+html[data-design="7"] #results .warn { background:#fff4e5; border-left:3px solid #d48a1a; border-radius:0; }
+html[data-design="7"] #results .note { background:#eef0f6; border-left:3px solid #3d4fd8; border-radius:0; }
+html[data-design="7"] #design-drawer > header h2 { font-size:24px; letter-spacing:-.03em; }
+html[data-design="7"] #design-drawer .settings-grid details { border-radius:8px; }
+
+/* 8 — Shabbos Table: warm wine & cream hospitality over the map. */
+html[data-design="8"] { --dx-accent:#7a3e55; --dx-ink:#2a1f28; --dx-muted:#6f5f68; --dx-panel:#faf6f0; --dx-soft:#f3ebe3; --dx-line:rgba(42,31,40,.12); }
+html[data-design="8"] body { background:#ebe3d8; font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
+html[data-design="8"] #banner { background:#3d2834; color:#f0e6dc; }
+html[data-design="8"] #app { display:block; padding:20px; }
+html[data-design="8"] #map { position:absolute; inset:0; border:0; border-radius:0; }
+html[data-design="8"] #sidebar {
+  position:relative; z-index:500; width:500px; min-width:500px; height:calc(100% - 28px);
+  margin:14px; padding:28px 32px;
+  background:rgba(250,246,240,.95); backdrop-filter:blur(18px);
+  border:1px solid rgba(122,62,85,.12); border-radius:26px;
+  box-shadow:0 30px 80px rgba(60,40,50,.14);
+}
+html[data-design="8"] .brand-mark { border-radius:50%; background:#7a3e55; }
+html[data-design="8"] .brand h1 { font-family:Georgia,"Times New Roman",serif; font-weight:500; }
+html[data-design="8"] .intro h2,html[data-design="8"] #design-drawer h2 {
+  font-family:Georgia,"Times New Roman",serif; font-weight:500; font-size:34px;
+}
+html[data-design="8"] .intro .eyebrow { color:#7a3e55; letter-spacing:.14em; }
+html[data-design="8"] #address,html[data-design="8"] button.primary { border-radius:14px; font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
+html[data-design="8"] button.primary { background:#7a3e55; }
+html[data-design="8"] #status {
+  text-align:center; border-radius:999px; background:#f3ebe3;
+  font-family:Inter,ui-sans-serif,system-ui,sans-serif;
+}
+html[data-design="8"] #results {
+  padding:14px; border:1px solid var(--dx-line); border-radius:18px;
+  background:rgba(255,255,255,.45);
+}
+html[data-design="8"] #results .warn { background:#fff0e4; border-radius:12px; }
+html[data-design="8"] #results .note { background:#f3ebe3; border-radius:12px; }
+html[data-design="8"] #table-glow {
+  position:fixed; z-index:400; left:50%; bottom:8%; width:360px; height:200px;
+  transform:translateX(-50%); pointer-events:none; opacity:0;
+  background:radial-gradient(ellipse at 50% 80%,rgba(255,200,120,.28),rgba(196,164,106,.08) 45%,transparent 70%);
+  filter:blur(10px); transition:opacity .9s ease,transform .9s ease;
+}
+html[data-design="8"] body.table-ready #table-glow { opacity:1; transform:translateX(-50%) scale(1.12); }
+html[data-design="8"] #design-experience-nav button,
+html[data-design="8"] #design-drawer,
+html[data-design="8"] .next-step,
+html[data-design="8"] .method-callout { font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
+
 @media (max-width:900px) {
   html[data-design] body { overflow-x:hidden; overflow-y:auto; }
   html[data-design] #app { display:flex; flex-direction:column; gap:0; padding:0; }
-  html[data-design] #map,html[data-design="5"] #map { position:relative; inset:auto; order:1; width:100%; height:40dvh; min-height:290px; border:0; border-radius:0; }
-  html[data-design] #sidebar,html[data-design="2"] #sidebar,html[data-design="4"] #sidebar,html[data-design="5"] #sidebar { position:relative; order:2; width:100%; min-width:0; height:auto; margin:-22px 0 0; padding:22px 20px 35px; overflow:visible; border:0; border-radius:24px 24px 0 0; box-shadow:0 -18px 45px rgba(20,40,30,.14); }
+  html[data-design] #map,
+  html[data-design="5"] #map,
+  html[data-design="6"] #map,
+  html[data-design="8"] #map { position:relative; inset:auto; order:1; width:100%; height:40dvh; min-height:290px; border:0; border-radius:0; }
+  html[data-design] #sidebar,
+  html[data-design="2"] #sidebar,
+  html[data-design="4"] #sidebar,
+  html[data-design="5"] #sidebar,
+  html[data-design="6"] #sidebar,
+  html[data-design="7"] #sidebar,
+  html[data-design="8"] #sidebar {
+    position:relative; order:2; width:100%; min-width:0; height:auto; margin:-22px 0 0;
+    padding:22px 20px 35px; overflow:visible; border:0; border-radius:24px 24px 0 0;
+    box-shadow:0 -18px 45px rgba(20,40,30,.14);
+  }
+  html[data-design="7"] #sidebar { margin:0; border-radius:0; box-shadow:0 -8px 30px rgba(20,30,50,.1); }
+  html[data-design="8"] #sidebar { border-radius:28px 28px 0 0; }
   html[data-design] .brand { margin-bottom:8px; }
   html[data-design] .brand p { display:none; }
   html[data-design] .intro { margin:17px 0 14px; }
-  html[data-design] .intro h2,html[data-design="2"] .intro h2,html[data-design="5"] .intro h2 { font-size:29px; }
+  html[data-design] .intro h2,
+  html[data-design="2"] .intro h2,
+  html[data-design="5"] .intro h2,
+  html[data-design="8"] .intro h2 { font-size:29px; }
+  html[data-design="7"] .intro h2 { font-size:26px; }
   html[data-design] #design-experience-nav { padding-bottom:11px; }
   html[data-design] #design-experience-nav button { min-height:40px; }
   html[data-design] #design-drawer { width:100%; padding:20px; }
   html[data-design] #btn-calc { position:sticky; bottom:10px; z-index:1200; }
+  html[data-design="6"] #address,html[data-design="6"] button.primary { border-radius:14px; }
+  html[data-design="8"] #table-glow { bottom:38%; width:220px; height:120px; }
 }
 
 @media (min-width:901px) and (max-width:1180px) {
-  html[data-design] #sidebar,html[data-design="2"] #sidebar,html[data-design="4"] #sidebar,html[data-design="5"] #sidebar { width:430px; min-width:430px; padding:20px; }
-  html[data-design="5"] #sidebar { margin:8px; height:calc(100% - 16px); }
-  html[data-design] .intro h2,html[data-design="2"] .intro h2,html[data-design="5"] .intro h2 { font-size:30px; }
+  html[data-design] #sidebar,
+  html[data-design="2"] #sidebar,
+  html[data-design="4"] #sidebar,
+  html[data-design="5"] #sidebar,
+  html[data-design="6"] #sidebar,
+  html[data-design="7"] #sidebar,
+  html[data-design="8"] #sidebar { width:430px; min-width:430px; padding:20px; }
+  html[data-design="5"] #sidebar,
+  html[data-design="6"] #sidebar,
+  html[data-design="8"] #sidebar { margin:8px; height:calc(100% - 16px); }
+  html[data-design] .intro h2,
+  html[data-design="2"] .intro h2,
+  html[data-design="5"] .intro h2,
+  html[data-design="8"] .intro h2 { font-size:30px; }
+  html[data-design="7"] .intro h2 { font-size:26px; }
 }
 
 @media (prefers-reduced-motion:reduce) {
   html[data-design] #design-drawer,html[data-design] #design-drawer-backdrop { transition:none; }
+  html[data-design="6"] #horizon-progress i { animation:none; }
+  html[data-design="8"] #table-glow { transition:none; }
 }

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow"><title>Design 8 — Shabbos Table</title>
+  <link rel="stylesheet" href="/designtest/shared.css">
+  <style>
+    :root {
+      --ink: #2a1f28;
+      --muted: #6f5f68;
+      --green: #7a3e55;
+      --wine: #7a3e55;
+      --gold: #c4a46a;
+      --cream: #faf6f0;
+      --line: rgba(42, 31, 40, .12);
+    }
+    body { background: #ebe3d8; color: var(--ink); font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+    .map-bg { background: #d9cfc2; }
+    .map-bg iframe { opacity: .3; filter: sepia(.25) saturate(.85); }
+    .map-wash {
+      background:
+        radial-gradient(ellipse 70% 55% at 50% 42%, rgba(250,246,240,.35), transparent 70%),
+        linear-gradient(160deg, rgba(250,246,240,.92) 0 36%, rgba(244,236,226,.72) 58%, rgba(232,220,208,.5));
+    }
+    .candle-glow {
+      position: fixed; z-index: 1; left: 50%; bottom: 18%; width: 280px; height: 180px;
+      transform: translateX(-50%); pointer-events: none;
+      background: radial-gradient(ellipse at 50% 80%, rgba(255,200,120,.28), rgba(196,164,106,.08) 45%, transparent 70%);
+      filter: blur(8px); opacity: .7;
+      transition: opacity .8s ease, transform .8s ease;
+    }
+    body.ready .candle-glow { opacity: 1; transform: translateX(-50%) scale(1.15); }
+    .topbar { padding-top: 22px; }
+    .mini-brand { font-size: 17px; font-weight: 600; }
+    .mark {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--wine); color: #faf6f0;
+      box-shadow: 0 8px 24px rgba(122,62,85,.22);
+      font: 700 20px/1 Georgia, serif;
+    }
+    .quiet-btn, .concept-nav a {
+      background: rgba(250,246,240,.78); border-color: rgba(42,31,40,.1);
+    }
+    .concept-nav a[aria-current="page"] { background: var(--wine); color: #faf6f0; border-color: transparent; }
+    .hero { place-items: center; padding: 4vh 20px 14vh; }
+    .table-card {
+      width: min(720px, 100%);
+      padding: clamp(30px, 5vw, 52px) clamp(24px, 4vw, 48px) clamp(28px, 4vw, 42px);
+      text-align: center;
+      background: rgba(250,246,240,.93);
+      border: 1px solid rgba(122,62,85,.12);
+      border-radius: 28px;
+      box-shadow:
+        0 30px 80px rgba(60,40,50,.14),
+        inset 0 1px 0 rgba(255,255,255,.85);
+      backdrop-filter: blur(18px);
+      position: relative;
+    }
+    .table-card::before {
+      content: ""; position: absolute; left: 12%; right: 12%; top: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      opacity: .7;
+    }
+    .candles {
+      display: flex; justify-content: center; gap: 18px; margin-bottom: 18px;
+    }
+    .candles span {
+      width: 8px; height: 28px; border-radius: 3px 3px 2px 2px;
+      background: linear-gradient(180deg, #f7f0e4, #e8d9c0);
+      position: relative; box-shadow: 0 2px 6px rgba(80,50,40,.12);
+    }
+    .candles span::after {
+      content: ""; position: absolute; left: 50%; bottom: 100%;
+      width: 10px; height: 14px; margin-left: -5px;
+      border-radius: 50% 50% 40% 40%;
+      background: radial-gradient(circle at 40% 30%, #fff6d0, #f0b24a 55%, #d4742a 100%);
+      box-shadow: 0 0 12px rgba(240,178,74,.55);
+      animation: flame 2.4s ease-in-out infinite;
+    }
+    .candles span:last-child::after { animation-delay: .5s; }
+    @keyframes flame {
+      0%, 100% { transform: scaleY(1) translateY(0); opacity: .95; }
+      50% { transform: scaleY(1.12) translateY(-1px); opacity: 1; }
+    }
+    .eyebrow { color: var(--wine); letter-spacing: .16em; }
+    .table-card h1 {
+      margin: 0; font: 500 clamp(40px, 6vw, 64px)/1.05 Georgia, "Times New Roman", serif;
+      letter-spacing: -.03em;
+    }
+    .subhead {
+      max-width: 480px; margin: 16px auto 28px;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      font-size: 16px; color: var(--muted); line-height: 1.55;
+    }
+    .search-box {
+      border-radius: 16px; font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      box-shadow: 0 14px 40px rgba(70,45,55,.1);
+      border-color: rgba(122,62,85,.12);
+    }
+    .search-box:focus-within {
+      border-color: rgba(122,62,85,.4);
+      box-shadow: 0 16px 48px rgba(70,45,55,.14), 0 0 0 4px rgba(122,62,85,.08);
+    }
+    .search-icon { color: var(--wine); }
+    .go-btn { border-radius: 12px; background: var(--wine); font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    .location-link {
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      color: var(--muted);
+    }
+    .location-link:hover { color: var(--wine); }
+    .place-setting {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
+      margin-top: 30px; padding-top: 24px;
+      border-top: 1px solid rgba(42,31,40,.1);
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      text-align: left;
+    }
+    .place-setting div { padding: 0 16px; border-right: 1px solid rgba(42,31,40,.08); }
+    .place-setting div:last-child { border: 0; }
+    .place-setting b { display: block; font-size: 13px; color: var(--ink); }
+    .place-setting small { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .rav-link {
+      display: inline-block; margin-top: 22px;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      font-size: 13px; color: var(--muted); text-underline-offset: 3px;
+    }
+    .rav-link:hover { color: var(--wine); }
+    .draft-note {
+      background: rgba(250,246,240,.8); color: #6a5860;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    }
+    .concept-label { color: rgba(42,31,40,.45); font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    .settings-panel { background: rgba(250,246,240,.98); font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    .settings-panel h2 { font-family: Georgia, serif; font-weight: 500; }
+
+    /* Tablet: wider table, place-setting stays three-up but roomier */
+    @media (min-width: 700px) and (max-width: 1050px) {
+      .hero { padding: 6vh 6vw 16vh; }
+      .table-card { max-width: 680px; }
+      .place-setting div { padding: 0 12px; }
+      .candle-glow { bottom: 14%; width: 320px; }
+    }
+
+    /* Mobile: bottom sheet table, candles smaller, stacked place-setting */
+    @media (max-width: 699px) {
+      .topbar { padding: 12px 14px; }
+      .hero { align-items: end; padding: 70px 0 0; }
+      .table-card {
+        width: 100%; border-radius: 28px 28px 0 0; padding: 28px 18px 90px;
+        background: rgba(250,246,240,.97);
+        box-shadow: 0 -18px 50px rgba(60,40,50,.14);
+      }
+      .table-card h1 { font-size: 38px; }
+      .subhead { font-size: 15px; margin-bottom: 22px; }
+      .search-box { display: grid; grid-template-columns: auto 1fr; padding: 11px 13px; }
+      .go-btn { grid-column: 1 / -1; width: 100%; margin-top: 6px; }
+      .place-setting { grid-template-columns: 1fr; gap: 12px; text-align: center; }
+      .place-setting div { border: 0; padding: 0; }
+      .candle-glow { bottom: 42%; width: 200px; height: 120px; opacity: .5; }
+      .draft-note { display: none; }
+      .concept-label { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .candles span::after { animation: none; }
+      .candle-glow { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="map-bg"><iframe title="Faded neighborhood map" loading="eager" src="https://www.openstreetmap.org/export/embed.html?bbox=-74.24%2C40.56%2C-73.72%2C40.94&amp;layer=mapnik"></iframe></div>
+  <div class="map-wash"></div>
+  <div class="candle-glow" id="candle-glow" aria-hidden="true"></div>
+  <main class="shell">
+    <header class="topbar">
+      <a class="mini-brand" href="/"><span class="mark">ת</span><span>Techum Shabbos</span></a>
+      <div class="top-actions">
+        <nav class="concept-nav" aria-label="Design concepts">
+          <a href="/designtest/1">1</a><a href="/designtest/2">2</a><a href="/designtest/3">3</a>
+          <a href="/designtest/4">4</a><a href="/designtest/5">5</a>
+          <a href="/designtest/6">6</a><a href="/designtest/7">7</a><a href="/designtest/8" aria-current="page">8</a>
+        </nav>
+        <button class="quiet-btn" id="settings-button">Preferences</button>
+      </div>
+    </header>
+    <section class="hero">
+      <div class="table-card">
+        <div class="candles" aria-hidden="true"><span></span><span></span></div>
+        <p class="eyebrow">You’re welcome here</p>
+        <h1>Where is the table set for Shabbos?</h1>
+        <p class="subhead">Tell us the address. We’ll prepare a clear draft map — unhurried, plainspoken, and ready for your rav.</p>
+        <form id="search-form" class="search-box">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+          <input id="place-search" aria-label="Address or place" aria-expanded="false" aria-controls="suggestions" placeholder="The address where you’ll be staying" autocomplete="street-address">
+          <button class="go-btn" type="submit" id="begin-btn">Take a seat →</button>
+          <div class="suggestions" id="suggestions" role="listbox" hidden></div>
+        </form>
+        <button class="location-link" id="location-button">◎ I’m already there</button>
+        <div class="place-setting">
+          <div><b>Find the place</b><small>Confirm the building gently.</small></div>
+          <div><b>We measure</b><small>City edges and 2,000 amos.</small></div>
+          <div><b>Share with your rav</b><small>A clear draft, not a psak.</small></div>
+        </div>
+        <a class="rav-link" href="#" id="rav-link">I’m a rav or map reviewer</a>
+      </div>
+    </section>
+  </main>
+  <div class="concept-label">Concept 8 · Shabbos table</div>
+  <div class="draft-note">Hospitality, not authority · Review every map with a qualified rav</div>
+  <div class="backdrop" id="backdrop"></div>
+  <aside class="settings-panel" id="settings-panel" aria-hidden="true">
+    <div class="panel-head"><h2>Preferences</h2><button class="close-btn" id="close-settings" aria-label="Close">×</button></div>
+    <div class="setting"><strong>For guests</strong><small>Nothing to configure. The recommended profile is already set so you can begin immediately.</small></div>
+    <div class="setting"><strong>For the host (reviewer)</strong><small>Profiles, layers, and exports stay in the result workspace so the first screen stays warm and simple.</small>
+      <select><option>Mishna Berurah / Ashkenazi</option><option>Chazon Ish</option><option>Mechaber / Sefardi</option></select>
+    </div>
+  </aside>
+  <script src="/designtest/shared.js"></script>
+  <script>
+    // Cherry: candle glow warms when the user engages (focus/type/location).
+    (() => {
+      const warm = () => document.body.classList.add('ready');
+      document.getElementById('place-search')?.addEventListener('focus', warm);
+      document.getElementById('place-search')?.addEventListener('input', warm);
+      document.getElementById('location-button')?.addEventListener('click', warm);
+      document.getElementById('rav-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.getElementById('settings-button')?.click();
+      });
+    })();
+  </script>
+</body>
+</html>
