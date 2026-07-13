@@ -745,7 +745,10 @@
         qualificationRemapScore: c.qualificationRemapScore,
         componentKeys: c.componentKeys,
       })),
-      reviewClusters: qualificationAudit.map((c) => ({ key: c.key, members: c.members, memberIds: c.memberIds,
+      // These are the original 70⅔-amah components whose city status is decided
+      // before the 141⅓-amah and three-villages merge stages. Keep them separate
+      // from `clusters`, which is the final settlement list shown on the map.
+      qualificationClusters: qualificationAudit.map((c) => ({ key: c.key, members: c.members, memberIds: c.memberIds,
         corners: rectToCorners(c.bbox), qualifiesAsCity: c.qualifiesAsCity,
         qualificationSource: c.qualificationSource, qualificationRemapScore: c.qualificationRemapScore })),
       cityCorners,
