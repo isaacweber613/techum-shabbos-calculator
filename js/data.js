@@ -1,5 +1,5 @@
 /*
- * Data layer: geocoding (Nominatim), building footprints (OSM Overpass),
+ * Data layer: geocoding (Nominatim), Overture building footprints,
  * and the dwelling classification table (spec Part 1.3 — beis dirah).
  * Classic script: exposes window.TechumData.
  */
@@ -47,7 +47,7 @@
     if (tags && tags.abandoned === 'yes') return { klass: 'review', reason: 'abandoned' };
     if (tags && (tags.amenity === 'place_of_worship'))
       return { klass: 'review', reason: 'place of worship — counts only with attendant dirah' };
-    return { klass: 'unknown', reason: 'building=' + b + ' (use untagged in OSM)' };
+    return { klass: 'unknown', reason: 'building=' + b + ' (structure use is not identified)' };
   }
 
   // Describes how much of the fetched footprint set can be classified from OSM tags.
@@ -333,7 +333,7 @@ out geom;`;
     };
   }
 
-  // ---------- Local cache of Overpass responses (IndexedDB) ----------
+  // ---------- Local cache of Overture responses (IndexedDB) ----------
   // The fetch is the slow, settings-INDEPENDENT part — the same buildings serve every
   // shita, so we cache raw data per area and always recompute boundaries (cheap, pure).
   // Cached entries carry fetchedAt so results are attributable to a data date.
@@ -341,8 +341,8 @@ out geom;`;
   // Layers (production):
   //   L1 IndexedDB — same browser, exact bbox (instant shita-switch / re-calc)
   //   L2 Worker R2 tiles — shared across users for the same ~2 km grid cells
-  //   L3 Overpass — cold fill (via Worker in production; direct on localhost)
-  const DB_NAME = 'techum-cache', STORE = 'overpass';
+  //   L3 Overture public PMTiles — cold fill via the Worker
+  const DB_NAME = 'techum-cache-v2', STORE = 'overture';
   function isLocalHost() {
     try {
       return location.hostname === 'localhost' || location.hostname === '127.0.0.1';
@@ -407,44 +407,48 @@ out geom;`;
       checkedAt: data.checkedAt || data.fetchedAt || new Date().toISOString(),
       fromCache: !!data.fromCache,
       source: data.source || 'server-tiles',
+      release: data.release || null,
+      correctionsApplied: data.correctionsApplied || 0,
       tiles: data.tiles || null,
     };
   }
 
-  // Returns {buildings, fetchedAt, checkedAt, fromCache, source?}. force=true bypasses caches.
-  // No TTL — cache entries live until an automatic change-check invalidates them:
-  // `checkedAt` records the last time the entry was verified to still match OSM.
+  // Returns the fused Overture footprint set. force=true bypasses browser and R2 caches.
   async function fetchBuildingsCached(bbox, { force = false } = {}) {
     const key = bboxKey(bbox);
     if (!force) {
       const hit = await cacheGet(key);
       if (hit) {
         return { buildings: hit.buildings, fetchedAt: hit.fetchedAt,
-                 checkedAt: hit.checkedAt || hit.fetchedAt, fromCache: true, source: 'local' };
+                 checkedAt: hit.checkedAt || hit.fetchedAt, fromCache: true,
+                 source: 'local-overture', release: hit.release || null,
+                 correctionsApplied: hit.correctionsApplied || 0 };
       }
     }
 
-    // Shared tile cache (production). Localhost keep using direct Overpass so
-    // `node serve.mjs` works without Wrangler/R2.
-    if (!isLocalHost()) {
-      try {
-        const remote = await fetchBuildingsFromServer(bbox, { force });
-        await cachePut(key, {
-          buildings: remote.buildings,
-          fetchedAt: remote.fetchedAt,
-          checkedAt: remote.checkedAt,
-        });
-        return remote;
-      } catch (e) {
-        // Fall through to direct Overpass so a Worker/R2 outage does not block calculation.
-        console.warn('server building cache failed; falling back to Overpass', e);
-      }
-    }
+    const remote = await fetchBuildingsFromServer(bbox, { force });
+    await cachePut(key, {
+      buildings: remote.buildings,
+      fetchedAt: remote.fetchedAt,
+      checkedAt: remote.checkedAt,
+      release: remote.release,
+      correctionsApplied: remote.correctionsApplied,
+    });
+    return remote;
+  }
 
-    const buildings = await fetchBuildings(bbox);
-    const fetchedAt = new Date().toISOString();
-    await cachePut(key, { buildings, fetchedAt, checkedAt: fetchedAt });
-    return { buildings, fetchedAt, checkedAt: fetchedAt, fromCache: false, source: 'overpass' };
+  async function submitBuildingCorrection(correction) {
+    const response = await fetch('/api/building-corrections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(correction),
+    });
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try { const data = await response.json(); if (data && data.error) detail = data.error; } catch { /* ignore */ }
+      throw new Error(detail);
+    }
+    return response.json();
   }
   // After a clean change-check ("no edits since fetchedAt"), reset the verification clock.
   async function markCheckedCurrent(bbox) {
@@ -484,7 +488,7 @@ out count;`;
   }
 
   root.TechumData = { classify, computeDataConfidence, geocode, autocomplete, fetchBuildings, fetchBuildingsCached,
-    fetchBuildingsFromServer, countChangedBuildings, markCheckedCurrent,
+    fetchBuildingsFromServer, submitBuildingCorrection, countChangedBuildings, markCheckedCurrent,
     _tables: { DWELLING_TAGS, NON_DWELLING_TAGS, REVIEW_TAGS },
     parseOvertureGeoJSON, compareBuildingSources,
     _internals: { parseOverpass, parseOvertureGeoJSON, compareBuildingSources,

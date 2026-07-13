@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "node scripts/build-static.mjs",
-    "test": "node tests/geometry.test.js && node tests/app.test.js && node tests/projection-performance.test.js && node tests/registry.test.ts && node tests/buildings-cache.test.ts",
+    "test": "node tests/geometry.test.js && node tests/app.test.js && node tests/seo.test.js && node tests/projection-performance.test.js && node tests/registry.test.ts && node tests/buildings-cache.test.ts",
     "typecheck": "wrangler types worker-configuration.d.ts && tsc --noEmit",
     "cf:types": "wrangler types worker-configuration.d.ts",
     "cf:dev": "npm run build && wrangler dev --local",
@@ -14,5 +14,10 @@
   "devDependencies": {
     "typescript": "latest",
     "wrangler": "latest"
+  },
+  "dependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
+    "pbf": "^5.1.2",
+    "pmtiles": "^4.4.1"
   }
 }

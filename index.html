@@ -3,7 +3,31 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Techum Shabbos Calculator — DRAFT tool</title>
+  <title>Techum Shabbos Calculator (תחום שבת) | 2,000 Amos Map</title>
+  <meta name="description" content="Explore a draft techum Shabbos boundary for any address using building footprints, ibur ha'ir, ribua, and a 2,000-amah map. Review every result with a qualified rav." />
+  <link rel="canonical" href="https://tchumshabbos.com/" />
+  <meta name="robots" content="index,follow,max-image-preview:large" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Techum Shabbos Calculator" />
+  <meta property="og:title" content="Techum Shabbos Calculator" />
+  <meta property="og:description" content="A transparent, reviewable draft map of techum Shabbos boundaries. Decision-support only; consult a qualified rav." />
+  <meta property="og:url" content="https://tchumshabbos.com/" />
+  <meta name="twitter:card" content="summary" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Techum Shabbos Calculator",
+    "alternateName": ["Tchum Shabbos Calculator", "Techum Shabbat Calculator", "תחום שבת Calculator"],
+    "url": "https://tchumshabbos.com/",
+    "applicationCategory": "EducationalApplication",
+    "operatingSystem": "Any",
+    "isAccessibleForFree": true,
+    "inLanguage": "en",
+    "description": "A draft decision-support map for reviewing techum Shabbos boundaries from building data and configurable halachic measurement rules.",
+    "usageInfo": "https://tchumshabbos.com/about"
+  }
+  </script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="css/style.css" />
@@ -15,7 +39,7 @@
   </div>
   <div id="app">
     <aside id="sidebar">
-      <header class="brand"><a class="brand-mark" href="./">ת</a><div><h1>Techum</h1><p>Shabbos boundary calculator</p></div><a class="about-link" href="about.html">About</a></header>
+      <header class="brand"><a class="brand-mark" href="/">ת</a><div><h1>Techum Shabbos</h1><p><span lang="he" dir="rtl">תחום שבת</span> boundary calculator</p></div><a class="about-link" href="/about">About</a></header>
       <section class="intro"><span class="eyebrow">Start with a place</span><h2>Where will you be for Shabbos?</h2><p>Enter the address where your techum begins. We’ll guide you through the rest.</p></section>
 
       <div class="row search-row">
@@ -48,7 +72,7 @@
       <div class="advanced-heading"><span>Review &amp; settings</span><small>Optional</small></div>
 
       <div class="settings-grid">
-      <details open>
+      <details>
         <summary>Halachic profile <small>Defaults &amp; shitos</small></summary>
         <label>Profile
           <select id="profile">
@@ -77,18 +101,17 @@
         <p class="fixed-rule"><b>City threshold: 6 houses.</b> This is a fixed rule (MB 398:38), not a user setting.</p>
       </details>
 
-      <details open>
+      <details>
         <summary>Buildings &amp; data <small>Sources &amp; overrides</small></summary>
         <label class="check"><input id="inc-unknown" type="checkbox" />
-          Include untagged buildings <small>(orange — OSM data gap, flagged)</small></label>
+          Include structures with unknown use <small>(orange — included automatically)</small></label>
         <label class="check"><input id="inc-review" type="checkbox" />
           Include ambiguous buildings <small>(purple — hotels, shuls, schools… ask a rav)</small></label>
         <label class="check"><input id="min-size" type="checkbox" checked />
           Exclude structures under 4×4 amos <small>(SA HaRav 398:10 — scales with the amah)</small></label>
         <button id="btn-clear-overrides">Clear manual overrides</button>
-        <small class="muted">Map updates are handled automatically: cached data older than
-          30 days is checked against OSM in the background; only real building edits trigger
-          a refetch, and the app reports whether the techum line actually moved.</small>
+        <small class="muted">The calculator automatically uses the configured immutable
+          Overture release and shared reviewed corrections. Refresh bypasses both caches.</small>
         <button id="btn-fresh" class="secondary">Refresh map data</button>
         <div class="row">
           <button id="btn-snapshot">Save snapshot</button>
@@ -96,12 +119,12 @@
           <input id="snapshot-file" type="file" accept=".json" hidden />
         </div>
         <small class="muted">Snapshots freeze the fetched data + settings + overrides for a
-          deterministic, reproducible replay (OSM data changes over time; halachos don't).</small>
+          deterministic, reproducible replay (map releases change over time; halachos don't).</small>
         <label>Initial fetch radius (m) <small>Applies on the next Calculate or Refresh.</small><input id="fetch-radius" type="number" step="100" min="300" /></label>
         <label>Max buildings (data cap) <small>Applies on the next Calculate or Refresh.</small><input id="max-buildings" type="number" step="1000" min="1000" /></label>
       </details>
 
-      <details open>
+      <details>
         <summary>Map display <small>Layers &amp; comparison</small></summary>
         <label class="check"><input id="layer-buildings" type="checkbox" checked /> Buildings</label>
         <label class="check"><input id="layer-city" type="checkbox" checked /> City rectangle (ribua)</label>
@@ -139,9 +162,10 @@
       </div>
       <details>
         <summary>Missing buildings <small>Manual map corrections</small></summary>
-        <p class="muted">Draw or import a footprint that is absent from OpenStreetMap. Manual shapes are
-          visibly flagged and treated like untagged buildings until you review them.</p>
+        <p class="muted">Usually nothing is required. If a roof is missing, use the two-click
+          rectangle or trace its corners. It applies immediately and is submitted to the shared review database.</p>
         <div class="row">
+          <button id="btn-draw-rectangle">Two-click rectangle</button>
           <button id="btn-draw-building">Draw footprint</button>
           <button id="btn-finish-building" hidden>Finish shape</button>
           <button id="btn-cancel-map-mode" hidden>Cancel</button>
@@ -151,13 +175,6 @@
           <button id="btn-clear-manual">Clear manual</button>
           <input id="building-file" type="file" accept=".json,.geojson,application/geo+json" hidden />
         </div>
-      </details>
-      <details>
-        <summary>Overture cross-check <small>Independent footprint review</small></summary>
-        <p class="muted">Import an Overture building GeoJSON extract. Differences are review candidates only and never enter the calculation automatically.</p>
-        <button id="btn-import-overture">Compare Overture GeoJSON</button>
-        <input id="overture-file" type="file" accept=".json,.geojson,application/geo+json" hidden />
-        <div id="overture-report" class="source-report"></div>
       </details>
       <details>
         <summary>Reviewed city library <small>Published rav-reviewed snapshots</small></summary>
@@ -184,12 +201,12 @@
         <div><span class="ln city"></span><strong>Green:</strong> the halachic city rectangle used as the starting point—not the town border.</div>
         <div><span class="ln karpef"></span><strong>Teal dashed:</strong> the extra karpef before measuring 2,000 amos.</div>
         <div><span class="ln verified"></span><strong>Amber dashed:</strong> a second scenario using only clearly tagged dwellings; it can be larger or smaller.</div>
-        <div class="building-key"><span class="sw dw"></span> Green buildings: tagged dwelling <span class="sw un"></span> Orange: untagged</div>
+        <div class="building-key"><span class="sw dw"></span> Green buildings: identified dwelling <span class="sw un"></span> Orange: use unknown</div>
         <div class="building-key"><span class="sw rv"></span> Purple: needs review <span class="sw no"></span> Gray: excluded non-dwelling</div>
         <div class="hint">Click a building to include or exclude it manually. Hover a boundary for its name.</div>
       </div>
 
-      <footer>Built for careful review · <a href="about.html">Method &amp; halachic sources</a></footer>
+      <footer>Built for careful review · <a href="/about">Method &amp; halachic sources</a> · <a href="/guide">What is techum Shabbos?</a> · <a href="/he/">תחום שבת בעברית</a></footer>
     </aside>
     <div id="map"></div>
   </div>

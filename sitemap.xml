@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url><loc>https://tchumshabbos.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url>
+    <loc>https://tchumshabbos.com/guide</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://tchumshabbos.com/guide" />
+    <xhtml:link rel="alternate" hreflang="he" href="https://tchumshabbos.com/he/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://tchumshabbos.com/guide" />
+    <changefreq>monthly</changefreq><priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tchumshabbos.com/he/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://tchumshabbos.com/guide" />
+    <xhtml:link rel="alternate" hreflang="he" href="https://tchumshabbos.com/he/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://tchumshabbos.com/guide" />
+    <changefreq>monthly</changefreq><priority>0.8</priority>
+  </url>
+  <url><loc>https://tchumshabbos.com/about</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+</urlset>
