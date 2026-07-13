@@ -225,24 +225,10 @@
     if (e.key === 'Enter') {
       e.preventDefault();
       if (activeSuggestion >= 0) applyGeocodeResult(suggestions[activeSuggestion], document.getElementById('address').value.trim());
-      else onSearch();
+      else setStatus(suggestions.length
+        ? 'Choose one of the suggested addresses before continuing.'
+        : 'Wait for address suggestions, then choose the correct address.');
     }
-  }
-
-  async function onSearch() {
-    const q = document.getElementById('address').value.trim();
-    if (!q) { setStatus('Enter an address or place, or click the map to set the pin.'); return; }
-    const button = document.getElementById('btn-search');
-    if (button.disabled) return;
-    button.disabled = true; button.setAttribute('aria-busy', 'true');
-    setStatus('Geocoding…');
-    try {
-      const results = await D.geocode(q, state.locationBias);
-      track('search', { q, found: results.length > 0, label: results.length ? results[0].label : null });
-      if (!results.length) { setStatus('Address not found — try again or click the map.'); return; }
-      applyGeocodeResult(results[0], q);
-    } catch (e) { setStatus('Geocoding error: ' + e.message); }
-    finally { button.disabled = false; button.setAttribute('aria-busy', 'false'); }
   }
 
   function useMyLocation() {
@@ -253,7 +239,7 @@
       state.locationBias = { lat, lon };
       state.lastQuery = 'My location';
       state.lastLabel = 'My location';
-      document.getElementById('address').value = 'My location';
+      document.getElementById('address').value = '';
       setPin(lat, lon);
       map.setView([lat, lon], 17);
       closeSuggestions();
@@ -414,14 +400,8 @@
     const stageSummary = slowEngineStages.length
       ? ` Slowest engine stage: ${slowEngineStages[0][0]} (${(slowEngineStages[0][1] / 1000).toFixed(1)}s).`
       : '';
-    const agentReport = { app: 'Techum Shabbos Calculator', totalMs: Math.round(perf.totalMs), buildings: perf.buildings,
-      passes: perf.passes.map((p) => ({ ...p, fetchMs: Math.round(p.fetchMs), prepMs: Math.round(p.prepMs), engineMs: Math.round(p.engineMs),
-        engineStages: Object.fromEntries(Object.entries(p.engineStages || {}).map(([name, ms]) => [name, Math.round(ms)])) })),
-      engineStageTotalsMs: Object.fromEntries(slowEngineStages.map(([name, ms]) => [name, Math.round(ms)])),
-      renderMs: Math.round(perf.renderMs || 0), diagnosis: reason + stageSummary };
-    el.innerHTML = `<strong>Calculation time: ${(perf.totalMs / 1000).toFixed(1)}s</strong><span>${escapeHtml(reason + stageSummary)} ${perf.passes.length} map pass(es), ${perf.buildings.toLocaleString()} footprints.</span><span class="performance-actions"><button type="button" id="btn-copy-performance">Copy agent report</button><button type="button" id="btn-dismiss-performance" aria-label="Dismiss performance report">Dismiss</button></span>`;
+    el.innerHTML = `<strong>Calculation time: ${(perf.totalMs / 1000).toFixed(1)}s</strong><span>${escapeHtml(reason + stageSummary)} ${perf.passes.length} map pass(es), ${perf.buildings.toLocaleString()} footprints.</span><span class="performance-actions"><button type="button" id="btn-dismiss-performance" aria-label="Dismiss performance report">Dismiss</button></span>`;
     el.hidden = false;
-    document.getElementById('btn-copy-performance').onclick = async () => { await navigator.clipboard.writeText(JSON.stringify(agentReport, null, 2)); setStatus('Performance report copied — paste it into an agent task.'); };
     document.getElementById('btn-dismiss-performance').onclick = () => { el.hidden = true; };
   }
 
@@ -1480,7 +1460,6 @@
       document.getElementById('banner').remove();
       map.invalidateSize();
     });
-    document.getElementById('btn-search').addEventListener('click', onSearch);
     document.getElementById('address').addEventListener('input', onAddressInput);
     document.getElementById('address').addEventListener('keydown', onAddressKeydown);
     document.getElementById('address').addEventListener('blur', () => setTimeout(closeSuggestions, 100));

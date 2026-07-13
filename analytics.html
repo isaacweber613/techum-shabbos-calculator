@@ -165,6 +165,12 @@
     </div>
 
     <div class="card">
+      <h2>Calculation performance reports</h2>
+      <div class="sub">Detailed diagnostics from recent calculations. These are available only in this private dashboard.</div>
+      <div id="tbl-performance"></div>
+    </div>
+
+    <div class="card">
       <h2>Recent activity</h2>
       <div class="sub">Latest events in the selected range (newest first, up to 120).</div>
       <div id="tbl-recent"></div>
@@ -242,7 +248,24 @@
         (agg.countries || []).map((c) => [esc(c.key), c.count]), [null, 'num']);
       renderTable('tbl-devices', ['Device', 'Events'],
         (agg.devices || []).map((d) => [esc(d.key), d.count]), [null, 'num']);
+      renderPerformance(agg.performanceReports || []);
       renderRecent(agg.recent);
+    }
+
+    function renderPerformance(reports) {
+      renderTable('tbl-performance', ['When', 'Place', 'Time', 'Buildings', 'Report'], reports.map((r, i) => [
+        `<span class="muted">${esc(new Date(r.t).toLocaleString())}</span>`,
+        esc(r.place || r.mode || ''), `${((r.totalMs || 0) / 1000).toFixed(1)}s`,
+        Number(r.buildings || 0).toLocaleString(),
+        `<button type="button" data-performance="${i}">Copy report</button>`,
+      ]), [null, null, 'num', 'num', 'num']);
+      $('tbl-performance').onclick = async (event) => {
+        const button = event.target.closest('button[data-performance]');
+        if (!button) return;
+        const report = reports[Number(button.dataset.performance)];
+        await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+        button.textContent = 'Copied';
+      };
     }
 
     function renderSettingsTable(agg) {

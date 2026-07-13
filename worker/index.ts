@@ -39,7 +39,10 @@ function cleanValue(value: unknown, depth = 0): unknown {
   if (typeof value === 'string') return value.slice(0, MAX_STRING);
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'boolean' || value === null) return value;
-  if (depth < 2 && value && typeof value === 'object' && !Array.isArray(value)) {
+  if (depth < 3 && Array.isArray(value)) {
+    return value.slice(0, 10).map((child) => cleanValue(child, depth + 1)).filter((child) => child !== undefined);
+  }
+  if (depth < 3 && value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value).slice(0, MAX_KEYS)) {
       const cleaned = cleanValue(child, depth + 1);
@@ -126,7 +129,7 @@ type DailyTotal = { day: string; visits: number; searches: number; calcs: number
 type AnalyticsEvent = StoredEvent & {
   found?: unknown; q?: unknown; label?: unknown; mode?: unknown; fromCache?: unknown;
   profile?: unknown; nonDefaults?: unknown; page?: unknown; format?: unknown;
-  action?: unknown; buildings?: unknown; ref?: unknown;
+  action?: unknown; buildings?: unknown; ref?: unknown; ms?: unknown; performance?: unknown;
 };
 function topCounts(map: Map<string, { count: number; [key: string]: unknown }>, limit: number) {
   return [...map.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))
@@ -211,9 +214,14 @@ async function analytics(request: Request, env: Env): Promise<Response> {
     extra: event.type === 'search' ? (event.found ? event.label || 'found' : 'NOT FOUND') :
       event.type === 'calc' ? `${event.mode || '?'} · ${event.buildings ?? '?'} bldgs` : event.ref || '',
   }));
+  const performanceReports = events.filter((event) => event.type === 'calc' && event.performance)
+    .slice(-120).reverse().map((event) => ({
+      t: event.t, place: event.label || event.q || '', mode: event.mode,
+      buildings: event.buildings, totalMs: event.ms, performance: event.performance,
+    }));
   return json({ totals, modes, cacheHits, searchFound, byDay: [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day)),
     topSearches: topCounts(searches, 40), topPlaces: topCounts(places, 40), nonDefaultSettings: topCounts(settings, 60),
-    profiles: topCounts(profiles, 10), countries: topCounts(countries, 30), devices: topCounts(devices, 10), recent,
+    profiles: topCounts(profiles, 10), countries: topCounts(countries, 30), devices: topCounts(devices, 10), recent, performanceReports,
     firstEventAt: events[0]?.t || null, generatedAt: Date.now(), truncated: rows.results.length === 50000 });
 }
 

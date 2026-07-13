@@ -158,6 +158,12 @@ export function aggregate(events, { from = 0, to = Infinity, tzOffsetMin = 0 } =
     return r;
   });
 
+  const performanceReports = inRange.filter((e) => e.type === 'calc' && e.performance)
+    .slice(-120).reverse().map((e) => ({
+      t: e.t, place: e.label || e.q || (e.pin ? `${e.pin.lat}, ${e.pin.lon}` : ''),
+      mode: e.mode, buildings: e.buildings, totalMs: e.ms, performance: e.performance,
+    }));
+
   return {
     totals,
     modes,
@@ -169,6 +175,7 @@ export function aggregate(events, { from = 0, to = Infinity, tzOffsetMin = 0 } =
     nonDefaultSettings: topCounts(settingMap, 60),
     profiles: topCounts(profileMap, 10),
     recent,
+    performanceReports,
     firstEventAt: events.length ? events[0].t : null,
     generatedAt: Date.now(),
   };
