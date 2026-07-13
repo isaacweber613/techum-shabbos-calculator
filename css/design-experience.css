@@ -1,0 +1,135 @@
+/* Full-workflow treatments for the five /designtest concepts. Inert on the production homepage. */
+html[data-design] { overflow-x:hidden; --dx-accent:#176b52; --dx-ink:#17231e; --dx-muted:#68736e; --dx-panel:#fff; --dx-soft:#eef5f1; --dx-line:rgba(25,45,36,.13); }
+html[data-design] body { overflow-x:hidden; background:#e9efeb; color:var(--dx-ink); }
+html[data-design] #banner { min-height:31px; padding:7px 44px 7px 18px; background:#24332d; color:#dce7e1; font-size:11px; text-align:center; }
+html[data-design] #app { position:relative; gap:16px; padding:16px; background:transparent; }
+html[data-design] #sidebar { width:440px; min-width:440px; padding:22px; overflow-y:auto; background:var(--dx-panel); border:1px solid var(--dx-line); border-radius:22px; box-shadow:0 24px 70px rgba(20,40,30,.14); font-size:13px; }
+html[data-design] #map { contain:paint; border:1px solid var(--dx-line); border-radius:22px; box-shadow:0 24px 70px rgba(20,40,30,.09); }
+html[data-design] .brand { height:auto; margin:0 0 12px; }
+html[data-design] .brand-mark { width:36px; height:36px; padding:0; border-radius:11px; background:var(--dx-accent); color:#fff; }
+html[data-design] .brand h1 { font-size:17px; }
+html[data-design] .brand p { display:block; font-size:10px; }
+html[data-design] .intro { display:block; margin:22px 0 18px; }
+html[data-design] .intro .eyebrow { display:block; color:var(--dx-accent); }
+html[data-design] .intro h2 { max-width:360px; margin:8px 0; color:var(--dx-ink); font-size:31px; white-space:normal; }
+html[data-design] .intro p { max-width:360px; margin:0; color:var(--dx-muted); font-size:13px; white-space:normal; }
+html[data-design] #design-experience-nav { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:10px; padding:9px 0 14px; border-bottom:1px solid var(--dx-line); }
+html[data-design] #design-experience-nav > a { width:30px; height:30px; display:grid; place-items:center; color:var(--dx-ink); border:1px solid var(--dx-line); border-radius:50%; text-decoration:none; }
+html[data-design] #design-experience-nav span { color:var(--dx-muted); font-size:10px; line-height:1.25; }
+html[data-design] #design-experience-nav span b { display:block; color:var(--dx-ink); font-size:11px; }
+html[data-design] #design-experience-nav button { min-height:34px; padding:0 12px; border-color:var(--dx-line); background:var(--dx-soft); color:var(--dx-ink); font-size:11px; }
+html[data-design] #address { height:52px; border-color:var(--dx-line); border-radius:14px; background:rgba(255,255,255,.9); }
+html[data-design] #address:focus { border-color:var(--dx-accent); box-shadow:0 0 0 4px color-mix(in srgb,var(--dx-accent) 12%,transparent); }
+html[data-design] .location-button { color:var(--dx-muted); }
+html[data-design] #status { margin:8px 0 12px; padding:9px 11px; min-height:34px; border-radius:9px; background:var(--dx-soft); color:var(--dx-muted); }
+html[data-design] .next-step { display:flex; float:none; width:auto; min-height:0; margin:9px 0; padding:11px; border:1px solid var(--dx-line); background:transparent; }
+html[data-design] button.primary { width:100%; min-height:50px; height:auto; margin:0 0 10px; padding:0 17px; border-radius:14px; background:var(--dx-accent); color:#fff; font-size:13px; }
+html[data-design] .calc-progress { gap:6px; margin:8px 0 12px; }
+html[data-design] .calc-progress span { padding:8px 4px; border-radius:9px; background:var(--dx-soft); }
+html[data-design] .calc-progress span.active { background:var(--dx-accent); }
+html[data-design] .method-callout { margin:8px 0; padding:10px; border-color:var(--dx-line); border-radius:10px; background:var(--dx-soft); }
+html[data-design] #confidence,html[data-design] #review-queue,html[data-design] #results { max-height:none; margin:8px 0; padding:10px 0; overflow:visible; font-size:11px; line-height:1.4; }
+html[data-design] #results .stat { display:block; padding:7px 0; border-color:var(--dx-line); }
+html[data-design] #results .warn,html[data-design] #results .note { display:block; margin:7px 0; padding:9px 10px; border-radius:9px; }
+html[data-design] .performance-report { border-color:var(--dx-accent); background:var(--dx-soft); }
+html[data-design] #design-drawer { position:fixed; z-index:4100; top:0; right:0; bottom:0; width:min(460px,100%); padding:24px; overflow:auto; display:none; background:var(--dx-panel); color:var(--dx-ink); box-shadow:-24px 0 80px rgba(10,25,18,.25); }
+html[data-design] .design-settings-open #design-drawer,html[data-design] #design-drawer[aria-hidden="false"] { display:block; }
+html[data-design] #design-drawer > header { display:flex; align-items:center; justify-content:space-between; gap:15px; margin-bottom:8px; }
+html[data-design] #design-drawer > header small { color:var(--dx-accent); font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+html[data-design] #design-drawer > header h2 { margin:4px 0 0; font-size:27px; }
+html[data-design] #design-drawer-close { width:40px; height:40px; padding:0; border:0; border-radius:50%; background:var(--dx-soft); font-size:22px; }
+html[data-design] .design-drawer-intro { margin:0 0 20px; color:var(--dx-muted); line-height:1.5; }
+html[data-design] #design-drawer .advanced-heading { display:flex; margin:16px 0 8px; }
+html[data-design] #design-drawer .settings-grid { display:block; }
+html[data-design] #design-drawer .settings-grid details { margin:8px 0; padding:0 12px 10px; border:1px solid var(--dx-line); border-radius:12px; }
+html[data-design] #design-drawer .settings-grid summary { min-height:44px; border:0; font-size:12px; }
+html[data-design] #design-drawer .setting-items { display:block; }
+html[data-design] #design-drawer .settings-grid details label { display:block; margin:9px 0; padding-right:20px; font-size:12px; }
+html[data-design] #design-drawer .settings-grid details label.check { display:grid; grid-template-columns:auto 1fr; }
+html[data-design] #design-drawer .settings-grid label > small,html[data-design] #design-drawer .settings-grid .muted { display:block; margin-top:3px; }
+html[data-design] #design-drawer input[type="number"],html[data-design] #design-drawer select { min-height:38px; height:auto; font-size:12px; }
+html[data-design] #design-drawer > details { margin:8px 0; padding:0 12px; border:1px solid var(--dx-line); border-radius:12px; }
+html[data-design] #design-drawer > details summary { min-height:44px; }
+html[data-design] #design-drawer .exports { display:flex; gap:6px; margin:8px 0; }
+html[data-design] #design-drawer .exports button { min-height:36px; height:auto; padding:5px 9px; font-size:11px; }
+html[data-design] #design-drawer .legend { display:block; margin-top:14px; padding:12px; border-radius:12px; background:var(--dx-soft); }
+html[data-design] #design-drawer footer { display:block; margin-top:14px; padding-top:12px; }
+html[data-design] #design-drawer-backdrop { position:fixed; z-index:4000; inset:0; display:block; padding:0; border:0; border-radius:0; visibility:hidden; opacity:0; background:rgba(4,16,10,.32); transition:opacity .22s,visibility 0s linear .22s; }
+html[data-design] .design-settings-open #design-drawer-backdrop { visibility:visible; opacity:1; transition:opacity .22s; }
+
+/* 1 — Quiet Search: airy glass and familiar controls. */
+html[data-design="1"] { --dx-accent:#147554; --dx-ink:#17251f; --dx-muted:#64736c; --dx-panel:rgba(255,255,255,.94); --dx-soft:#edf5f1; }
+html[data-design="1"] body { background:linear-gradient(135deg,#eff5f0,#dfe9e2); }
+html[data-design="1"] #sidebar { backdrop-filter:blur(18px); }
+html[data-design="1"] #results .warn { background:#fff5df; }
+
+/* 2 — The Atlas: warm editorial rail with cartographic typography. */
+html[data-design="2"] { --dx-accent:#8e5d3b; --dx-ink:#2b281f; --dx-muted:#746e5e; --dx-panel:#faf5e9; --dx-soft:#eee7d8; --dx-line:rgba(54,47,32,.16); }
+html[data-design="2"] body { background:#e9e2d3; font-family:"Avenir Next",Avenir,system-ui,sans-serif; }
+html[data-design="2"] #app { gap:0; padding:0; }
+html[data-design="2"] #sidebar { width:480px; min-width:480px; padding:28px 34px; border:0; border-radius:0; box-shadow:12px 0 45px rgba(57,48,28,.14); }
+html[data-design="2"] #map { border:0; border-radius:0; }
+html[data-design="2"] .intro h2,html[data-design="2"] #design-drawer h2 { font-family:Georgia,"Times New Roman",serif; font-weight:500; }
+html[data-design="2"] .intro h2 { font-size:38px; }
+html[data-design="2"] #address,html[data-design="2"] button.primary { border-radius:3px; }
+html[data-design="2"] #status { border-left:3px solid var(--dx-accent); border-radius:0; }
+html[data-design="2"] #results .stat { font-family:Georgia,serif; }
+
+/* 3 — Night Compass: focused dark navigation workspace. */
+html[data-design="3"] { color-scheme:dark; --dx-accent:#6cdda9; --dx-ink:#f0f5f1; --dx-muted:#a2b2aa; --dx-panel:#091b14; --dx-soft:#102c20; --dx-line:rgba(188,232,208,.14); }
+html[data-design="3"] body { background:#06120d; }
+html[data-design="3"] #banner { background:#020b07; color:#b8c9c0; }
+html[data-design="3"] #sidebar { background:rgba(7,25,17,.97); box-shadow:0 25px 80px rgba(0,0,0,.38); }
+html[data-design="3"] #map { border-color:#173b2b; }
+html[data-design="3"] #address { background:#0c2419; color:#f2f6f3; }
+html[data-design="3"] #address::placeholder { color:#7e9589; }
+html[data-design="3"] button.primary { color:#092218; }
+html[data-design="3"] .suggestions,html[data-design="3"] .suggestion { background:#0b2419; color:#eef5f1; }
+html[data-design="3"] .suggestion:hover { background:#163a2a; }
+html[data-design="3"] #results .warn { background:#3a2b13; color:#ffe4a3; }
+html[data-design="3"] #results .note { background:#102c20; }
+
+/* 4 — Guided Welcome: reassuring steps and generous plain-language cards. */
+html[data-design="4"] { --dx-accent:#177353; --dx-ink:#173429; --dx-muted:#62736b; --dx-panel:#f9fcf9; --dx-soft:#e9f5ed; --dx-line:rgba(23,70,51,.13); }
+html[data-design="4"] body { background:linear-gradient(115deg,#eff8f1,#dae9de); }
+html[data-design="4"] #sidebar { width:500px; min-width:500px; padding:26px 30px; }
+html[data-design="4"] .calc-progress span { position:relative; padding:11px 5px; }
+html[data-design="4"] .has-pin .next-step { border-color:#b9dec9; background:#f0faf4; }
+html[data-design="4"] #confidence,html[data-design="4"] #results .warn,html[data-design="4"] #results .note { padding:12px; border-radius:13px; }
+
+/* 5 — Calm Concierge: a warm floating service card over the map. */
+html[data-design="5"] { --dx-accent:#245f4a; --dx-ink:#202922; --dx-muted:#70776f; --dx-panel:#fbf8f1; --dx-soft:#f0ebe1; --dx-line:rgba(56,50,37,.14); }
+html[data-design="5"] body { background:#e7e0d2; font-family:"Avenir Next",Avenir,system-ui,sans-serif; }
+html[data-design="5"] #app { display:block; padding:22px; }
+html[data-design="5"] #map { position:absolute; inset:0; border:0; border-radius:0; }
+html[data-design="5"] #sidebar { position:relative; z-index:500; width:520px; min-width:520px; height:calc(100% - 24px); margin:12px; padding:28px 34px; background:rgba(251,248,241,.96); backdrop-filter:blur(18px); }
+html[data-design="5"] .intro h2,html[data-design="5"] #design-drawer h2 { font-family:Georgia,"Times New Roman",serif; font-weight:500; }
+html[data-design="5"] .intro h2 { font-size:38px; }
+html[data-design="5"] #status { text-align:center; }
+html[data-design="5"] button.primary { background:#245f4a; }
+html[data-design="5"] #results { padding:12px; border:1px solid var(--dx-line); border-radius:15px; background:rgba(255,255,255,.55); }
+
+@media (max-width:900px) {
+  html[data-design] body { overflow-x:hidden; overflow-y:auto; }
+  html[data-design] #app { display:flex; flex-direction:column; gap:0; padding:0; }
+  html[data-design] #map,html[data-design="5"] #map { position:relative; inset:auto; order:1; width:100%; height:40dvh; min-height:290px; border:0; border-radius:0; }
+  html[data-design] #sidebar,html[data-design="2"] #sidebar,html[data-design="4"] #sidebar,html[data-design="5"] #sidebar { position:relative; order:2; width:100%; min-width:0; height:auto; margin:-22px 0 0; padding:22px 20px 35px; overflow:visible; border:0; border-radius:24px 24px 0 0; box-shadow:0 -18px 45px rgba(20,40,30,.14); }
+  html[data-design] .brand { margin-bottom:8px; }
+  html[data-design] .brand p { display:none; }
+  html[data-design] .intro { margin:17px 0 14px; }
+  html[data-design] .intro h2,html[data-design="2"] .intro h2,html[data-design="5"] .intro h2 { font-size:29px; }
+  html[data-design] #design-experience-nav { padding-bottom:11px; }
+  html[data-design] #design-experience-nav button { min-height:40px; }
+  html[data-design] #design-drawer { width:100%; padding:20px; }
+  html[data-design] #btn-calc { position:sticky; bottom:10px; z-index:1200; }
+}
+
+@media (min-width:901px) and (max-width:1180px) {
+  html[data-design] #sidebar,html[data-design="2"] #sidebar,html[data-design="4"] #sidebar,html[data-design="5"] #sidebar { width:430px; min-width:430px; padding:20px; }
+  html[data-design="5"] #sidebar { margin:8px; height:calc(100% - 16px); }
+  html[data-design] .intro h2,html[data-design="2"] .intro h2,html[data-design="5"] .intro h2 { font-size:30px; }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  html[data-design] #design-drawer,html[data-design] #design-drawer-backdrop { transition:none; }
+}
