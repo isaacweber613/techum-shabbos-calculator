@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "id": "woodbourne-vaad-2023",
+  "place": "Woodbourne, New York",
+  "issuer": "Va'ad Le'Tchum Shabbos",
+  "publishedYear": 2023,
+  "profileLabel": "Chazon Ish",
+  "calculatorScenario": {
+    "profile": "chazon-ish",
+    "amahCm": 57.6
+  },
+  "source": {
+    "landingPage": "https://www.catskillseruv.com/copy-of-woodridge-7",
+    "pdf": "https://www.catskillseruv.com/_files/ugd/4c904a_05320b7f909d46cb9994b70a9b2e1a57.pdf",
+    "sha256": "89cd437298f92d975ccd792770b5bc52cad6b7ad12e15ad80b16f991fb7d9ac3",
+    "pageCount": 1,
+    "pageSizePoints": { "width": 792, "height": 1224 },
+    "createdBy": "Adobe InDesign 18.5 (Macintosh)",
+    "pdfCreated": "2023-08-17"
+  },
+  "digitization": {
+    "method": "Exact vector path extraction from the source PDF; coordinates use PDF page points with a top-left origin.",
+    "cityRibuaGreen": [
+      [397.8167, 347.8173],
+      [414.3167, 315.0283],
+      [390.5197, 303.0543],
+      [370.9627, 341.9163],
+      [382.6897, 347.8173],
+      [357.9047, 347.8173],
+      [357.9047, 330.3733],
+      [259.2737, 330.3733],
+      [259.2737, 393.1383],
+      [326.4627, 393.1383],
+      [326.4627, 527.8633],
+      [483.9607, 527.8633],
+      [483.9607, 347.8173]
+    ],
+    "techumPink": [
+      [515.5389, 249.7104],
+      [476.1749, 229.9974],
+      [476.1749, 187.8034],
+      [391.9179, 187.8034],
+      [345.7399, 164.6774],
+      [334.1599, 187.8034],
+      [164.7139, 187.8034],
+      [164.7139, 490.1784],
+      [224.4129, 490.1784],
+      [224.4129, 661.9924],
+      [606.6709, 661.9924],
+      [606.6709, 249.7104]
+    ]
+  },
+  "publishedRoadCheckpoints": [
+    "481 Hasbrouck Drive",
+    "448 Cypert Road",
+    "289 Budd Road",
+    "131 Todd Road",
+    "269 Mount Cliff Road",
+    "Hutrat Road",
+    "Sullivan Correctional Facility"
+  ],
+  "validationScope": [
+    "Reproduces the issuing Va'ad's published green city-ribua and pink techum paths exactly in source-page coordinates.",
+    "Preserves the map's named road checkpoints for future geographic registration and calculator comparison.",
+    "Confirms the published map is explicitly labeled for the Chazon Ish shiur and dated 2023."
+  ],
+  "limitations": [
+    "This is a published-output benchmark, not proof of hidden-method parity: the map does not disclose its selected dwellings, courtyard findings, joins, bow endpoints, or intermediate measurements.",
+    "The numerical 57.6 cm amah is the calculator's Chazon Ish scenario; the source map prints the shita name but not a centimeter value.",
+    "Road labels are transcribed from the source. Geographic registration against current map data remains a separate validation step."
+  ]
+}
