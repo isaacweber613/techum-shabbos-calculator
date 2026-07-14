@@ -1,4 +1,4 @@
-# Halacha/spec implementation audit — 2026-07-12
+# Halacha/spec implementation audit — 2026-07-14 (Rev. 13)
 
 Status: engineering and source-consistency review, not a psak. A rav/mumcheh must validate
 the halachic choices and any real-city result.
@@ -31,27 +31,18 @@ Primary-source cross-checks:
 - Point shevisa, three villages, overlaps, concavity warnings, and deterministic snapshots
   have golden/behavioral coverage.
 
-## Material gaps requiring follow-up
+## Remaining review conditions (not hidden engine gaps)
 
-1. `TECHUM-SPEC.md` Part 3 describes some planned features as present: automatic snapping
-   of a geocode to a footprint, Overture fallback, a confidence indicator, manual bow
-   endpoint designation, and printable PDF. The current site has none of these.
-2. The pipeline prose says UTM/azimuthal projection with convergence correction; the code
-   uses a local true-north tangent/equirectangular projection. It is internally consistent
-   and tested locally, but the spec should describe the actual projection and its quantified
-   metropolitan-scale error bound.
-3. `includeUnknown` and `includeReview` default on, while Part 3.0 says uncertainty is
-   decided conservatively in simple view. Inclusion is not uniformly conservative because
-   it can enlarge or topologically change the city. The verified-only scenario helps, but
-   the wording should be “two uncertainty scenarios,” not conservative/certain.
-4. The bow rule remains detection-and-warning only. This is correctly disclosed in Part 2,
-   but Part 3.2 still says “fill bows/Ls,” which overstates the implementation.
-5. City status is a footprint-count proxy for the sourced courtyard/entrance model. This is
-   the largest modeled-halacha approximation after dwelling classification and requires a
-   rav-facing per-cluster override before this can be considered a complete expert tool.
-6. The source list is strong but several contemporary conclusions (eruv perimeter,
-   orientation, karpef-after-ibur, and modern building predicates) should be converted into
-   pinpoint citations or attached teshuvah excerpts reviewed by the project's rav.
+1. City status begins with a six-footprint proxy for the sourced three-courtyard model;
+   the rav-facing per-component override is implemented and preserved in snapshots.
+2. Real-city bow/L endpoints are factual reviewer input. Until supplied, the app now uses
+   a labelled smaller no-fill geometry; supplied endpoints alter the boundary according to
+   the selected sourced rule.
+3. Modern beis-dirah classification and hukaf-l'dirah facts cannot be inferred from map
+   tags. Per-building overrides, missing footprints, validated city enclosures, and
+   zero-house validated residential joining perimeters are implemented for that review.
+4. Ir muvla'at is destination/path-specific. The universal map detects candidate swallowed
+   cities but deliberately does not invent one unsupported two-dimensional extension.
 
 ## UI audit outcome
 

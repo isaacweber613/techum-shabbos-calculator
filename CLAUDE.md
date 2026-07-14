@@ -20,7 +20,7 @@ static app, no build step, no API keys. v1 built + live-verified 2026-07-10.
 ## Source of truth
 
 **TECHUM-SPEC.md is the halachic source of truth.** Every psak default, every machlokes,
-every retraction is recorded there with dated rev notes (currently rev. 3). Isaac's
+every retraction is recorded there with dated rev notes (currently rev. 13). Isaac's
 standing rule: any change to a halachic default gets a dated note in the spec — append,
 don't overwrite. The tool is decision-support for a rav (MB 399:7 requires a mumcheh);
 permanent draft banner, never present output as psak.
@@ -38,7 +38,9 @@ permanent draft banner, never present output as psak.
 ## Key decisions (details + sources in TECHUM-SPEC.md)
 
 - Default profile Mishna Berurah/Ashkenazi: R' Chaim Naeh 48 cm amah, karpef ON (Rema/MB
-  398:36), compass squaring, overlapping-rects merge OFF (R' S. Miller) + warning,
+  398:36), shape-aware/compass squaring, overlapping-rects **no-join** (R' Elyashiv /
+  R' N. Karelitz / R' Belsky) + warning, with R' S. Miller's join-without-redraw and the
+  expansive redraw approach available only as advanced alternatives,
   6-footprint city minimum (count-based APPROXIMATION of MB 398:38's 3-chatzeros model).
 - Every disputed rule is a user-changeable setting; profiles are documented defaults.
 - Determinism: engine is pure — same data + settings = same output. Cache the INPUT
@@ -89,6 +91,7 @@ mehalich policy above.
 - Metro-scale (>20k buildings) merge passes may be slow (O(pairs) with bbox pruning).
 - Multipolygon relations are exploded into pseudo-buildings per outer ring (slightly
   inflates footprint counts — flagged re the 6-count city minimum).
-- Bow/concavity ≥4000 amos: detect-and-warn only; reviewer designates endpoints (planned UI).
+- Bow/concavity ≥4000 amos: provisional no-fill until the reviewer designates endpoints;
+  then the selected sourced bow rule changes the multi-region boundary.
 - Verification gotcha: if the Browser pane is hidden, rAF suspends → screenshot/zoom time
   out even though JS eval works; verify via DOM/SVG bbox reads instead.

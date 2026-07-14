@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.3.0 (2026-07-13)';
+  const ENGINE_VERSION = '1.4.0 (2026-07-14)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -26,6 +26,7 @@
     snapInfo: null,
     overtureReport: null,
     validatedPerimeter: null,
+    validatedJoinPerimeters: [], // rav-confirmed residential yards/perimeters; geometry-only, house count = 0
   };
   const layerGroups = {
     buildings: null, rects: null, second: null, settlements: null, audit: null, overture: null, perimeter: null,
@@ -46,7 +47,9 @@
     amah: 'Sets the length of an amah. This changes distances and can change which buildings connect.',
     karpef: 'Adds 70⅔ amos around a single city before measuring the 2,000-amah techum.',
     'sq-angle': 'Automatic ribua preserves a clearly rectangular city in its existing direction; irregular cities are squared to true north. A nonzero value is a reviewer override.',
-    overlap: 'Controls whether overlapping squared city areas are treated as one city.',
+    overlap: 'Selects one of the three sourced approaches to overlapping city rectangles.',
+    'large-hole-policy': 'Controls a wholly surrounded empty area at least 4,000 amos in both governing directions.',
+    'bow-policy': 'Selects the sourced bow/L rule after a reviewer confirms the real-city endpoints.',
     'inc-unknown': 'Includes detected structures whose dwelling use is not identified.',
     'inc-review': 'Includes hotels, schools, shuls and similar places that need individual review.',
     'min-size': 'Leaves out structures smaller than four by four amos.',
@@ -63,7 +66,7 @@
   };
   const PROFILE_EXPLANATIONS = {
     'mishna-berura': '<b>Mishna Berurah / Ashkenazi:</b> R\' Chaim Naeh amah (18.90 in), Rema\'s 70⅔-amah karpef, shape-aware SA/MB squaring, and the stricter view that overlapping city rectangles do not automatically merge.',
-    'chazon-ish': '<b>Chazon Ish:</b> larger 22.68-inch amah and the lenient view that overlapping city rectangles are redrawn together. Shape-aware automatic squaring is the starting value; a reviewer can set a controlling natural angle.',
+    'chazon-ish': '<b>Chazon Ish scenario:</b> larger 22.68-inch amah and the expansive reading that repeatedly redraws overlapping city rectangles. The Chazon Ish\'s practical conclusion on overlap is reported as uncertain; use this scenario only with rabbinic direction. A reviewer may also set a controlling natural angle.',
     mechaber: '<b>Mechaber / Sefardi:</b> 18.90-inch amah here, no extra single-city karpef, shape-aware SA squaring, and no automatic overlapping-rectangle merge.',
     custom: '<b>Custom:</b> one or more choices differ from the selected profile. Review every changed shita with a rav.',
   };
@@ -431,7 +434,9 @@
     state.performance = perf;
     renderPerformanceReport(perf);
     if (state.result && state.result.techumCorners) {
-      const pts = state.result.techumCorners.map((p) => {
+      const regions = state.result.techumRegions && state.result.techumRegions.length
+        ? state.result.techumRegions : [state.result.techumCorners];
+      const pts = regions.flat().map((p) => {
         const ll = state.proj.toLatLon(p.x, p.y);
         return [ll.lat, ll.lon];
       });
@@ -488,7 +493,8 @@
     if (!res || res.mode !== 'city' || !res.cityCorners) return null;
     const margin = res.thresholds.t2 + 60; // 141 1/3 amos + footprint-error margin
     const proj = state.proj;
-    const pts = res.cityCorners.map((p) => proj.toLatLon(p.x, p.y));
+    const regions = res.cityRegions && res.cityRegions.length ? res.cityRegions : [res.cityCorners];
+    const pts = regions.flat().map((p) => proj.toLatLon(p.x, p.y));
     const lats = pts.map((p) => p.lat), lons = pts.map((p) => p.lon);
     const dLat = margin / proj.mPerDegLat;
     const dLon = margin / (proj.mPerDegLat * Math.cos((state.pin.lat * Math.PI) / 180));
@@ -507,12 +513,18 @@
   function prepareBuildings() {
     auditCache.clear(); // buffers are keyed by building id — new data invalidates them
     const proj = state.proj;
-    state.buildings = state.rawBuildings.concat(state.manualBuildings).map((raw) => {
+    const joinPerimeters = state.validatedJoinPerimeters.map((item, index) => ({
+      id: item.id || `validated-join-${index + 1}`,
+      tags: { building: 'yes', source: 'rav-validated-join-perimeter' },
+      ringLatLon: item.ringLatLon || item,
+      joinOnly: true,
+    }));
+    state.buildings = state.rawBuildings.concat(state.manualBuildings, joinPerimeters).map((raw) => {
       const ring = raw.ringLatLon.map((p) => proj.toXY(p.lat, p.lon));
       const cls = D.classify(raw.tags);
       return {
         id: raw.id, tags: raw.tags, ring,
-        bbox: ringBBox(ring),
+        bbox: ringBBox(ring), joinOnly: !!raw.joinOnly,
         klass: cls.klass, reason: cls.reason,
         included: false, // set in recompute from klass + settings + override
       };
@@ -577,6 +589,8 @@
       ? 'Rectangle footprint: click the opposite roof corner.'
       : drawing.mode === 'enclosure'
         ? `Drawing validated enclosure: ${drawing.points.length} point(s). Click each corner, then Finish shape.`
+        : drawing.mode === 'join-perimeter'
+          ? `Drawing validated joining perimeter: ${drawing.points.length} point(s). Click each corner, then Finish shape.`
         : `Drawing missing footprint: ${drawing.points.length} point(s). Click each corner, then Finish shape.`);
   }
 
@@ -620,6 +634,12 @@
       S.save(settings);
       await recompute();
       setStatus('Validated enclosure stored but inactive. Enable it only after a rav confirms that this perimeter counts for techum.');
+      return;
+    }
+    if (mode === 'join-perimeter') {
+      state.validatedJoinPerimeters.push({ id: `validated-join-${Date.now()}`, ringLatLon });
+      prepareBuildings(); await recompute();
+      setStatus('Validated residential joining perimeter added. It affects join distances but does not count as a house.');
       return;
     }
     state.manualBuildings.push({ id: `manual-${Date.now()}-${state.manualBuildings.length + 1}`,
@@ -723,6 +743,20 @@
       } catch (e) { setStatus('Validated perimeter import failed: ' + e.message); }
     }; reader.readAsText(file);
   }
+  function importValidatedJoinPerimeters(file) {
+    const reader = new FileReader(); reader.onload = () => {
+      try {
+        const polygons = K.parseGeoJSONFootprints(JSON.parse(reader.result));
+        if (!polygons.length) throw new Error('provide at least one Polygon or MultiPolygon perimeter');
+        const stamp = Date.now();
+        polygons.forEach((ringLatLon, index) => state.validatedJoinPerimeters.push({
+          id: `validated-join-import-${stamp}-${index + 1}`, ringLatLon,
+        }));
+        prepareBuildings(); recompute();
+        setStatus(`${polygons.length} rav-validated joining perimeter(s) imported; they affect gaps but not the house count.`);
+      } catch (e) { setStatus('Joining-perimeter import failed: ' + e.message); }
+    }; reader.readAsText(file);
+  }
   function ringBBox(ring) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of ring) {
@@ -740,6 +774,7 @@
     return (b.bbox.maxX - b.bbox.minX) < min || (b.bbox.maxY - b.bbox.minY) < min;
   }
   function isIncluded(b) {
+    if (b.joinOnly) return true;
     const ov = state.overrides.get(b.id);
     if (ov === 'include') return true;
     if (ov === 'exclude') return false;
@@ -753,6 +788,7 @@
   // NOT "machmir" vs "meikil" — a changed join can alter the city topology either way;
   // the two scenarios simply bracket the data uncertainty. Neither is authoritative.
   function isVerifiedIncluded(b) {
+    if (b.joinOnly) return true;
     const ov = state.overrides.get(b.id);
     if (ov === 'include') return true;
     if (ov === 'exclude') return false;
@@ -765,15 +801,30 @@
     return settings.useValidatedPerimeter && Array.isArray(state.validatedPerimeter)
       ? state.validatedPerimeter.map((p) => state.proj.toXY(p.lat, p.lon)) : null;
   }
+  function geometrySettings(amahCm = settings.amahCm) {
+    return {
+      amahM: amahCm / 100,
+      karpef: settings.karpef,
+      minCityHouses: settings.minCityHouses,
+      overlapPolicy: settings.overlapPolicy,
+      largeHolePolicy: settings.largeHolePolicy,
+      bowPolicy: settings.bowPolicy,
+      squaringAngleDeg: settings.squaringAngleDeg,
+      pointRotationDeg: settings.pointRotationDeg,
+      cityQualificationOverrides: settings.cityQualificationOverrides || {},
+      concavityReviews: settings.concavityReviews || {},
+      validatedCityPerimeter: projectedValidatedPerimeter(),
+    };
+  }
   function workerSafeBuildings(buildings) {
-    return buildings.map((b) => ({ id: b.id, ring: b.ring, bbox: b.bbox, included: b.included }));
+    return buildings.map((b) => ({ id: b.id, ring: b.ring, bbox: b.bbox, included: b.included, joinOnly: !!b.joinOnly }));
   }
 
   function runPipelineAsync(buildings, geoSettings, pinXY) {
     if (typeof Worker === 'undefined' || buildings.length < 1500) {
       return Promise.resolve(G.runPipeline(buildings, geoSettings, pinXY));
     }
-    if (!analysisWorker) analysisWorker = new Worker('js/analysis-worker.js');
+    if (!analysisWorker) analysisWorker = new Worker('js/analysis-worker.js?v=20260714-1');
     const id = ++analysisRequestId;
     return new Promise((resolve, reject) => {
       analysisPending.set(id, reject);
@@ -802,17 +853,7 @@
     const generation = ++latestAnalysisId;
     for (const b of state.buildings) b.included = isIncluded(b);
     const pinXY = state.proj.toXY(state.pin.lat, state.pin.lon);
-    const geoSettings = {
-      amahM: settings.amahCm / 100,
-      karpef: settings.karpef,
-      minCityHouses: settings.minCityHouses,
-      overlapMerge: settings.overlapMerge,
-      squaringAngleDeg: settings.squaringAngleDeg,
-      pointRotationDeg: settings.pointRotationDeg,
-      cityQualificationOverrides: settings.cityQualificationOverrides || {},
-      concavityReviews: settings.concavityReviews || {},
-      validatedCityPerimeter: projectedValidatedPerimeter(),
-    };
+    const geoSettings = geometrySettings();
     const result = await runPipelineAsync(state.buildings, geoSettings, pinXY);
     if (generation !== latestAnalysisId) return null;
     state.result = result;
@@ -860,6 +901,7 @@
     state.buildings.forEach((b, i) => {
       if (b.bbox.maxX < view.minX || b.bbox.minX > view.maxX || b.bbox.maxY < view.minY || b.bbox.minY > view.maxY) return;
       const st = { ...(KLASS_STYLE[b.klass] || KLASS_STYLE.unknown) };
+      if (b.joinOnly) { st.color = '#00b8a9'; st.fillColor = '#b7f3e8'; }
       const ov = state.overrides.get(b.id);
       let dash = null, weight = 1, fillOpacity = b.included ? 0.45 : 0.12, opacity = b.included ? 0.9 : 0.45;
       if (ov) { dash = '4 3'; weight = 2.5; st.color = ov === 'exclude' ? '#ff4136' : '#0074d9'; }
@@ -868,7 +910,8 @@
         opacity, dashArray: dash, renderer: buildingRenderer,
       });
       b.mapLayer = poly;
-      poly.bindTooltip(`<b>${escapeHtml(b.klass.toUpperCase())}</b> — ${escapeHtml(b.reason)}` +
+      poly.bindTooltip(`<b>${b.joinOnly ? 'RAV-VALIDATED JOIN PERIMETER' : escapeHtml(b.klass.toUpperCase())}</b> — ${escapeHtml(b.reason)}` +
+        (b.joinOnly ? '<br>Participates in 70⅔/141⅓ geometry; house count +0.' : '') +
         (ov ? `<br>manual correction: ${escapeHtml(ov)}` : '') + `<br><i>Optional: click to correct include/exclude</i>`, { sticky: true });
       poly.on('click', async () => {
         const cur = state.overrides.get(b.id);
@@ -919,23 +962,28 @@
       const p = L.polygon(cornersToLatLngs(corners), style).addTo(group || layerGroups.rects);
       if (label) p.bindTooltip(label, { sticky: true });
     };
+    const addRegions = (regions, style, label, group) => {
+      const list = Array.isArray(regions) && regions.length ? regions : [];
+      list.forEach((region, index) => addRect(region, style,
+        list.length > 1 ? `${label} · region ${index + 1} of ${list.length}` : label, group));
+    };
     if (document.getElementById('layer-techum').checked)
-      addRect(res.techumCorners, { color: MAP_PALETTE.pinkStroke, weight: 3.5, fill: true,
+      addRegions(res.techumRegions || [res.techumCorners], { color: MAP_PALETTE.pinkStroke, weight: 3.5, fill: true,
         fillColor: MAP_PALETTE.pink, fillOpacity: 0.38, casing: true },
       'PINK TECHUM AREA — 2000 amos (' + settings.amahCm + ' cm amah)');
-    if (res.karpefCorners && document.getElementById('layer-karpef').checked)
-      addRect(res.karpefCorners, { color: MAP_PALETTE.greenStroke, weight: 2, dashArray: '6 5',
+    if ((res.karpefRegions || []).length && document.getElementById('layer-karpef').checked)
+      addRegions(res.karpefRegions, { color: MAP_PALETTE.greenStroke, weight: 2, dashArray: '6 5',
         fill: true, fillColor: MAP_PALETTE.greenSoft, fillOpacity: 0.2 }, 'Karpef (+70⅔ amos — Rema/MB 398:36)');
     if (document.getElementById('layer-city').checked) {
       const startingAreaLabel = res.mode === 'city'
         ? 'GREEN STARTING CITY (ribua ha’ir)'
         : res.mode === 'building' ? 'GREEN MAPPED BUILDING — starting walls' : 'GREEN 4-AMOS SHEVISA';
-      addRect(res.cityCorners, { color: MAP_PALETTE.greenStroke, weight: 4, fill: true,
+      addRegions(res.cityRegions || [res.cityCorners], { color: MAP_PALETTE.greenStroke, weight: 4, fill: true,
         fillColor: MAP_PALETTE.green, fillOpacity: 0.62, casing: true },
       startingAreaLabel);
     }
     if (settings.show12mil)
-      addRect(res.mil12Corners, { color: '#666', weight: 1.5, dashArray: '2 6', fill: false }, '12 mil (d’oraisa shita)');
+      addRegions(res.mil12Regions || [res.mil12Corners], { color: '#666', weight: 1.5, dashArray: '2 6', fill: false }, '12 mil (d’oraisa shita)');
     for (const region of res.concavityRegions || [])
       addRect(region, { color: '#ffdc00', weight: 2, dashArray: '4 4', fillColor: '#ffdc00', fillOpacity: 0.15 }, '≥4000-amos concavity — review');
 
@@ -948,31 +996,17 @@
     if (settings.showVerifiedOnly && res.mode === 'city' && canRenderVerifiedScenario) {
       const verifiedB = state.buildings.map((b) => ({ ...b, included: isVerifiedIncluded(b) }));
       if (verifiedB.some((b) => b.included)) {
-        const resV = G.runPipeline(verifiedB, {
-          amahM: settings.amahCm / 100, karpef: settings.karpef,
-          minCityHouses: settings.minCityHouses, overlapMerge: settings.overlapMerge,
-          squaringAngleDeg: settings.squaringAngleDeg,
-          pointRotationDeg: settings.pointRotationDeg,
-          cityQualificationOverrides: settings.cityQualificationOverrides || {}, concavityReviews: settings.concavityReviews || {},
-          validatedCityPerimeter: projectedValidatedPerimeter(),
-        }, state.proj.toXY(state.pin.lat, state.pin.lon));
+        const resV = G.runPipeline(verifiedB, geometrySettings(), state.proj.toXY(state.pin.lat, state.pin.lon));
         if (resV.techumCorners)
-          addRect(resV.techumCorners, { color: '#ffb300', weight: 2.5, dashArray: '8 6', fill: false },
+          addRegions(resV.techumRegions || [resV.techumCorners], { color: '#ffb300', weight: 2.5, dashArray: '8 6', fill: false },
             'Scenario: verified dwellings only (' + (resV.mode === 'city' ? 'city' : resV.mode === 'building' ? 'building shevisa' : 'point shevisa!') + ') — data-uncertainty bracket, not a psak', layerGroups.second);
       }
     }
 
     // comparison shita line (full second pipeline run — thresholds change with the amah)
     if (settings.secondAmahCm && settings.secondAmahCm !== settings.amahCm && state.buildings.length <= 10000) {
-      const res2 = G.runPipeline(state.buildings, {
-        amahM: settings.secondAmahCm / 100, karpef: settings.karpef,
-        minCityHouses: settings.minCityHouses, overlapMerge: settings.overlapMerge,
-        squaringAngleDeg: settings.squaringAngleDeg,
-        pointRotationDeg: settings.pointRotationDeg,
-        cityQualificationOverrides: settings.cityQualificationOverrides || {}, concavityReviews: settings.concavityReviews || {},
-        validatedCityPerimeter: projectedValidatedPerimeter(),
-      }, state.proj.toXY(state.pin.lat, state.pin.lon));
-      addRect(res2.techumCorners, { color: '#e040fb', weight: 2.5, dashArray: '10 6', fill: false },
+      const res2 = G.runPipeline(state.buildings, geometrySettings(settings.secondAmahCm), state.proj.toXY(state.pin.lat, state.pin.lon));
+      addRegions(res2.techumRegions || [res2.techumCorners], { color: '#e040fb', weight: 2.5, dashArray: '10 6', fill: false },
         'Comparison: techum @ ' + (settings.secondAmahCm / 2.54).toFixed(2) + ' in amah', layerGroups.second);
     }
 
@@ -1038,7 +1072,8 @@
       const index = settlementClusters.indexOf(cluster);
       const isHome = index === res.homeCluster;
       const color = isHome ? '#00e676' : `hsl(${(index * 137.508) % 360}, 75%, 48%)`;
-      const label = `Settlement #${index + 1}: ${cluster.members.length} included structure${cluster.members.length === 1 ? '' : 's'}` +
+      const houses = cluster.houseCount == null ? cluster.members.length : cluster.houseCount;
+      const label = `Settlement #${index + 1}: ${houses} counted house${houses === 1 ? '' : 's'}; ${cluster.members.length - houses} join-only perimeter${cluster.members.length - houses === 1 ? '' : 's'}` +
         (isHome ? '<br><b>This is the selected home city.</b>' : '') +
         `<br>Dashed box is its derived outer rectangle after 70⅔-amah chaining and settlement merges.`;
       L.polygon(cornersToLatLngs(cluster.corners), {
@@ -1050,12 +1085,12 @@
       const ll = state.proj.toLatLon(center.x, center.y);
       L.marker([ll.lat, ll.lon], {
         interactive: false,
-        icon: L.divIcon({ className: 'cluster-label', html: `<span>${isHome ? 'HOME · ' : ''}#${index + 1} · ${cluster.members.length}</span>` }),
+        icon: L.divIcon({ className: 'cluster-label', html: `<span>${isHome ? 'HOME · ' : ''}#${index + 1} · ${houses} houses</span>` }),
       }).addTo(layerGroups.settlements);
     });
     const home = res.homeCluster >= 0 ? res.clusters[res.homeCluster] : null;
     summary.textContent = `${res.clusters.length} settlement${res.clusters.length === 1 ? '' : 's'} derived; ` +
-      (home ? `home is #${res.homeCluster + 1} with ${home.members.length} included structures. ` : 'the pin did not join a settlement. ') +
+      (home ? `home is #${res.homeCluster + 1} with ${home.houseCount == null ? home.members.length : home.houseCount} counted houses. ` : 'the pin did not join a settlement. ') +
       `70⅔ amos = ${res.thresholds.joinM.toFixed(1)} m; 141⅓ amos = ${res.thresholds.t2.toFixed(1)} m.`;
     const review = document.getElementById('cluster-review');
     review.replaceChildren();
@@ -1063,7 +1098,7 @@
     qualificationClusters.forEach((cluster, index) => {
       const row = document.createElement('label');
       const text = document.createElement('span');
-      text.innerHTML = `Component #${index + 1} · ${cluster.members.length} structures<small>${cluster.qualifiesAsCity ? 'qualifies' : 'does not qualify'} via ${escapeHtml(cluster.qualificationSource)}</small>`;
+      text.innerHTML = `Component #${index + 1} · ${cluster.houseCount == null ? cluster.members.length : cluster.houseCount} counted houses<small>${cluster.qualifiesAsCity ? 'qualifies' : 'does not qualify'} via ${escapeHtml(cluster.qualificationSource)}</small>`;
       const select = document.createElement('select'); select.setAttribute('aria-label', `Pre-merge component ${index + 1} city status`);
       [['','Use footprint-count proxy'],['true','Rav/reviewer: qualifies'],['false','Rav/reviewer: does not qualify']].forEach(([value, label]) => {
         const option = document.createElement('option'); option.value = value; option.textContent = label; select.appendChild(option);
@@ -1143,9 +1178,12 @@
     const counts = { dwelling: 0, unknown: 0, review: 0, non: 0 };
     for (const b of state.buildings) counts[b.klass] = (counts[b.klass] || 0) + 1;
     const homeSize = res.homeCluster >= 0 && res.clusters[res.homeCluster]
-      ? res.clusters[res.homeCluster].members.length : 0;
+      ? (res.clusters[res.homeCluster].houseCount == null ? res.clusters[res.homeCluster].members.length : res.clusters[res.homeCluster].houseCount) : 0;
     const amahM = settings.amahCm / 100;
     const lines = [];
+    if (res.calculationStatus === 'provisional-no-fill') {
+      lines.push('<div class="warn"><b>Provisional smaller boundary:</b> a material bow/L pocket has not yet received reviewer-confirmed endpoints. The app has not filled that pocket.</div>');
+    }
     if (state.snapInfo) {
       if (state.snapInfo.snapped) lines.push(`<div class="note"><b>Pin snapped to mapped footprint</b> — moved ${state.snapInfo.distanceM.toFixed(1)} m to ${escapeHtml(state.snapInfo.klass)} (${escapeHtml(state.snapInfo.reason)}). Confirm the marker against the imagery; drag it to correct.</div>`);
       else lines.push(`<div class="note"><b>Pin check:</b> ${escapeHtml(state.snapInfo.reason || 'Already on a mapped footprint')}. Confirm against imagery.</div>`);
@@ -1162,6 +1200,7 @@
           ? `reviewer-set direction (${angleText})`
           : 'irregular city squared to the world directions (SA 398:2–3)';
       lines.push(`<div class="stat"><b>City squaring:</b> ${squareText}</div>`);
+      lines.push(`<div class="stat"><b>Overlap rule:</b> ${escapeHtml(res.overlapPolicy || settings.overlapPolicy)}${(res.cityRegions || []).length > 1 ? ` · ${(res.cityRegions || []).length} stepped regions` : ''}</div>`);
     }
     lines.push(`<div class="stat"><b>Buildings fetched:</b> ${state.buildings.length} — ` +
       `<span class="sw dw"></span>${counts.dwelling} identified dwelling, <span class="sw un"></span>${counts.unknown} use-unknown, ` +
@@ -1172,7 +1211,7 @@
     if (settings.secondAmahCm && settings.secondAmahCm !== settings.amahCm && state.buildings.length > 10000) {
       lines.push('<div class="note"><b>Comparison-amah line omitted:</b> this optional second full-city scenario is disabled above 10,000 footprints. Change the primary amah and recalculate to evaluate that shita on a large city.</div>');
     }
-    if (res.mode === 'city') lines.push(`<div class="stat"><b>Home city cluster:</b> ${homeSize} structures</div>`);
+    if (res.mode === 'city') lines.push(`<div class="stat"><b>Home city cluster:</b> ${homeSize} counted houses</div>`);
     if (res.mode === 'building' && res.homeBuilding >= 0) {
       const homeBuilding = state.buildings[res.homeBuilding];
       lines.push(`<div class="stat"><b>Starting structure:</b> mapped footprint ${escapeHtml(homeBuilding && homeBuilding.id ? homeBuilding.id : String(res.homeBuilding + 1))}</div>`);
@@ -1226,7 +1265,7 @@
     const list = document.createElement('div'); list.className = 'review-list';
     bows.forEach((audit) => {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'bow-review';
-      button.innerHTML = `<span>⌁</span><b>Bow / concavity</b><small>${audit.reviewerEndpoints ? 'Endpoints recorded; not applied to boundary' : 'Select two endpoints for the rav'}</small>`;
+      button.innerHTML = `<span>⌁</span><b>${audit.shapeKind === 'hole' ? 'Large enclosed hole' : 'Bow / L-shaped pocket'}</b><small>${audit.reviewerEndpoints ? `Endpoints applied · ${escapeHtml(audit.reviewStatus)}` : audit.shapeKind === 'hole' ? escapeHtml(audit.reviewStatus) : 'Select two endpoints; provisional no-fill is active'}</small>`;
       button.addEventListener('click', () => recordConcavityEndpoints(audit.reviewKey)); list.appendChild(button);
     });
     items.slice(0, 100).forEach((b) => {
@@ -1251,7 +1290,7 @@
     bowCapture = { reviewKey, points: [] };
     document.getElementById('btn-cancel-map-mode').hidden = false;
     document.body.classList.add('map-mode-active');
-    setStatus('Bow review mode: click the first endpoint. Press Escape or Cancel to stop. Points are recorded for the rav and do not alter the boundary.');
+    setStatus('Bow review mode: click the first halachic endpoint. Press Escape or Cancel to stop. The selected bow rule will be recalculated after the second point.');
   }
   function addBowEndpoint(latlng) {
     bowCapture.points.push(state.proj.toXY(latlng.lat, latlng.lng));
@@ -1260,7 +1299,7 @@
     settings.concavityReviews = { ...(settings.concavityReviews || {}) };
     settings.concavityReviews[capture.reviewKey] = { endpoints: capture.points };
     cancelMapMode(false); S.save(settings); recompute();
-    setStatus('Bow endpoints recorded for rav review. They have NOT changed the calculated boundary.');
+    setStatus('Bow endpoints recorded and the selected bow rule was applied. Review the updated boundary and audit before approval.');
   }
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -1283,7 +1322,9 @@
       `Amah: ${settings.amahCm} cm (2000 amos = ${(20 * settings.amahCm).toFixed(0)} m)`,
       `Single-city karpef: ${settings.karpef ? 'ON (Rema / MB 398:36)' : 'OFF (Mechaber)'}`,
       `Squaring orientation: ${squaringAudit}`,
-      `Overlapping-rectangles merge: ${settings.overlapMerge ? 'ON (Chazon Ish)' : 'OFF (strict)'}`,
+      `Overlapping-ribua policy: ${settings.overlapPolicy}`,
+      `Large enclosed-hole policy: ${settings.largeHolePolicy}`,
+      `Bow/L policy: ${settings.bowPolicy}`,
       `City minimum: ${settings.minCityHouses} footprints (MB 398:38 — COUNT-BASED APPROXIMATION of the 3-chatzeros model; courtyard structure not modeled)`,
       `Min dwelling size 4x4 amos filter: ${settings.minSizeFilter ? 'on' : 'off'}`,
       `Untagged buildings: ${settings.includeUnknown ? 'included (flagged)' : 'excluded'}; ambiguous: ${settings.includeReview ? 'included (flagged)' : 'excluded'}`,
@@ -1294,6 +1335,7 @@
       `Manual missing-building footprints: ${state.manualBuildings.length} (reviewer supplied)`,
       `Accepted shared corrections applied: ${state.correctionsApplied || 0}`,
       `Rav-validated enclosure perimeter: ${state.validatedPerimeter ? (settings.useValidatedPerimeter ? 'ACTIVE as city edge' : 'stored but inactive') : 'none'}`,
+      `Rav-validated residential joining perimeters: ${state.validatedJoinPerimeters.length} (join geometry only; each counts as zero houses)`,
       `Manual overrides: ${state.overrides.size}${state.overrides.size ? ' [' + [...state.overrides.entries()].map(([id, v]) => id + ':' + v).join(', ') + ']' : ''}`,
       `Search frontier closed: ${state.dataCapHit ? 'NO — data cap hit, chain may continue; techum is an inner bound in those directions' : 'yes'}`,
       `Projection: local true-north tangent plane @ pin (per-point lon scaling)`,
@@ -1320,15 +1362,22 @@
         ' — the map is unchanged, techum is current.');
       return;
     }
-    const oldTechum = state.result && state.result.techumCorners;
+    const resultRegions = (result) => result && result.techumCorners
+      ? (result.techumRegions && result.techumRegions.length ? result.techumRegions : [result.techumCorners]) : [];
+    const oldTechum = resultRegions(state.result);
     const oldFetchedAt = state.fetchedAt;
     setStatus(`${n} building edit(s) since your data date — refetching fresh…`);
     await calculate(true);
-    const newTechum = state.result && state.result.techumCorners;
-    if (oldTechum && newTechum && oldTechum.length === newTechum.length) {
-      let maxD = 0;
-      for (let i = 0; i < newTechum.length; i++) {
-        maxD = Math.max(maxD, Math.hypot(newTechum[i].x - oldTechum[i].x, newTechum[i].y - oldTechum[i].y));
+    const newTechum = resultRegions(state.result);
+    if (oldTechum.length && newTechum.length) {
+      let maxD = oldTechum.length === newTechum.length ? 0 : Infinity;
+      if (Number.isFinite(maxD)) for (let region = 0; region < newTechum.length; region++) {
+        if (oldTechum[region].length !== newTechum[region].length) { maxD = Infinity; break; }
+        for (let i = 0; i < newTechum[region].length; i++) {
+          maxD = Math.max(maxD, Math.hypot(
+            newTechum[region][i].x - oldTechum[region][i].x,
+            newTechum[region][i].y - oldTechum[region][i].y));
+        }
       }
       setStatus(`Map updated (${n} edits since ${new Date(oldFetchedAt).toLocaleDateString()}). ` +
         (maxD < 0.5
@@ -1351,6 +1400,7 @@
       settings, overrides: [...state.overrides.entries()],
       rawBuildings: state.rawBuildings, manualBuildings: state.manualBuildings,
       validatedPerimeter: state.validatedPerimeter,
+      validatedJoinPerimeters: state.validatedJoinPerimeters,
     };
     K.download('techum-snapshot.json', JSON.stringify(snap), 'application/json');
     track('snapshot', { action: 'save' });
@@ -1373,6 +1423,7 @@
     state.dataCapHit = !!snap.dataCapHit; state.rawBuildings = snap.rawBuildings;
     state.manualBuildings = snap.manualBuildings || []; state.overrides = new Map(snap.overrides || []);
     state.validatedPerimeter = snap.validatedPerimeter || null;
+    state.validatedJoinPerimeters = snap.validatedJoinPerimeters || [];
     settings = { ...S.DEFAULTS, ...snap.settings }; S.save(settings);
     state.proj = G.makeProjection(state.pin.lat, state.pin.lon); setPin(state.pin.lat, state.pin.lon);
     map.setView([state.pin.lat, state.pin.lon], 15); prepareBuildings(); recompute();
@@ -1407,23 +1458,21 @@
     const res = state.result;
     if (!res) { setStatus('Calculate a techum before exporting KML.'); return; }
     const toPath = (corners) => corners && cornersToLatLngs(corners).map(([lat, lon]) => ({ lat, lon }));
+    const toPaths = (regions) => (regions || []).map(toPath).filter(Boolean);
     let second = null;
+    let secondRegions = [];
     if (settings.secondAmahCm && settings.secondAmahCm !== settings.amahCm) {
-      const res2 = G.runPipeline(state.buildings, {
-        amahM: settings.secondAmahCm / 100, karpef: settings.karpef,
-        minCityHouses: settings.minCityHouses, overlapMerge: settings.overlapMerge,
-        squaringAngleDeg: settings.squaringAngleDeg,
-        cityQualificationOverrides: settings.cityQualificationOverrides || {}, concavityReviews: settings.concavityReviews || {},
-        validatedCityPerimeter: projectedValidatedPerimeter(),
-      }, state.proj.toXY(state.pin.lat, state.pin.lon));
+      const res2 = G.runPipeline(state.buildings, geometrySettings(settings.secondAmahCm), state.proj.toXY(state.pin.lat, state.pin.lon));
       second = toPath(res2.techumCorners);
+      secondRegions = toPaths(res2.techumRegions);
     }
     const kml = K.buildKML({
       pin: state.pin,
       techum: toPath(res.techumCorners),
       city: toPath(res.cityCorners),
       karpef: toPath(res.karpefCorners),
-      second,
+      techumRegions: toPaths(res.techumRegions), cityRegions: toPaths(res.cityRegions),
+      karpefRegions: toPaths(res.karpefRegions), second, secondRegions,
       ...exportAuditLayers(res, toPath),
     }, configText());
     K.download('techum-draft.kml', kml);
@@ -1441,8 +1490,10 @@
         .addTo(layerGroups.perimeter);
     }
     const toPath = (corners) => corners && cornersToLatLngs(corners).map(([lat, lon]) => ({ lat, lon }));
+    const toPaths = (regions) => (regions || []).map(toPath).filter(Boolean);
     const fc = K.buildGeoJSON({
       pin: state.pin, techum: toPath(res.techumCorners), city: toPath(res.cityCorners), karpef: toPath(res.karpefCorners),
+      techumRegions: toPaths(res.techumRegions), cityRegions: toPaths(res.cityRegions), karpefRegions: toPaths(res.karpefRegions),
       ...exportAuditLayers(res, toPath),
     }, { config: configText(), dataConfidence: D.computeDataConfidence(state.buildings) });
     K.download('techum-draft.geojson', JSON.stringify(fc, null, 2), 'application/geo+json');
@@ -1453,9 +1504,11 @@
     const res = state.result;
     if (!res) { setStatus('Calculate a techum before exporting KMZ.'); return; }
     const toPath = (corners) => corners && cornersToLatLngs(corners).map(([lat, lon]) => ({ lat, lon }));
+    const toPaths = (regions) => (regions || []).map(toPath).filter(Boolean);
     const kml = K.buildKML({
       pin: state.pin, techum: toPath(res.techumCorners), city: toPath(res.cityCorners),
-      karpef: toPath(res.karpefCorners), ...exportAuditLayers(res, toPath),
+      karpef: toPath(res.karpefCorners), techumRegions: toPaths(res.techumRegions),
+      cityRegions: toPaths(res.cityRegions), karpefRegions: toPaths(res.karpefRegions), ...exportAuditLayers(res, toPath),
     }, configText());
     downloadBlob('techum-draft.kmz', new Blob([K.buildKMZ(kml)], { type: 'application/vnd.google-earth.kmz' }));
     track('export', { format: 'kmz' });
@@ -1469,7 +1522,7 @@
     const settlements = res.clusters.map((c) => toPath(c.corners));
     const auditLines = (res.concavityAudit || []).filter((a) => a.reviewerEndpoints).map((a) => ({
       name: `Recorded bow endpoints (${a.reviewKey})`, kind: 'threshold',
-      description: 'Recorded for rav review; not applied to the calculated boundary.',
+      description: `Reviewer endpoints; status: ${a.reviewStatus}; applied to boundary: ${a.appliedToBoundary ? 'yes' : 'no'}.`,
       path: a.reviewerEndpoints.map((p) => { const ll = state.proj.toLatLon(p.x, p.y); return { lat: ll.lat, lon: ll.lon }; }),
     }));
     return { buildings, settlements, auditLines };
@@ -1575,7 +1628,9 @@
       $('karpef').checked = settings.karpef;
       $('sq-angle').value = settings.squaringAngleDeg;
       $('point-angle').value = settings.pointRotationDeg;
-      $('overlap').checked = settings.overlapMerge;
+      $('overlap').value = settings.overlapPolicy;
+      $('large-hole-policy').value = settings.largeHolePolicy;
+      $('bow-policy').value = settings.bowPolicy;
       $('inc-unknown').checked = settings.includeUnknown;
       $('inc-review').checked = settings.includeReview;
       $('min-size').checked = settings.minSizeFilter;
@@ -1597,7 +1652,9 @@
     $('karpef').addEventListener('change', (e) => { settings.karpef = e.target.checked; refreshInputs(); onChange(); });
     $('sq-angle').addEventListener('change', (e) => { settings.squaringAngleDeg = parseFloat(e.target.value) || 0; refreshInputs(); onChange(); });
     $('point-angle').addEventListener('change', (e) => { settings.pointRotationDeg = parseFloat(e.target.value) || 0; refreshInputs(); onChange(); });
-    $('overlap').addEventListener('change', (e) => { settings.overlapMerge = e.target.checked; refreshInputs(); onChange(); });
+    $('overlap').addEventListener('change', (e) => { settings.overlapPolicy = e.target.value; refreshInputs(); onChange(); });
+    $('large-hole-policy').addEventListener('change', (e) => { settings.largeHolePolicy = e.target.value; refreshInputs(); onChange(); });
+    $('bow-policy').addEventListener('change', (e) => { settings.bowPolicy = e.target.value; refreshInputs(); onChange(); });
     $('inc-unknown').addEventListener('change', (e) => { settings.includeUnknown = e.target.checked; onChange(); });
     $('inc-review').addEventListener('change', (e) => { settings.includeReview = e.target.checked; onChange(); });
     $('min-size').addEventListener('change', (e) => { settings.minSizeFilter = e.target.checked; onChange(); });
@@ -1651,6 +1708,7 @@
     document.getElementById('btn-draw-rectangle').addEventListener('click', () => startDrawing('rectangle'));
     document.getElementById('btn-draw-building').addEventListener('click', () => startDrawing('polygon'));
     document.getElementById('btn-draw-perimeter').addEventListener('click', () => startDrawing('enclosure'));
+    document.getElementById('btn-draw-join-perimeter').addEventListener('click', () => startDrawing('join-perimeter'));
     document.getElementById('btn-finish-building').addEventListener('click', () => void finishDrawing());
     document.getElementById('btn-cancel-map-mode').addEventListener('click', () => cancelMapMode());
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (drawing || bowCapture)) cancelMapMode(); });
@@ -1666,10 +1724,19 @@
     document.getElementById('perimeter-file').addEventListener('change', (e) => {
       if (e.target.files && e.target.files[0]) importValidatedPerimeter(e.target.files[0]); e.target.value = '';
     });
+    document.getElementById('btn-import-join-perimeter').addEventListener('click', () => document.getElementById('join-perimeter-file').click());
+    document.getElementById('join-perimeter-file').addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) importValidatedJoinPerimeters(e.target.files[0]); e.target.value = '';
+    });
     document.getElementById('btn-clear-perimeter').addEventListener('click', () => {
       state.validatedPerimeter = null; settings.useValidatedPerimeter = false; S.save(settings);
       document.getElementById('use-perimeter').checked = false; if (state.result) recompute();
       setStatus('Validated perimeter cleared.');
+    });
+    document.getElementById('btn-clear-join-perimeters').addEventListener('click', () => {
+      if (state.validatedJoinPerimeters.length && !confirm('Remove all rav-validated joining perimeters?')) return;
+      state.validatedJoinPerimeters = []; prepareBuildings(); recompute();
+      setStatus('Validated joining perimeters cleared.');
     });
     document.getElementById('btn-clear-manual').addEventListener('click', () => {
       if (state.manualBuildings.length && !confirm('Remove all manually drawn and imported footprints?')) return;

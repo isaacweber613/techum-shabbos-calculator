@@ -48,10 +48,15 @@
     if (layers.pin) {
       parts.push(`  <Placemark><name>Shevisa point</name><Point><coordinates>${layers.pin.lon},${layers.pin.lat},0</coordinates></Point></Placemark>`);
     }
-    if (layers.city) parts.push(polygonPlacemark('City rectangle (ribua ha’ir)', layers.city, 'city'));
-    if (layers.karpef) parts.push(polygonPlacemark('Karpef (+70⅔ amos)', layers.karpef, 'karpef'));
-    if (layers.techum) parts.push(polygonPlacemark('TECHUM boundary (2000 amos)', layers.techum, 'techum'));
-    if (layers.second) parts.push(polygonPlacemark('Comparison shita techum', layers.second, 'second'));
+    const addRegions = (regions, fallback, name, styleId) => {
+      const paths = Array.isArray(regions) && regions.length ? regions : fallback ? [fallback] : [];
+      paths.forEach((path, index) => parts.push(polygonPlacemark(
+        paths.length > 1 ? `${name} — region ${index + 1} of ${paths.length}` : name, path, styleId)));
+    };
+    addRegions(layers.cityRegions, layers.city, 'City starting area (ribua ha’ir)', 'city');
+    addRegions(layers.karpefRegions, layers.karpef, 'Karpef (+70⅔ amos)', 'karpef');
+    addRegions(layers.techumRegions, layers.techum, 'TECHUM boundary (2000 amos)', 'techum');
+    addRegions(layers.secondRegions, layers.second, 'Comparison shita techum', 'second');
     for (const [i, path] of (layers.buildings || []).entries())
       parts.push(polygonPlacemark(`Mapped building ${i + 1}`, path, 'building'));
     for (const [i, path] of (layers.settlements || []).entries())
@@ -81,10 +86,14 @@
       type: 'Feature', properties: { layer: 'shevisa-point' },
       geometry: { type: 'Point', coordinates: [layers.pin.lon, layers.pin.lat] },
     });
-    polygon(layers.techum, { layer: 'techum', draft: true });
-    polygon(layers.city, { layer: 'city-ribua' });
-    polygon(layers.karpef, { layer: 'karpef' });
-    polygon(layers.second, { layer: 'comparison-techum' });
+    const polygonRegions = (regions, fallback, properties) => {
+      const paths = Array.isArray(regions) && regions.length ? regions : fallback ? [fallback] : [];
+      paths.forEach((path, index) => polygon(path, { ...properties, region: index + 1, regionCount: paths.length }));
+    };
+    polygonRegions(layers.techumRegions, layers.techum, { layer: 'techum', draft: true });
+    polygonRegions(layers.cityRegions, layers.city, { layer: 'city-ribua' });
+    polygonRegions(layers.karpefRegions, layers.karpef, { layer: 'karpef' });
+    polygonRegions(layers.secondRegions, layers.second, { layer: 'comparison-techum' });
     (layers.buildings || []).forEach((path, i) => polygon(path, { layer: 'mapped-building', index: i + 1 }));
     (layers.settlements || []).forEach((path, i) => polygon(path, { layer: 'derived-settlement', index: i + 1 }));
     (layers.auditLines || []).forEach((item, i) => line(item.path || item, {

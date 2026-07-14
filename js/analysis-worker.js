@@ -1,7 +1,7 @@
 /* Runs the pure halachic geometry engine away from the browser's UI thread. */
 'use strict';
 
-importScripts('geometry.js');
+importScripts('geometry.js?v=20260714-1');
 
 self.onmessage = (event) => {
   const { id, buildings, settings, pin } = event.data || {};

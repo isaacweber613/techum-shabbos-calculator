@@ -103,8 +103,26 @@
           <input id="sq-angle" type="number" step="1" min="-89" max="89" value="0" /></label>
         <label>Open-field square rotation (angle°) <small>Used only for point shevisa. 0 = cardinal directions; change only with rabbinic direction.</small>
           <input id="point-angle" type="number" step="1" min="-89" max="89" value="0" /></label>
-        <label class="check"><input id="overlap" type="checkbox" />
-          Merge overlapping city rectangles <small>(Chazon Ish; off = strict, R' S. Miller)</small></label>
+        <label>Overlapping city rectangles <small>The ordinary default keeps unrelated cities separate. The middle option produces a stepped union without redrawing one large rectangle.</small>
+          <select id="overlap">
+            <option value="no-join">Do not join — default (R' Elyashiv / R' N. Karelitz / R' Belsky)</option>
+            <option value="join-no-redraw">Join, keep original rectangles (R' Shlomo Miller)</option>
+            <option value="join-redraw">Join and repeatedly redraw one rectangle (expansive approach)</option>
+          </select>
+        </label>
+        <label>Large enclosed empty areas <small>Applies only when a wholly surrounded void is at least 4,000 amos in both governing directions.</small>
+          <select id="large-hole-policy">
+            <option value="include-with-warning">Include, with mandatory warning — default</option>
+            <option value="exclude">Exclude (Zichron Yosef / R' Pesach Falk)</option>
+          </select>
+        </label>
+        <label>Bow / L-shaped city rule <small>Real-city endpoints remain a reviewer fact. Until confirmed, the app draws the smaller no-fill result.</small>
+          <select id="bow-policy">
+            <option value="rema-majority">Rema / Tosafos / Rosh majority — default</option>
+            <option value="mechaber-curve">Mechaber / Rambam curved remainder</option>
+            <option value="emergency-fill">Rashba / Ritva extenuating-circumstances fill</option>
+          </select>
+        </label>
         <p class="fixed-rule"><b>City threshold: 6 houses.</b> This is a fixed rule (MB 398:38), not a user setting.</p>
       </details>
 
@@ -199,6 +217,14 @@
         <input id="perimeter-file" type="file" accept=".json,.geojson,application/geo+json" hidden />
         <label class="check"><input id="use-perimeter" type="checkbox" /> Use validated perimeter as the city edge</label>
         <button id="btn-clear-perimeter">Clear validated perimeter</button>
+        <hr />
+        <p class="muted"><b>Validated residential yard / subsidiary perimeter:</b> this participates in the 70⅔- and 141⅓-amah wall-to-wall geometry but never counts as another house. Use only after a rav confirms the connection to a dwelling and <i>hukaf l'dirah</i> facts.</p>
+        <div class="row">
+          <button id="btn-draw-join-perimeter">Draw joining perimeter</button>
+          <button id="btn-import-join-perimeter">Import joining GeoJSON</button>
+        </div>
+        <input id="join-perimeter-file" type="file" accept=".json,.geojson,application/geo+json" hidden />
+        <button id="btn-clear-join-perimeters">Clear joining perimeters</button>
       </details>
       <div class="row exports">
         <button id="btn-pdf">Export PDF</button>
@@ -226,11 +252,11 @@
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script src="js/track.js"></script>
-  <script src="js/geometry.js"></script>
+  <script src="js/geometry.js?v=20260714-1"></script>
   <script src="js/data.js?v=20260713-2"></script>
-  <script src="js/settings.js"></script>
-  <script src="js/kml.js"></script>
-  <script src="js/main.js?v=20260713-3"></script>
+  <script src="js/settings.js?v=20260714-1"></script>
+  <script src="js/kml.js?v=20260714-1"></script>
+  <script src="js/main.js?v=20260714-1"></script>
   <script src="js/design-experience.js?v=20260713-3"></script>
 </body>
 </html>

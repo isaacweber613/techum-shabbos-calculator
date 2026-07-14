@@ -344,9 +344,10 @@
         }
       }
       const decision = typeof record === 'boolean' ? record : record && typeof record.decision === 'boolean' ? record.decision : null;
+      cluster.houseCount = cluster.members.reduce((count, index) => count + (buildings[index].joinOnly ? 0 : 1), 0);
       cluster.qualifiesAsCity = typeof decision === 'boolean'
         ? decision
-        : cluster.members.length >= minCityHouses;
+        : cluster.houseCount >= minCityHouses;
       cluster.qualificationSource = typeof decision === 'boolean' ? (remapScore == null ? 'reviewer' : 'reviewer-remapped') : 'footprint-count';
       cluster.qualificationRemapScore = remapScore;
       cluster.componentKeys = [cluster.key];
@@ -432,6 +433,28 @@
     }
     return best;
   }
+  function trapezoidAxis(points) {
+    const hull = convexHull(points);
+    if (hull.length !== 4) return null;
+    const edgeAngle = (index) => Math.atan2(
+      hull[(index + 1) % 4].y - hull[index].y,
+      hull[(index + 1) % 4].x - hull[index].x);
+    const parallelDelta = (a, b) => {
+      let delta = Math.abs(a - b) % Math.PI;
+      if (delta > Math.PI / 2) delta = Math.PI - delta;
+      return delta;
+    };
+    const tolerance = Math.PI / 180; // engineering classifier; exact law has no numeric tolerance
+    const pairs = [[0, 2], [1, 3]].filter(([a, b]) => parallelDelta(edgeAngle(a), edgeAngle(b)) <= tolerance);
+    if (!pairs.length) return null;
+    const pair = pairs.sort((left, right) => {
+      const length = ([index]) => Math.hypot(
+        hull[(index + 1) % 4].x - hull[index].x,
+        hull[(index + 1) % 4].y - hull[index].y);
+      return length(right) - length(left);
+    })[0];
+    return normalizeRectAngle(edgeAngle(pair[0]));
+  }
   function deriveSquaring(points, options) {
     const opts = options || {};
     if (opts.reviewerAngleApplied) {
@@ -446,7 +469,80 @@
     if (min && rectangularity >= 0.94) {
       return { method: 'preserved-rectangle', angleRad: min.angleRad, rect: min.rect, rectangularity };
     }
+    const trapezoidAngle = trapezoidAxis(points);
+    if (trapezoidAngle != null) {
+      const rect = bboxOfRing(points.map((point) => toOrientedFrame(point, trapezoidAngle)));
+      return { method: 'trapezoid-extended', angleRad: trapezoidAngle, rect, rectangularity };
+    }
     return { method: 'world-aligned', angleRad: 0, rect: bboxOfRing(points), rectangularity };
+  }
+
+  function rectIntersection(a, b) {
+    const out = {
+      minX: Math.max(a.minX, b.minX), maxX: Math.min(a.maxX, b.maxX),
+      minY: Math.max(a.minY, b.minY), maxY: Math.min(a.maxY, b.maxY),
+    };
+    return out.minX < out.maxX && out.minY < out.maxY ? out : null;
+  }
+
+  // Subtract one axis-aligned review mask from a ribua. The non-overlapping pieces
+  // are exact rectangles, so karpef and techum remain exact L-infinity expansions.
+  function subtractRect(rect, mask) {
+    const cut = rectIntersection(rect, mask);
+    if (!cut) return [{ ...rect }];
+    const pieces = [];
+    if (rect.minX < cut.minX) pieces.push({ minX: rect.minX, maxX: cut.minX, minY: rect.minY, maxY: rect.maxY });
+    if (cut.maxX < rect.maxX) pieces.push({ minX: cut.maxX, maxX: rect.maxX, minY: rect.minY, maxY: rect.maxY });
+    if (rect.minY < cut.minY) pieces.push({ minX: cut.minX, maxX: cut.maxX, minY: rect.minY, maxY: cut.minY });
+    if (cut.maxY < rect.maxY) pieces.push({ minX: cut.minX, maxX: cut.maxX, minY: cut.maxY, maxY: rect.maxY });
+    return pieces.filter((p) => p.maxX > p.minX && p.maxY > p.minY);
+  }
+
+  function polygonSignedArea(ring) {
+    let twice = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      twice += a.x * b.y - b.x * a.y;
+    }
+    return twice / 2;
+  }
+
+  // Sutherland-Hodgman clipping. Every ribua/techum candidate is convex, so this
+  // gives the exact conservative common area when the pin lies only in the empty
+  // overlap of unrelated no-join cities.
+  function intersectConvexPolygons(subject, clip) {
+    if (!subject || subject.length < 3 || !clip || clip.length < 3) return [];
+    let output = subject.map((p) => ({ x: p.x, y: p.y }));
+    const sign = polygonSignedArea(clip) >= 0 ? 1 : -1;
+    const inside = (p, a, b) => sign * ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) >= -1e-8;
+    const intersection = (s, e, a, b) => {
+      const dx1 = e.x - s.x, dy1 = e.y - s.y, dx2 = b.x - a.x, dy2 = b.y - a.y;
+      const den = dx1 * dy2 - dy1 * dx2;
+      if (Math.abs(den) < 1e-12) return { x: e.x, y: e.y };
+      const t = ((a.x - s.x) * dy2 - (a.y - s.y) * dx2) / den;
+      return { x: s.x + t * dx1, y: s.y + t * dy1 };
+    };
+    for (let i = 0; i < clip.length && output.length; i++) {
+      const a = clip[i], b = clip[(i + 1) % clip.length], input = output;
+      output = [];
+      let s = input[input.length - 1];
+      for (const e of input) {
+        const eInside = inside(e, a, b), sInside = inside(s, a, b);
+        if (eInside) {
+          if (!sInside) output.push(intersection(s, e, a, b));
+          output.push(e);
+        } else if (sInside) output.push(intersection(s, e, a, b));
+        s = e;
+      }
+    }
+    return output;
+  }
+
+  function intersectPolygonSets(sets) {
+    if (!sets.length) return [];
+    return sets.slice(1).reduce((subjects, clips) => subjects.flatMap((subject) =>
+      clips.map((clip) => intersectConvexPolygons(subject, clip)).filter((ring) => ring.length >= 3)),
+    sets[0]);
   }
 
   function clusterGapIndexed(cA, cB, buildings, upperBound, buildingGrid) {
@@ -508,6 +604,7 @@
       const componentKeys = group.flatMap((cluster) => cluster.componentKeys);
       return {
         members,
+        houseCount: group.reduce((sum, cluster) => sum + (cluster.houseCount == null ? cluster.members.length : cluster.houseCount), 0),
         bbox: group.reduce((box, cluster) => bboxUnion(box, cluster.bbox), group[0].bbox),
         key: `merged:${componentKeys.slice().sort().join('|')}`,
         qualifiesAsCity: true,
@@ -580,6 +677,8 @@
               });
               const mergedCluster = {
                 members: A.members.concat(B.members, C.members),
+                houseCount: [A, B, C].reduce((sum, cluster) => sum +
+                  (cluster.houseCount == null ? cluster.members.length : cluster.houseCount), 0),
                 bbox: bboxUnion(bboxUnion(A.bbox, B.bbox), C.bbox),
                 key: `three:${A.componentKeys.concat(B.componentKeys, C.componentKeys).sort().join('|')}`,
                 qualifiesAsCity: true,
@@ -599,7 +698,7 @@
     return warnings;
   }
 
-  // ---------- Stage 4: concavity ("bow") heuristic — warning only ----------
+  // ---------- Stage 4: bow / enclosed-hole review geometry ----------
   // Grid over the city rect; cells covered = within JOIN of a building bbox. Empty
   // connected regions touching the rect border whose span >= 4000 amos raise a warning
   // (SA 398:3: a bow with endpoints >= 4000 amos apart is NOT simply filled).
@@ -644,24 +743,35 @@
         }
       }
       const spanX = (maxCX - minCX + 1) * cw, spanY = (maxCY - minCY + 1) * ch;
-      if (touchesBorder && Math.max(spanX, spanY) >= bow) {
-        const reviewKey = `concavity:${warnings.length}`;
+      const isLargeBow = touchesBorder && Math.max(spanX, spanY) >= bow;
+      const isLargeHole = !touchesBorder && spanX >= bow && spanY >= bow;
+      if (isLargeBow || isLargeHole) {
+        const region = {
+          minX: rect.minX + minCX * cw, maxX: rect.minX + (maxCX + 1) * cw,
+          minY: rect.minY + minCY * ch, maxY: rect.minY + (maxCY + 1) * ch,
+        };
+        const kind = isLargeHole ? 'hole' : 'bow';
+        const reviewKey = `${kind}:${[region.minX, region.minY, region.maxX, region.maxY]
+          .map((value) => Math.round(value / Math.max(1, join))).join(':')}`;
         const savedReview = settings.concavityReviews && settings.concavityReviews[reviewKey];
         const endpoints = savedReview && Array.isArray(savedReview.endpoints) &&
           savedReview.endpoints.length === 2 && savedReview.endpoints.every((p) =>
             p && Number.isFinite(p.x) && Number.isFinite(p.y))
           ? savedReview.endpoints.map((p) => ({ x: p.x, y: p.y }))
           : null;
+        const mouthM = Math.max(spanX, spanY), depthM = Math.min(spanX, spanY);
         warnings.push({
-          type: 'large-concavity',
+          type: isLargeHole ? 'large-interior-hole' : 'large-concavity',
+          shapeKind: kind,
           reviewKey,
           reviewerEndpoints: endpoints,
-          reviewStatus: endpoints ? 'endpoints-recorded-not-applied' : 'needs-endpoints',
-          text: 'Empty region spanning >= 4000 amos inside the squared rectangle — per SA 398:3 a bow this wide is NOT automatically filled. The rectangle shown may be too lenient here; REQUIRES a posek.',
-          region: {
-            minX: rect.minX + minCX * cw, maxX: rect.minX + (maxCX + 1) * cw,
-            minY: rect.minY + minCY * ch, maxY: rect.minY + (maxCY + 1) * ch,
-          },
+          reviewStatus: isLargeHole ? 'policy-applied' : endpoints ? 'endpoints-confirmed' : 'provisional-no-fill-needs-endpoints',
+          mouthM,
+          depthM,
+          text: isLargeHole
+            ? 'A wholly enclosed empty area is at least 4000 amos in both governing axes. The default includes it (Beit Yitzchok / R’ Shulem Weiss); the strict exclusion setting follows Zichron Yosef / R’ Pesach Falk.'
+            : 'A material bow/L pocket reaches 4000 amos. Until a reviewer confirms its endpoints, the app uses a provisional no-fill boundary instead of silently granting the pocket.',
+          region,
         });
       }
     }
@@ -669,272 +779,340 @@
   }
 
   // ---------- Full pipeline ----------
-  // buildings: [{ring:[{x,y}..], bbox, included, id, klass}]
-  // settings: { amahM, karpef, minCityHouses, overlapMerge, squaringAngleDeg }
-  // pin: {x, y}
+  // A result may contain several rectangular regions. This is required for the
+  // R' Shlomo Miller overlap approach and for a no-fill bow/L pocket; flattening
+  // those cases into one bounding rectangle would create an area no posek granted.
   function runPipeline(buildings, settings, pin) {
     const clock = () => typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-    const engineStarted = clock();
-    const stageTimings = {};
+    const engineStarted = clock(), stageTimings = {};
     let stageStarted = engineStarted;
-    const markStage = (name) => {
-      const ended = clock();
-      stageTimings[name] = ended - stageStarted;
-      stageStarted = ended;
-    };
+    const markStage = (name) => { const ended = clock(); stageTimings[name] = ended - stageStarted; stageStarted = ended; };
     const warnings = [];
-    const joinM = AMOS.JOIN * settings.amahM;
-    const t2 = AMOS.JOIN2 * settings.amahM;
-    const techumM = AMOS.TECHUM * settings.amahM;
-    const karpefM = AMOS.KARPEF * settings.amahM;
+    const joinM = AMOS.JOIN * settings.amahM, t2 = AMOS.JOIN2 * settings.amahM;
+    const techumM = AMOS.TECHUM * settings.amahM, karpefM = AMOS.KARPEF * settings.amahM;
+    const overlapPolicy = settings.overlapPolicy || (settings.overlapMerge ? 'join-redraw' : 'no-join');
+    const largeHolePolicy = settings.largeHolePolicy || 'include-with-warning';
+    const bowPolicy = settings.bowPolicy || 'rema-majority';
 
-    // Optional rotation for natural-edge squaring (CI OC 110:23): rotate the whole plane
-    // by -angle, compute axis-aligned everything, results are in rotated frame; the
-    // renderer rotates rect corners back.
     const angle = ((settings.squaringAngleDeg || 0) * Math.PI) / 180;
     const pointAngle = ((settings.pointRotationDeg || 0) * Math.PI) / 180;
-    const rot = (p) => angle === 0 ? p : ({
+    const rot = (p) => angle === 0 ? ({ x: p.x, y: p.y }) : ({
       x: p.x * Math.cos(-angle) - p.y * Math.sin(-angle),
       y: p.x * Math.sin(-angle) + p.y * Math.cos(-angle),
     });
-    const unrot = (p) => angle === 0 ? p : ({
+    const unrot = (p) => angle === 0 ? ({ x: p.x, y: p.y }) : ({
       x: p.x * Math.cos(angle) - p.y * Math.sin(angle),
       y: p.x * Math.sin(angle) + p.y * Math.cos(angle),
     });
-    let work = buildings;
-    let workPin = pin;
-    if (angle !== 0) {
-      work = buildings.map((b) => {
-        const ring = b.ring.map(rot);
-        return { ...b, ring, bbox: bboxOfRing(ring) };
-      });
-      workPin = rot(pin);
-    }
+    const work = angle === 0 ? buildings : buildings.map((building) => {
+      const ring = building.ring.map(rot); return { ...building, ring, bbox: bboxOfRing(ring) };
+    });
+    const workPin = rot(pin);
     markStage('rotation');
 
-    // Stage 1: ibur chains
     const labels = clusterBuildings(work, joinM);
     markStage('iburClustering');
     const clusters = buildClusters(work, labels);
     markStage('clusterAssembly');
     annotateCityQualification(clusters, work, settings.minCityHouses, settings.cityQualificationOverrides);
-    const qualificationAudit = clusters.map((c) => ({ key: c.key, members: [...c.members], memberIds: [...c.memberIds], bbox: { ...c.bbox },
-      qualifiesAsCity: c.qualifiesAsCity, qualificationSource: c.qualificationSource,
-      qualificationRemapScore: c.qualificationRemapScore }));
+    const qualificationAudit = clusters.map((cluster) => ({
+      key: cluster.key, members: [...cluster.members], memberIds: [...cluster.memberIds], bbox: { ...cluster.bbox },
+      houseCount: cluster.houseCount, qualifiesAsCity: cluster.qualifiesAsCity,
+      qualificationSource: cluster.qualificationSource, qualificationRemapScore: cluster.qualificationRemapScore,
+    }));
     markStage('cityQualification');
 
-    // Stage 2 + 3: settlement merges
-    const mergeNotes = mergeCities(clusters, work, t2, settings.minCityHouses);
-    for (const n of mergeNotes) {
-      warnings.push({ type: 'city-merge', text: `Two settlements merged (gap ${n.gapM.toFixed(1)} m <= 141 1/3 amos).` });
+    // 141⅓ and three-village mergers are applied to a fixed point. A three-village
+    // merger can create a settlement that now qualifies for another 141⅓ merger.
+    let changed = true, cityMergeMs = 0, threeVillagesMs = 0;
+    while (changed) {
+      const before = clusters.map((cluster) => cluster.componentKeys.slice().sort().join('|')).sort().join('::');
+      let substageStarted = clock();
+      for (const note of mergeCities(clusters, work, t2, settings.minCityHouses)) {
+        warnings.push({ type: 'city-merge', text: `Two settlements merged (gap ${note.gapM.toFixed(1)} m <= 141 1/3 amos).` });
+      }
+      cityMergeMs += clock() - substageStarted;
+      substageStarted = clock();
+      warnings.push(...threeVillages(clusters, work, settings));
+      threeVillagesMs += clock() - substageStarted;
+      const after = clusters.map((cluster) => cluster.componentKeys.slice().sort().join('|')).sort().join('::');
+      changed = before !== after;
     }
-    markStage('cityMerges');
-    warnings.push(...threeVillages(clusters, work, settings));
-    markStage('threeVillages');
+    stageTimings.cityMerges = cityMergeMs;
+    stageTimings.threeVillages = threeVillagesMs;
+    stageTimings.settlementMerges = cityMergeMs + threeVillagesMs;
+    stageStarted = clock();
 
     const squaringCache = new Map();
-    const clusterPoints = (cluster) => cluster.members.flatMap((i) => work[i].ring);
+    const clusterPoints = (cluster) => cluster.members.flatMap((index) => work[index].ring);
     const getClusterSquaring = (cluster) => {
-      if (!squaringCache.has(cluster)) {
-        squaringCache.set(cluster, deriveSquaring(clusterPoints(cluster), { reviewerAngleApplied: angle !== 0 }));
-      }
+      if (!squaringCache.has(cluster)) squaringCache.set(cluster,
+        deriveSquaring(clusterPoints(cluster), { reviewerAngleApplied: angle !== 0 }));
       return squaringCache.get(cluster);
     };
+    const cityModels = clusters.map((cluster, clusterIndex) => {
+      if (!cluster.qualifiesAsCity) return null;
+      const sq = getClusterSquaring(cluster);
+      return { cluster, clusterIndex, sq, ring: rectCornersInFrame(sq.rect, sq.angleRad) };
+    }).filter(Boolean);
 
-    // Locate the pin's cluster. Priority:
-    //  1. A settlement whose RECTANGLE contains the pin — being inside the squared city
-    //     bounds makes him a resident (whole city = 4 amos); among several containing
-    //     rectangles (hamlet inside a city's rect) take the largest settlement.
-    //  2. Otherwise the nearest settlement within 70 2/3 amos (iburah shel ir).
-    let home = -1, bestD = Infinity, bestContainSize = -1;
-    const pinRect = { minX: workPin.x, maxX: workPin.x, minY: workPin.y, maxY: workPin.y };
-    clusters.forEach((c, idx) => {
-      if (!c.qualifiesAsCity) return;
-      const sq = getClusterSquaring(c);
-      const squareRing = rectCornersInFrame(sq.rect, sq.angleRad);
-      if (!rectContains(bboxOfRing(squareRing), pinRect)) return;
-      const containsPin = pointInOrOnRing(workPin, squareRing);
-      if (containsPin && c.members.length > bestContainSize) {
-        bestContainSize = c.members.length;
-        home = idx; bestD = 0;
-      }
-    });
-    if (home < 0) {
-      clusters.forEach((c, idx) => {
-        if (!c.qualifiesAsCity) return;
-        if (bboxGap(expandRect(c.bbox, joinM), pinRect) > 0) return;
-        for (const i of c.members) {
-          const d = ringDistToPoint(workPin, work[i].ring);
-          if (d < bestD) { bestD = d; home = idx; }
+    const expandedModelRing = (model, distance) => rectCornersInFrame(expandRect(model.sq.rect, distance), model.sq.angleRad);
+    const overlapClosure = (seedIndex, policy) => {
+      const chosen = new Set([seedIndex]);
+      if (policy === 'no-join') return { indices: [seedIndex], redraw: null };
+      if (policy === 'join-no-redraw') {
+        const queue = [seedIndex];
+        while (queue.length) {
+          const current = cityModels[queue.shift()];
+          cityModels.forEach((candidate, index) => {
+            if (!chosen.has(index) && ringsOverlap(current.ring, candidate.ring)) { chosen.add(index); queue.push(index); }
+          });
         }
-      });
-    }
-    const validatedPerimeter = Array.isArray(settings.validatedCityPerimeter) && settings.validatedCityPerimeter.length >= 3
-      ? settings.validatedCityPerimeter.map(rot) : null;
-    const perimeterActive = !!(validatedPerimeter && pointInRing(workPin, validatedPerimeter));
-    // A footprint under the pin is the person's place of shevisa even when its
-    // cluster has fewer than the six houses required for independent city status.
-    // Choose the smallest containing included footprint so nested roof outlines do
-    // not accidentally promote a larger parent geometry.
+        return { indices: [...chosen].sort((a, b) => a - b), redraw: null };
+      }
+      let redraw = null, acted = true;
+      while (acted) {
+        const jointSquaring = deriveSquaring([...chosen].flatMap((index) =>
+          clusterPoints(cityModels[index].cluster)), { reviewerAngleApplied: angle !== 0 });
+        redraw = jointSquaring;
+        const redrawRing = rectCornersInFrame(redraw.rect, redraw.angleRad);
+        acted = false;
+        cityModels.forEach((candidate, index) => {
+          if (!chosen.has(index) && ringsOverlap(redrawRing, candidate.ring)) { chosen.add(index); acted = true; }
+        });
+      }
+      return { indices: [...chosen].sort((a, b) => a - b), redraw };
+    };
+    const closureMap = new Map();
+    cityModels.forEach((model, index) => {
+      const closure = overlapClosure(index, overlapPolicy), key = closure.indices.join(',');
+      if (!closureMap.has(key)) closureMap.set(key, closure);
+    });
+    const closures = [...closureMap.values()];
+    markStage('overlapClosures');
+
     let homeBuilding = -1, homeBuildingArea = Infinity;
     work.forEach((building, index) => {
-      if (!building.included || !pointInOrOnRing(workPin, building.ring)) return;
+      if (!building.included || building.joinOnly || !pointInOrOnRing(workPin, building.ring)) return;
       const area = Math.abs(ringArea(building.ring));
-      if (area < homeBuildingArea) {
-        homeBuilding = index;
-        homeBuildingArea = area;
-      }
+      if (area < homeBuildingArea) { homeBuilding = index; homeBuildingArea = area; }
     });
-    const mode = perimeterActive || (home >= 0 && bestD <= joinM)
-      ? 'city'
-      : homeBuilding >= 0 ? 'building' : 'point';
+    let physicalCityModel = -1;
+    if (homeBuilding >= 0) physicalCityModel = cityModels.findIndex((model) => model.cluster.members.includes(homeBuilding));
+
+    const closureStartingRings = (closure) => {
+      if (closure.redraw) return [rectCornersInFrame(
+        settings.karpef ? expandRect(closure.redraw.rect, karpefM) : closure.redraw.rect,
+        closure.redraw.angleRad)];
+      return closure.indices.map((index) => expandedModelRing(cityModels[index], settings.karpef ? karpefM : 0));
+    };
+    let selectedClosures = physicalCityModel >= 0
+      ? closures.filter((closure) => closure.indices.includes(physicalCityModel)).slice(0, 1)
+      : closures.filter((closure) => closureStartingRings(closure).some((ring) => pointInOrOnRing(workPin, ring)));
+
+    const validatedPerimeter = Array.isArray(settings.validatedCityPerimeter) && settings.validatedCityPerimeter.length >= 3
+      ? settings.validatedCityPerimeter.map(rot) : null;
+    const perimeterActive = !!(validatedPerimeter && pointInOrOnRing(workPin, validatedPerimeter));
+    const mode = perimeterActive || selectedClosures.length ? 'city' : homeBuilding >= 0 ? 'building' : 'point';
+    let home = selectedClosures.length === 1 ? cityModels[selectedClosures[0].indices[0]].clusterIndex : -1;
     markStage('homeSelection');
 
-    let cityRect = null, karpefRect = null, techumRect = null, concavity = [];
-    let boundaryAngleRad = 0;
-    let squaring = null;
-    if (mode === 'city') {
-      const cluster = perimeterActive ? { bbox: bboxOfRing(validatedPerimeter), members: [] } : clusters[home];
-      squaring = perimeterActive
-        ? deriveSquaring(validatedPerimeter, { reviewerAngleApplied: angle !== 0 })
-        : getClusterSquaring(cluster);
-      boundaryAngleRad = squaring.angleRad;
-      cityRect = { ...squaring.rect };                // ribua — SA 398:1-3
-      karpefRect = settings.karpef ? expandRect(cityRect, karpefM) : null; // MB 398:36
-      techumRect = expandRect(karpefRect || cityRect, techumM);            // SA 399, square corners
-      if (perimeterActive) {
-        concavity = [];
-      } else {
-        const framedWork = boundaryAngleRad === 0 ? work : work.map((b) => {
-          const ring = b.ring.map((p) => toOrientedFrame(p, boundaryAngleRad));
-          return { ...b, ring, bbox: bboxOfRing(ring) };
-        });
-        concavity = concavityWarnings({ ...cluster, bbox: cityRect }, framedWork, settings);
-      }
-      warnings.push(...concavity);
-      if (perimeterActive) warnings.push({ type: 'validated-perimeter', text: 'A reviewer-supplied validated enclosure is being used as the city edge. The app did not infer its hukaf-l\'dira status; confirm the supplied perimeter and ruling.' });
-
-      // Overlapping-squares machlokes (CI redraw vs R' S. Miller):
-      const otherRects = clusters
-        .map((c, i) => ({ c, i }))
-        .filter(({ c, i }) => i !== home && c.qualifiesAsCity)
-        .map(({ c, i }) => {
-          const otherSq = getClusterSquaring(c);
-          const expanded = settings.karpef ? expandRect(otherSq.rect, karpefM) : otherSq.rect;
-          const ring = rectCornersInFrame(expanded, otherSq.angleRad)
-            .map((p) => toOrientedFrame(p, boundaryAngleRad));
-          const cityRing = rectCornersInFrame(otherSq.rect, otherSq.angleRad)
-            .map((p) => toOrientedFrame(p, boundaryAngleRad));
-          return { i, ring, cityRing,
-            size: c.members.length, qualifiesAsCity: c.qualifiesAsCity };
-        });
-      for (const o of otherRects) {
-        if (ringsOverlap(rectCornersInFrame(karpefRect || cityRect, 0), o.ring)) {
-          if (settings.overlapMerge) {
-            cityRect = bboxUnion(cityRect, bboxOfRing(o.cityRing));
-            cluster.members = [...new Set(cluster.members.concat(clusters[o.i].members))];
-            karpefRect = settings.karpef ? expandRect(cityRect, karpefM) : null;
-            techumRect = expandRect(karpefRect || cityRect, techumM);
-            warnings.push({ type: 'overlap-merge', text: 'City rectangles overlap — joint rectangle redrawn and both settlements included in the audit count (Chazon Ish approach). Disputed (R’ S. Miller); REVIEW.' });
-          } else {
-            warnings.push({ type: 'overlap-detected', text: 'Another city’s rectangle overlaps this one. The Chazon Ish approach would redraw a joint larger rectangle (setting is OFF = strict). Ask a posek.' });
+    let squaring = null, cityPolygons = [], karpefPolygons = [], techumPolygons = [], mil12Polygons = [];
+    const concavity = [];
+    const regionDefToRing = (def, expansion) => rectCornersInFrame(expandRect(def.rect, expansion || 0), def.angleRad);
+    const applyShapeRules = (defs, sourceCluster, sourceAngle) => {
+      if (!sourceCluster || !sourceCluster.members.length) return defs;
+      const framedBuildings = work.map((building) => {
+        const ring = building.ring.map((point) => toOrientedFrame(point, sourceAngle));
+        return { ...building, ring, bbox: bboxOfRing(ring) };
+      });
+      const sourceRect = defs.length === 1 && defs[0].angleRad === sourceAngle ? defs[0].rect
+        : bboxOfRing(defs.flatMap((def) => regionDefToRing(def, 0)).map((point) => toOrientedFrame(point, sourceAngle)));
+      const found = concavityWarnings({ ...sourceCluster, bbox: sourceRect }, framedBuildings, {
+        ...settings, concavityReviews: {},
+      });
+      let pieces = [{ rect: sourceRect, angleRad: sourceAngle }];
+      for (const warning of found) {
+        const saved = settings.concavityReviews && settings.concavityReviews[warning.reviewKey];
+        const endpoints = saved && Array.isArray(saved.endpoints) && saved.endpoints.length === 2
+          ? saved.endpoints.map((point) => toOrientedFrame(rot(point), sourceAngle)) : null;
+        warning.reviewerEndpoints = endpoints;
+        let exclude = false;
+        if (warning.shapeKind === 'hole') {
+          exclude = largeHolePolicy === 'exclude';
+          warning.reviewStatus = exclude ? 'strict-exclusion-applied' : 'included-with-warning';
+          warning.text = exclude
+            ? 'A wholly enclosed >=4000-by-4000-amah void is excluded under the selected Zichron Yosef / R’ Pesach Falk setting.'
+            : warning.text;
+        } else {
+          const chordM = endpoints ? Math.hypot(endpoints[1].x - endpoints[0].x, endpoints[1].y - endpoints[0].y) : null;
+          let depthM = warning.depthM;
+          if (endpoints) {
+            const [a, b] = endpoints, chord = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+            // Depth belongs to the detected empty bow/L pocket, not to the full
+            // inhabited city behind its chord. Measuring every dwelling would
+            // overstate the depth whenever the city extends far inland.
+            depthM = Math.max(...rectCornersInFrame(warning.region, 0)
+              .map((point) => Math.abs((b.x - a.x) * (a.y - point.y) - (a.x - point.x) * (b.y - a.y)) / chord));
           }
+          const fillByRema = endpoints && (chordM < AMOS.BOW * settings.amahM || depthM < techumM);
+          const fillByMechaber = endpoints && chordM < AMOS.BOW * settings.amahM;
+          const fill = bowPolicy === 'emergency-fill' ? !!endpoints
+            : bowPolicy === 'mechaber-curve' ? fillByMechaber : fillByRema;
+          exclude = !fill;
+          warning.chordM = chordM; warning.depthM = depthM;
+          warning.reviewStatus = endpoints ? (fill ? 'reviewed-fill-applied' : 'reviewed-no-fill-applied')
+            : 'provisional-no-fill-needs-endpoints';
+          warning.text = endpoints
+            ? `Reviewer endpoints applied: chord ${chordM.toFixed(1)} m; depth ${depthM.toFixed(1)} m. ${fill ? 'The pocket is filled under the selected bow rule.' : 'The >=4000-amah pocket remains unfilled.'}`
+            : warning.text;
         }
+        warning.appliedToBoundary = exclude;
+        warning.frameAngleRad = sourceAngle;
+        concavity.push(warning);
+        if (exclude) pieces = pieces.flatMap((piece) => subtractRect(piece.rect, warning.region)
+          .map((rect) => ({ rect, angleRad: sourceAngle })));
       }
-      // Ir mubla'as: another settlement fully inside the techum counts as 4 amos — the
-      // techum may effectively extend beyond the line on that side (SA 408). Warn only.
-      for (const o of otherRects) {
-        if (ringContainsRing(rectCornersInFrame(techumRect, 0), o.ring)) {
-          warnings.push({ type: 'ir-mublaas', text: 'A settlement lies entirely inside the techum: it counts as 4 amos, so one may effectively continue beyond the line on that side (ir mubla’as). Not drawn; ask a rav.' });
-        }
-      }
-    } else if (mode === 'building') {
-      // A lone/sub-city qualifying building is measured from its own walls. It is
-      // not promoted to a city and receives no city karpef.
-      squaring = deriveSquaring(work[homeBuilding].ring, { reviewerAngleApplied: angle !== 0 });
-      boundaryAngleRad = squaring.angleRad;
-      cityRect = { ...squaring.rect };
-      techumRect = expandRect(cityRect, techumM);
-      warnings.push({
-        type: 'building-mode',
-        text: 'No qualifying city joins this footprint. The techum is measured from the mapped building walls; confirm the footprint and that this structure qualifies as a place of dwelling.',
-      });
-    } else {
-      // Person in an open field: 4 amos + 2000 each direction, square, rotatable (SA 397:1; 399)
-      const half = 2 * settings.amahM; // half of 4 amos
-      const base = { minX: workPin.x - half, maxX: workPin.x + half, minY: workPin.y - half, maxY: workPin.y + half };
-      techumRect = expandRect(base, techumM);
-      cityRect = base;
-      squaring = { method: pointAngle === 0 ? 'world-aligned-point' : 'reviewer-angle-point', angleRad: 0, rectangularity: null };
-      warnings.push({ type: 'point-mode', text: 'No settlement found joining this point (within 70 2/3 amos) — treated as shevisa in an open field: 4 amos + 2000-amos square. The square may be rotated (settings).' });
-    }
-    markStage('boundaryAndWarnings');
-
-    const rectToCorners = (r, localAngleRad) => r == null ? null
-      : rectCornersInFrame(r, localAngleRad || 0).map(unrot);
-    const rotatePointCorners = (corners) => {
-      if (mode !== 'point' || pointAngle === 0 || !corners) return corners;
-      const center = unrot(workPin);
-      return corners.map((p) => {
-        const dx = p.x - center.x, dy = p.y - center.y;
-        return {
-          x: center.x + dx * Math.cos(pointAngle) - dy * Math.sin(pointAngle),
-          y: center.y + dx * Math.sin(pointAngle) + dy * Math.cos(pointAngle),
-        };
-      });
+      return pieces;
     };
 
-    const cityCorners = rotatePointCorners(rectToCorners(cityRect, boundaryAngleRad));
-    const techumCorners = rotatePointCorners(rectToCorners(techumRect, boundaryAngleRad));
-    const mil12Corners = rotatePointCorners(mode !== 'point'
-      ? rectToCorners(expandRect(karpefRect || cityRect, AMOS.MIL12 * settings.amahM), boundaryAngleRad)
-      : rectToCorners(expandRect(cityRect, AMOS.MIL12 * settings.amahM)));
+    if (mode === 'city' && perimeterActive) {
+      squaring = deriveSquaring(validatedPerimeter, { reviewerAngleApplied: angle !== 0 });
+      const defs = [{ rect: squaring.rect, angleRad: squaring.angleRad }];
+      cityPolygons = defs.map((def) => regionDefToRing(def, 0));
+      karpefPolygons = settings.karpef ? defs.map((def) => regionDefToRing(def, karpefM)) : [];
+      techumPolygons = defs.map((def) => regionDefToRing(def, techumM + (settings.karpef ? karpefM : 0)));
+      mil12Polygons = defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0)));
+      warnings.push({ type: 'validated-perimeter', text: 'A reviewer-supplied validated enclosure is being used as the city edge. The app did not infer its hukaf-l\'dira status; confirm the supplied perimeter and ruling.' });
+    } else if (mode === 'city') {
+      const buildClosureBoundary = (closure) => {
+        let defs;
+        if (closure.redraw) {
+          const members = closure.indices.flatMap((index) => cityModels[index].cluster.members);
+          const combined = { members, bbox: closure.redraw.rect };
+          defs = applyShapeRules([{ rect: closure.redraw.rect, angleRad: closure.redraw.angleRad }], combined, closure.redraw.angleRad);
+        } else {
+          defs = closure.indices.flatMap((index) => {
+            const model = cityModels[index];
+            return applyShapeRules([{ rect: model.sq.rect, angleRad: model.sq.angleRad }], model.cluster, model.sq.angleRad);
+          });
+        }
+        return {
+          defs,
+          city: defs.map((def) => regionDefToRing(def, 0)),
+          karpef: settings.karpef ? defs.map((def) => regionDefToRing(def, karpefM)) : [],
+          techum: defs.map((def) => regionDefToRing(def, techumM + (settings.karpef ? karpefM : 0))),
+          mil12: defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0))),
+        };
+      };
+      const boundaries = selectedClosures.map(buildClosureBoundary);
+      if (boundaries.length > 1 && overlapPolicy === 'no-join' && physicalCityModel < 0) {
+        cityPolygons = intersectPolygonSets(boundaries.map((boundary) => boundary.city));
+        karpefPolygons = settings.karpef ? intersectPolygonSets(boundaries.map((boundary) => boundary.karpef)) : [];
+        techumPolygons = intersectPolygonSets(boundaries.map((boundary) => boundary.techum));
+        mil12Polygons = intersectPolygonSets(boundaries.map((boundary) => boundary.mil12));
+        warnings.push({ type: 'multiple-home-candidates', text: 'The pin lies only in the empty overlap of unrelated no-join city squares. The displayed boundary is the conservative common area of every candidate; a rav must identify the governing city for a larger result.' });
+        squaring = { method: 'candidate-intersection', angleRad: 0, rectangularity: null };
+      } else {
+        const boundary = boundaries[0];
+        cityPolygons = boundary.city; karpefPolygons = boundary.karpef;
+        techumPolygons = boundary.techum; mil12Polygons = boundary.mil12;
+        const primary = cityModels[selectedClosures[0].indices[0]];
+        squaring = selectedClosures[0].redraw
+          ? { method: 'overlap-joint-redraw', angleRad: selectedClosures[0].redraw.angleRad, rectangularity: null }
+          : primary.sq;
+      }
+      const selectedIndices = new Set(selectedClosures.flatMap((closure) => closure.indices));
+      cityModels.forEach((model, index) => {
+        if (selectedIndices.has(index)) return;
+        const overlaps = selectedClosures.some((closure) => closure.indices.some((chosen) => ringsOverlap(cityModels[chosen].ring, model.ring)));
+        if (overlaps && overlapPolicy === 'no-join') warnings.push({ type: 'overlap-detected', text: 'Another city’s ribua overlaps this one. The selected no-join default keeps the cities separate; the two joining alternatives are available in rav settings.' });
+        const swallowed = techumPolygons.some((region) => model.ring.every((point) => pointInOrOnRing(point, region)));
+        if (swallowed) warnings.push({ type: 'ir-muvlaas', text: 'Another complete city lies inside this techum. Its route-specific ir muvla’at continuation is not represented by one universal permission polygon; check the destination with a rav.' });
+      });
+      if (overlapPolicy === 'join-no-redraw' && selectedClosures[0].indices.length > 1) warnings.push({ type: 'overlap-merge-no-redraw', text: 'Overlapping city rectangles join without a new encompassing redraw (R’ Shlomo Miller). The green and pink results remain stepped unions of the original rectangles.' });
+      if (overlapPolicy === 'join-redraw' && selectedClosures[0].indices.length > 1) warnings.push({ type: 'overlap-merge-redraw', text: 'Overlapping city rectangles join and were repeatedly redrawn to a fixed point under the selected expansive approach.' });
+    } else if (mode === 'building') {
+      squaring = deriveSquaring(work[homeBuilding].ring, { reviewerAngleApplied: angle !== 0 });
+      const def = { rect: squaring.rect, angleRad: squaring.angleRad };
+      cityPolygons = [regionDefToRing(def, 0)]; techumPolygons = [regionDefToRing(def, techumM)];
+      mil12Polygons = [regionDefToRing(def, AMOS.MIL12 * settings.amahM)];
+      warnings.push({ type: 'building-mode', text: 'No qualifying city joins this footprint. The techum is measured from the mapped building walls; confirm the footprint and dwelling status.' });
+    } else {
+      const half = 2 * settings.amahM;
+      const base = { minX: workPin.x - half, maxX: workPin.x + half, minY: workPin.y - half, maxY: workPin.y + half };
+      const rotateAroundPin = (ring) => pointAngle === 0 ? ring : ring.map((point) => {
+        const dx = point.x - workPin.x, dy = point.y - workPin.y;
+        return { x: workPin.x + dx * Math.cos(pointAngle) - dy * Math.sin(pointAngle),
+          y: workPin.y + dx * Math.sin(pointAngle) + dy * Math.cos(pointAngle) };
+      });
+      cityPolygons = [rotateAroundPin(rectCornersInFrame(base, 0))];
+      techumPolygons = [rotateAroundPin(rectCornersInFrame(expandRect(base, techumM), 0))];
+      mil12Polygons = [rotateAroundPin(rectCornersInFrame(expandRect(base, AMOS.MIL12 * settings.amahM), 0))];
+      squaring = { method: pointAngle === 0 ? 'world-aligned-point' : 'reviewer-angle-point', angleRad: pointAngle, rectangularity: null };
+      warnings.push({ type: 'point-mode', text: 'No city starting area contains this point — treated as open-field shevisa: a 4-amah square plus 2000 amos on every side.' });
+    }
+    warnings.push(...concavity);
+    markStage('boundaryAndWarnings');
 
+    const outward = (polygons) => polygons.map((ring) => ring.map(unrot));
+    const cityRegions = outward(cityPolygons), karpefRegions = outward(karpefPolygons);
+    const techumRegions = outward(techumPolygons), mil12Regions = outward(mil12Polygons);
+    const concavityAudit = concavity.map((warning) => ({
+      reviewKey: warning.reviewKey,
+      shapeKind: warning.shapeKind,
+      regionCorners: rectCornersInFrame(warning.region, warning.frameAngleRad || 0).map(unrot),
+      reviewerEndpoints: warning.reviewerEndpoints
+        ? warning.reviewerEndpoints.map((point) => fromOrientedFrame(point, warning.frameAngleRad || 0)).map(unrot) : null,
+      reviewStatus: warning.reviewStatus,
+      appliedToBoundary: !!warning.appliedToBoundary,
+      chordM: warning.chordM == null ? null : warning.chordM,
+      depthM: warning.depthM,
+    }));
+    const provisional = concavity.some((warning) => warning.shapeKind === 'bow' && !warning.reviewerEndpoints);
+    const rectToCorners = (rect, localAngle) => rectCornersInFrame(rect, localAngle || 0).map(unrot);
+    const serializedClusters = clusters.map((cluster) => {
+      const clusterSq = cluster.qualifiesAsCity ? getClusterSquaring(cluster) : null;
+      return { members: [...cluster.members], houseCount: cluster.houseCount,
+        corners: clusterSq ? rectToCorners(clusterSq.rect, clusterSq.angleRad) : rectToCorners(cluster.bbox),
+        key: cluster.key, qualifiesAsCity: cluster.qualifiesAsCity,
+        qualificationSource: cluster.qualificationSource, qualificationRemapScore: cluster.qualificationRemapScore,
+        componentKeys: cluster.componentKeys };
+    });
+    if (mode === 'city' && selectedClosures.length === 1 && home >= 0 && selectedClosures[0].indices.length > 1) {
+      const joinedModels = selectedClosures[0].indices.map((index) => cityModels[index]);
+      serializedClusters[home] = {
+        ...serializedClusters[home],
+        members: [...new Set(joinedModels.flatMap((model) => model.cluster.members))],
+        houseCount: joinedModels.reduce((sum, model) => sum + (model.cluster.houseCount || model.cluster.members.length), 0),
+        overlapJoinedClusterIndices: joinedModels.map((model) => model.clusterIndex),
+      };
+    }
     const result = {
       mode,
+      calculationStatus: provisional ? 'provisional-no-fill' : 'complete-default',
       validatedPerimeterActive: perimeterActive,
-      labels,
-      homeCluster: home,
-      homeBuilding,
-      clusters: clusters.map((c) => {
-        const clusterSq = c.qualifiesAsCity ? getClusterSquaring(c) : null;
-        return ({
-        members: c.members,
-        corners: clusterSq ? rectToCorners(clusterSq.rect, clusterSq.angleRad) : rectToCorners(c.bbox),
-        key: c.key,
-        qualifiesAsCity: c.qualifiesAsCity,
-        qualificationSource: c.qualificationSource,
-        qualificationRemapScore: c.qualificationRemapScore,
-        componentKeys: c.componentKeys,
-      }); }),
-      // These are the original 70⅔-amah components whose city status is decided
-      // before the 141⅓-amah and three-villages merge stages. Keep them separate
-      // from `clusters`, which is the final settlement list shown on the map.
-      qualificationClusters: qualificationAudit.map((c) => ({ key: c.key, members: c.members, memberIds: c.memberIds,
-        corners: rectToCorners(c.bbox), qualifiesAsCity: c.qualifiesAsCity,
-        qualificationSource: c.qualificationSource, qualificationRemapScore: c.qualificationRemapScore })),
-      cityCorners,
-      karpefCorners: rectToCorners(karpefRect, boundaryAngleRad),
-      techumCorners,
-      mil12Corners,
+      labels, homeCluster: home, homeCandidates: selectedClosures.map((closure) => closure.indices.map((index) => cityModels[index].clusterIndex)),
+      homeBuilding, overlapPolicy,
+      clusters: serializedClusters,
+      qualificationClusters: qualificationAudit.map((cluster) => ({
+        key: cluster.key, members: cluster.members, memberIds: cluster.memberIds, houseCount: cluster.houseCount,
+        corners: rectToCorners(cluster.bbox), qualifiesAsCity: cluster.qualifiesAsCity,
+        qualificationSource: cluster.qualificationSource, qualificationRemapScore: cluster.qualificationRemapScore,
+      })),
+      cityRegions, karpefRegions, techumRegions, mil12Regions,
+      // Compatibility aliases for callers that predate multi-region boundaries.
+      cityCorners: cityRegions[0] || null, karpefCorners: karpefRegions[0] || null,
+      techumCorners: techumRegions[0] || null, mil12Corners: mil12Regions[0] || null,
       squaring: {
         method: squaring.method,
-        angleDeg: mode !== 'point'
-          ? (settings.squaringAngleDeg || 0) + boundaryAngleRad * 180 / Math.PI
-          : (settings.pointRotationDeg || 0),
+        angleDeg: mode === 'point' ? (settings.pointRotationDeg || 0)
+          : (settings.squaringAngleDeg || 0) + (squaring.angleRad || 0) * 180 / Math.PI,
         rectangularity: squaring.rectangularity,
-        reviewRequired: concavity.length > 0,
+        reviewRequired: concavity.length > 0 || selectedClosures.length > 1,
       },
-      concavityRegions: concavity.map((w) => rectToCorners(w.region, boundaryAngleRad)),
-      concavityAudit: concavity.map((w) => ({
-        reviewKey: w.reviewKey,
-        regionCorners: rectToCorners(w.region, boundaryAngleRad),
-        reviewerEndpoints: w.reviewerEndpoints ? w.reviewerEndpoints.map(unrot) : null,
-        reviewStatus: w.reviewStatus,
-        appliedToBoundary: false,
-      })),
-      warnings,
-      thresholds: { joinM, t2, techumM, karpefM },
+      concavityRegions: concavityAudit.map((audit) => audit.regionCorners), concavityAudit,
+      warnings, thresholds: { joinM, t2, techumM, karpefM },
     };
     markStage('resultSerialization');
     result.engineTimings = { ...stageTimings, total: clock() - engineStarted };
@@ -950,6 +1128,7 @@
       pointInRing, segSegDist, annotateCityQualification, concavityWarnings,
       ringsOverlap, ringContainsRing,
       convexHull, minimumAreaRect, deriveSquaring, toOrientedFrame, fromOrientedFrame,
+      intersectConvexPolygons, intersectPolygonSets,
     },
   };
 });

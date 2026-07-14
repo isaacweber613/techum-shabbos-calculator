@@ -30,7 +30,8 @@ function rotatedSquareHouse(cx, cy, size, angleDeg) {
   return { ring: pts, bbox: G._internals.bboxOfRing(pts), included: true, id: 'r', klass: 'dwelling' };
 }
 const RCN = 0.48; // R' Chaim Naeh amah in meters
-const S = { amahM: RCN, karpef: false, minCityHouses: 6, overlapMerge: false, squaringAngleDeg: 0 };
+const S = { amahM: RCN, karpef: false, minCityHouses: 6, overlapPolicy: 'no-join',
+  largeHolePolicy: 'include-with-warning', bowPolicy: 'rema-majority', squaringAngleDeg: 0 };
 const JOIN = (70 + 2 / 3) * RCN;    // 33.92 m
 const T2 = (141 + 1 / 3) * RCN;    // 67.84 m
 const TECHUM = 2000 * RCN;         // 960 m
@@ -219,7 +220,7 @@ function rectSpan(corners) {
   assert('three villages flagged for review', res.warnings.some((w) => w.type === 'three-villages'));
 }
 
-// 9. Overlapping squares: warn when off, merge when on ------------------------
+// 9. Overlapping squares: all three sourced approaches ------------------------
 {
   // two cities whose houses are 200m apart (no 141 merge) but rectangles+techum overlap:
   // actually city RECTANGLES themselves must overlap for the rule; build an L-arrangement
@@ -233,8 +234,19 @@ function rectSpan(corners) {
   const res = G.runPipeline(A.concat(B), S, { x: 0, y: 0 });
   assert('overlap detected (setting off)', res.warnings.some((w) => w.type === 'overlap-detected'),
     JSON.stringify(res.warnings.map((w) => w.type)));
-  const res2 = G.runPipeline(A.concat(B), { ...S, overlapMerge: true }, { x: 0, y: 0 });
-  assert('overlap merged (setting on)', res2.warnings.some((w) => w.type === 'overlap-merge'));
+  const middle = G.runPipeline(A.concat(B), { ...S, overlapPolicy: 'join-no-redraw' }, { x: 0, y: 0 });
+  assert('R. Shlomo Miller overlap joins without redraw as stepped regions',
+    middle.warnings.some((w) => w.type === 'overlap-merge-no-redraw') &&
+      middle.cityRegions.length > 1 && middle.techumRegions.length > 1,
+    JSON.stringify({ warnings: middle.warnings.map((w) => w.type), regions: middle.cityRegions.length }));
+  const res2 = G.runPipeline(A.concat(B), { ...S, overlapPolicy: 'join-redraw' }, { x: 0, y: 0 });
+  assert('expansive overlap joins and redraws one rectangle',
+    res2.warnings.some((w) => w.type === 'overlap-merge-redraw') && res2.cityRegions.length === 1);
+  const emptyOverlap = G.runPipeline(A.concat(B), S, { x: 120, y: 160 });
+  assert('empty overlap of unrelated no-join cities uses the conservative candidate intersection',
+    emptyOverlap.homeBuilding === -1 && emptyOverlap.homeCandidates.length > 1 &&
+      emptyOverlap.squaring.method === 'candidate-intersection' &&
+      emptyOverlap.warnings.some((w) => w.type === 'multiple-home-candidates'));
 }
 
 // 10. Projection sanity ---------------------------------------------------------
@@ -269,7 +281,7 @@ function rectSpan(corners) {
   for (let i = 0; i <= 10; i++) A.push(squareHouse(305, i * 30 - 5));
   A.push(...grid6(0, 0));
   const B = grid6(100, 150);
-  const res = G.runPipeline(A.concat(B), { ...S, overlapMerge: true }, { x: 0, y: 0 });
+  const res = G.runPipeline(A.concat(B), { ...S, overlapPolicy: 'join-redraw' }, { x: 0, y: 0 });
   const home = res.clusters[res.homeCluster];
   assert('overlap redraw includes both settlements in home audit membership',
     home.members.length === A.length + B.length, `members=${home.members.length}`);
@@ -322,22 +334,37 @@ function rectSpan(corners) {
     refreshed.qualificationClusters[0].qualificationRemapScore >= 0.8);
 }
 
-// 14. Bow endpoints are review metadata only ----------------------------------
+// 14. Bow endpoints drive a conservative/reviewed boundary --------------------
 {
   const cluster = { members: [], bbox: { minX: 0, maxX: 2500, minY: 0, maxY: 2500 } };
+  const detected = G._internals.concavityWarnings(cluster, [], S);
+  const reviewKey = detected[0].reviewKey;
   const endpointSettings = {
     ...S,
-    concavityReviews: { 'concavity:0': { endpoints: [{ x: 10, y: 20 }, { x: 30, y: 40 }] } },
+    concavityReviews: { [reviewKey]: { endpoints: [{ x: 10, y: 20 }, { x: 30, y: 40 }] } },
   };
   const warnings = G._internals.concavityWarnings(cluster, [], endpointSettings);
   assert('large concavity exposes reviewer endpoint record',
     warnings.length === 1 && warnings[0].reviewerEndpoints.length === 2 &&
-      warnings[0].reviewStatus === 'endpoints-recorded-not-applied');
+      warnings[0].reviewStatus === 'endpoints-confirmed');
   const invalid = G._internals.concavityWarnings(cluster, [], {
-    ...S, concavityReviews: { 'concavity:0': { endpoints: [{ x: 10, y: 20 }] } },
+    ...S, concavityReviews: { [reviewKey]: { endpoints: [{ x: 10, y: 20 }] } },
   });
-  assert('invalid bow endpoint record remains unapplied and needs review',
-    invalid[0].reviewerEndpoints === null && invalid[0].reviewStatus === 'needs-endpoints');
+  assert('invalid bow endpoint record leaves provisional no-fill review',
+    invalid[0].reviewerEndpoints === null && invalid[0].reviewStatus === 'provisional-no-fill-needs-endpoints');
+}
+
+// 8b. A confirmed trapezoid extends the short side along its own parallel axis -
+{
+  const angle = 25 * Math.PI / 180;
+  const rotate = ({ x, y }) => ({ x: x * Math.cos(angle) - y * Math.sin(angle), y: x * Math.sin(angle) + y * Math.cos(angle) });
+  const trapezoid = [
+    { x: -100, y: -50 }, { x: 100, y: -50 }, { x: 60, y: 50 }, { x: -60, y: 50 },
+  ].map(rotate);
+  const result = G.runPipeline([], { ...S, validatedCityPerimeter: trapezoid }, rotate({ x: 0, y: 0 }));
+  assert('trapezoid preserves its parallel-side axis and extends the short side',
+    result.squaring.method === 'trapezoid-extended' && approx(Math.abs(result.squaring.angleDeg), 25, 0.1),
+    JSON.stringify(result.squaring));
 }
 
 {
@@ -352,6 +379,93 @@ function rectSpan(corners) {
   const outside = G.runPipeline([], { ...S, validatedCityPerimeter: perimeter }, { x: 500, y: 0 });
   assert('validated perimeter is inactive when the shevisa point is outside it',
     outside.mode === 'point' && !outside.validatedPerimeterActive);
+}
+
+// 15. A material U/bow is never silently filled -------------------------------
+{
+  const tinyAmah = 0.01; // bow threshold 40m, depth threshold 20m
+  const houses = [];
+  for (let n = 0; n <= 10; n++) {
+    houses.push(squareHouse(0, n * 10));
+    houses.push(squareHouse(100, n * 10));
+    if (n > 0 && n < 10) houses.push(squareHouse(n * 10, 0));
+  }
+  const baseSettings = { ...S, amahM: tinyAmah };
+  const provisional = G.runPipeline(houses, baseSettings, { x: 0, y: 50 });
+  assert('unreviewed >=4000-amah bow uses a provisional no-fill multi-region result',
+    provisional.calculationStatus === 'provisional-no-fill' && provisional.cityRegions.length > 1 &&
+      provisional.concavityAudit.some((a) => a.shapeKind === 'bow' && a.appliedToBoundary));
+  const bow = provisional.concavityAudit.find((a) => a.shapeKind === 'bow');
+  const reviewed = G.runPipeline(houses, {
+    ...baseSettings,
+    concavityReviews: { [bow.reviewKey]: { endpoints: [{ x: 0, y: 100 }, { x: 100, y: 100 }] } },
+  }, { x: 0, y: 50 });
+  assert('reviewed wide/deep bow remains unfilled under the Rema-majority default',
+    reviewed.calculationStatus === 'complete-default' && reviewed.cityRegions.length > 1 &&
+      reviewed.concavityAudit.some((a) => a.reviewStatus === 'reviewed-no-fill-applied'));
+
+  const shallow = [];
+  for (let n = 0; n <= 10; n++) shallow.push(squareHouse(n * 10, 0));
+  shallow.push(squareHouse(0, 10), squareHouse(100, 10));
+  const shallowDraft = G.runPipeline(shallow, baseSettings, { x: 0, y: 0 });
+  const shallowBow = shallowDraft.concavityAudit.find((a) => a.shapeKind === 'bow');
+  const endpoints = [{ x: 0, y: 15 }, { x: 100, y: 15 }];
+  const rema = G.runPipeline(shallow, {
+    ...baseSettings, concavityReviews: { [shallowBow.reviewKey]: { endpoints } },
+  }, { x: 0, y: 0 });
+  const mechaber = G.runPipeline(shallow, {
+    ...baseSettings, bowPolicy: 'mechaber-curve',
+    concavityReviews: { [shallowBow.reviewKey]: { endpoints } },
+  }, { x: 0, y: 0 });
+  assert('Rema-majority fills a confirmed wide but less-than-2000-amah-deep bow',
+    rema.concavityAudit.some((a) => a.reviewStatus === 'reviewed-fill-applied'));
+  assert('Mechaber/Rambam leaves that same >=4000-amah chord unfilled',
+    mechaber.concavityAudit.some((a) => a.reviewStatus === 'reviewed-no-fill-applied'));
+}
+
+// Candidate-city intersections preserve every piece of a masked starting area.
+{
+  const left = squareHouse(0, 0, 20).ring, right = squareHouse(40, 0, 20).ring;
+  const clip = squareHouse(20, 0, 60).ring;
+  const pieces = G._internals.intersectPolygonSets([[left, right], [clip]]);
+  assert('common permission intersects unions without discarding later regions', pieces.length === 2);
+}
+
+// 16. A fully enclosed >=4000x4000 void follows the selected psak --------------
+{
+  const tinyAmah = 0.01;
+  const houses = [];
+  for (let n = 0; n <= 10; n++) {
+    houses.push(squareHouse(n * 10, 0), squareHouse(n * 10, 100));
+    if (n > 0 && n < 10) houses.push(squareHouse(0, n * 10), squareHouse(100, n * 10));
+  }
+  const included = G.runPipeline(houses, { ...S, amahM: tinyAmah }, { x: 0, y: 50 });
+  assert('default includes a large enclosed hole but warns',
+    included.cityRegions.length === 1 && included.warnings.some((w) => w.type === 'large-interior-hole'));
+  const excluded = G.runPipeline(houses, { ...S, amahM: tinyAmah, largeHolePolicy: 'exclude' }, { x: 0, y: 50 });
+  assert('strict large-hole policy preserves the void as multiple starting regions',
+    excluded.cityRegions.length > 1 && excluded.concavityAudit.some((a) => a.reviewStatus === 'strict-exclusion-applied'));
+}
+
+// 17. City membership uses the selected profile's final starting area ----------
+{
+  const houses = grid6(0, 0);
+  const outsideWalls = { x: 60, y: 0 }; // east wall is 45m; 15m is inside Rema karpef, not the city itself
+  const mb = G.runPipeline(houses, { ...S, karpef: true }, outsideWalls);
+  const mechaber = G.runPipeline(houses, { ...S, karpef: false }, outsideWalls);
+  assert('Rema karpef can make an outside pin a city resident', mb.mode === 'city');
+  assert('without single-city karpef the same outside pin remains point shevisa', mechaber.mode === 'point');
+}
+
+// 18. Validated yard/perimeter geometry joins but does not count as a house -----
+{
+  const houses = grid6(0, 0);
+  const yard = squareHouse(70, 0, 40); yard.id = 'validated-yard'; yard.joinOnly = true;
+  const remote = squareHouse(110, 0); remote.id = 'remote-house';
+  const result = G.runPipeline(houses.concat(yard, remote), S, { x: 0, y: 0 });
+  assert('validated join-only perimeter participates in the 70-amah chain', result.clusters.length === 1);
+  assert('validated perimeter never inflates the six-house count', result.clusters[0].houseCount === 7,
+    `houseCount=${result.clusters[0].houseCount}`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

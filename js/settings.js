@@ -1,5 +1,5 @@
 /*
- * Psak profiles & settings — mirrors TECHUM-SPEC.md Part 2 (rev. 5).
+ * Psak profiles & settings — mirrors TECHUM-SPEC.md Part 2 (rev. 13).
  * Every disputed rule is a setting; profiles are documented defaults, all overridable.
  * Classic script: exposes window.TechumSettings.
  */
@@ -18,7 +18,9 @@
       amahCm: 48,          // R' Chaim Naeh
       karpef: true,        // Rema, recorded MB 398:36
       squaringAngleDeg: 0, // automatic: preserve a clear rectangle; otherwise compass
-      overlapMerge: false, // strict (R' S. Miller) + warning
+      overlapPolicy: 'no-join', // R' Elyashiv / R' N. Karelitz / R' Belsky
+      largeHolePolicy: 'include-with-warning', // Beit Yitzchok / R' Shulem Weiss
+      bowPolicy: 'rema-majority', // Tosafos/Rosh/Rema; reviewer supplies real-city endpoints
       minCityHouses: 6,    // MB 398:38
     },
     'chazon-ish': {
@@ -26,7 +28,9 @@
       amahCm: 57.6,
       karpef: true,        // CONFIRM CI's own karpef position with a posek (spec Part 2)
       squaringAngleDeg: 0, // same automatic SA/MB shape rule; nonzero is reviewer override
-      overlapMerge: true,  // CI redraws the joint rectangle
+      overlapPolicy: 'join-redraw', // expansive reading of CI 110:16; practical CI conclusion uncertain
+      largeHolePolicy: 'include-with-warning',
+      bowPolicy: 'rema-majority',
       minCityHouses: 6,
     },
     'mechaber': {
@@ -34,7 +38,9 @@
       amahCm: 48,
       karpef: false,       // Rambam/Mechaber SA 398:5
       squaringAngleDeg: 0,
-      overlapMerge: false,
+      overlapPolicy: 'no-join',
+      largeHolePolicy: 'include-with-warning',
+      bowPolicy: 'mechaber-curve',
       minCityHouses: 6,
     },
   };
@@ -51,7 +57,7 @@
     pointRotationDeg: 0,    // open-field square rotation (SA 399 — person may orient)
     showAuditRings: false,  // dotted 70⅔-amos rings around buildings (manual-audit aid)
     cityQualificationOverrides: {}, // cluster key -> reviewer yes/no; empty preserves count proxy
-    concavityReviews: {},   // review key -> recorded endpoints; never silently changes geometry
+    concavityReviews: {},   // review key -> reviewer-confirmed endpoints and application state
     useValidatedPerimeter: false, // explicit rav-supplied hukaf-l'dira alternative; never inferred
     fetchRadiusM: 1200,
     maxBuildings: 40000,
@@ -74,6 +80,12 @@
           saved.showVerifiedOnly = false;
           saved.dataSourceVersion = 2;
         }
+        // Rev. 12 exposed only a binary overlap switch. Preserve the user's intent,
+        // but migrate it to the three actual mehalachim recorded in Rev. 13.
+        if (!saved.overlapPolicy && typeof saved.overlapMerge === 'boolean') {
+          saved.overlapPolicy = saved.overlapMerge ? 'join-redraw' : 'no-join';
+        }
+        delete saved.overlapMerge;
         return { ...DEFAULTS, ...saved };
       }
     } catch (e) { /* fresh defaults */ }
@@ -86,7 +98,8 @@
     const p = PROFILES[profileKey];
     if (!p) return s;
     return { ...s, profile: profileKey, amahCm: p.amahCm, karpef: p.karpef,
-      squaringAngleDeg: p.squaringAngleDeg, overlapMerge: p.overlapMerge,
+      squaringAngleDeg: p.squaringAngleDeg, overlapPolicy: p.overlapPolicy,
+      largeHolePolicy: p.largeHolePolicy, bowPolicy: p.bowPolicy,
       minCityHouses: p.minCityHouses };
   }
   // Every setting that differs from the app-wide defaults (for analytics: "what do
@@ -103,7 +116,8 @@
     const p = PROFILES[s.profile];
     if (!p) return 'custom';
     const same = p.amahCm === s.amahCm && p.karpef === s.karpef &&
-      p.squaringAngleDeg === s.squaringAngleDeg && p.overlapMerge === s.overlapMerge &&
+      p.squaringAngleDeg === s.squaringAngleDeg && p.overlapPolicy === s.overlapPolicy &&
+      p.largeHolePolicy === s.largeHolePolicy && p.bowPolicy === s.bowPolicy &&
       p.minCityHouses === s.minCityHouses;
     return same ? s.profile : 'custom';
   }
