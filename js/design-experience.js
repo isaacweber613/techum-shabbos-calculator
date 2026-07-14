@@ -88,9 +88,9 @@
       mapKey.setAttribute('aria-label', 'Map line key');
       mapKey.innerHTML = `
         <b>Map lines</b>
-        <span><i class="key-line techum"></i><strong>Red</strong> Your techum</span>
+        <span><i class="key-line techum"></i><strong>Pink</strong> Your techum area</span>
         <span><i class="key-line city"></i><strong>Green</strong> Starting city</span>
-        <span><i class="key-line karpef"></i><strong>Teal</strong> Extra city space</span>
+        <span><i class="key-line karpef"></i><strong>Pale green</strong> Extra city space</span>
         <span><i class="key-line alternate"></i><strong>Amber</strong> Alternate, when shown</span>`;
       document.getElementById('map')?.append(mapKey);
 
@@ -106,7 +106,7 @@
           card.className = 'simple-result-card';
           card.innerHTML = `
             <h3>Your techum is ready</h3>
-            <p><b>Red line = your boundary.</b> Drag the pin to update it automatically.</p>
+            <p><b>Pink area = your techum.</b> The green area is ${isCity ? 'the starting city' : 'your starting square'}. Drag the pin to update automatically.</p>
             <details class="simple-result-explainer">
               <summary>How was this calculated? <span aria-hidden="true">i</span></summary>
               <p>${isCity
@@ -225,7 +225,9 @@
       let node = advancedHeading;
       while (node) { movable.push(node); node = node.nextSibling; }
       movable.forEach((item) => drawer.append(item));
-      sidebar.append(drawer);
+      // Keep the fixed drawer at the document root so the sidebar's stacking
+      // context cannot put the full-screen backdrop in front of its controls.
+      document.body.append(drawer);
 
       const backdrop = document.createElement('button');
       backdrop.id = 'design-drawer-backdrop';
