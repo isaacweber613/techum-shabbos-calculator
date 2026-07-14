@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched draft (2026-07-10) — sources verified via web research against Sefaria,
+> **STATUS: Researched draft (rev. 12, 2026-07-14) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -33,9 +33,8 @@ Igros Moshe OC 1:136; Minchas Yitzchak 7:24, 8:33.
   d'oraisa view at 12 mil; concludes many hold it's all d'rabbanan.
 - **Consequence:** *halacha k'divrei ha-meikel b'eruv* — in genuine measurement doubt we
   follow the more lenient (larger) measurement (Eruvin 58b; SA 399). This licenses generous
-  resolution of borderline measurement cases — but **not** of disputed halachic-model
-  questions like the overlapping-squares merge (§1.5), where poskim lean strict (Minchas
-  Yitzchak 8:33; Lehrhaus).
+  resolution of borderline measurement cases — but does **not by itself choose** among
+  disputed halachic models such as the three overlapping-ribua positions in §1.5.
 
 ### 1.2 Shiur of the amah — the master scaling constant
 
@@ -69,6 +68,17 @@ attended** (SA HaRav 398:8, 10; under 4 amos wide is not a dwelling even if very
 - **Does not count:** unroofed structures; cisterns, pits, dovecotes; a bare shul, warehouse,
   or barn with no resident; open cemeteries; mobile/docked ships; a flimsy seasonal
   watchman's hut in a theft/flood-prone area.
+- **Modern commercial/industrial structures are disputed, not categorically excluded.**
+  Chazon Ish OC 110:28 and Shevet HaLevi 1:59 are cited for counting at least some factories
+  containing offices and a workers' lunch room; Kiryat Ariel ch. 4, Machazeh Eliyahu 79,
+  and Tikun Eruvin 5:60 collect the modern applications. A generic office, school, hospital,
+  hotel, terminal, or factory therefore needs a type-specific reviewer decision; map-data
+  labels alone cannot establish *beis dirah*.
+- **Attached enclosed land can affect the measured wall-to-wall gap.** A fenced yard or
+  other area genuinely subsidiary and open to a dwelling may be treated with the dwelling
+  under SA OC 396:2, allowing the 70⅔/141⅓ measurement from its validated perimeter.
+  Ordinary parcel lines, fences, or carrying-eruv data do not prove those facts. Only an
+  explicit rav-validated *hukaf l'dirah* polygon may enter this calculation.
 - **Walled city timing** (SA HaRav 398:14): walled *before* settled → measure from the
   houses; settled *then* walled → measure from the wall. ⚠ Rarely computable from data;
   surface as a manual option.
@@ -123,26 +133,44 @@ world directions for intermediate bow/L shapes. A local rav/mumcheh must decide 
 ambiguous real outline.
 
 Rules by shape:
-- Circle / triangle / any non-rectangle → compass-aligned bounding rectangle.
+- Circle / triangle / many-sided shape with no governing straight side or right angle →
+  compass-aligned bounding rectangle. This is not a rule that every non-rectangle must use
+  compass: the trapezoid, bow/L, and clear straight-side/right-angle cases below are distinct.
 - Already a compass-aligned rectangle → left as-is.
 - **A square/rectangle rotated off the compass → left in its existing orientation**
   (SA 398:1 explicitly).
 - Trapezoid → short side extended to match the long side.
 - Irregular protrusions → each face is squared to a straight line through its
   furthest-outward point (one jutting house pulls the whole side out to it) (SA 398:2).
-- **Bow / L / gamma shapes** (SA 398:3; SA HaRav 398:3–5): if the two endpoints of the arc
-  are **< 4000 amos apart**, the concavity is treated as filled with houses and squared
-  over. Additional leniencies: fill also if the chord-to-arc depth is < 2000 amos, or the
-  arms separate gradually. If endpoints ≥ 4000 amos apart → do **not** fill the whole gap;
-  square only up to where the arc narrows below 4000.
+- **Bow / L / gamma shapes** (SA 398:3–4; Rema; SA HaRav 398:3–5) require separate
+  algorithms, not one generic concavity fill. When the relevant endpoints are <4000 amos
+  apart, the chord closes the bow and the enclosed gap is treated as filled. Rema records
+  an additional leniency where a ≥4000-amah chord may still govern if chord-to-arc depth is
+  <2000 amos. For the remainder that stays ≥4000, Peninei Halakha 30:7 follows
+  Tosafos/Rosh/most Rishonim/Rema to draw chords wherever the bow narrows below 4000, while
+  suggesting the Rambam/Mechaber curved techum for the wider remainder (also noting Chazon
+  Ish 110:10 and residual uncertainty). Rashba/Ritva, cited by Biur Halacha 398:6 for
+  extenuating circumstances, limit the restrictive bow classification further. Even part
+  of one side can be its own bow (Tikun Eruvin ch. 5 n. 17; Machazeh Eliyahu 82). Each
+  mehalich must be named in the audit after reviewer-designated endpoints; a generic polygon
+  concavity must not silently choose among them.
 - **Machlokes — alignment:** default (SA HaRav 398:3; Chayei Adam 68:14; MB) is always
   compass. **Chazon Ish (OC 110:23):** a city with one naturally straight side (e.g. a
   shoreline — Manhattan's Hudson edge) is squared to *that* orientation. Peninei Halakha:
   only a genuine natural straight edge governs, not an arbitrary straight stretch.
   → config toggle with user-designated reference edge.
-- ⚠ **Overlapping-squares merge:** whether two cities merge because their *squared*
-  rectangles overlap (even though the houses don't come within 141⅓) is disputed; poskim
-  lean strict (Minchas Yitzchak 8:33). Default **off**, flag when it would trigger.
+- ⚠ **Overlapping-squares merge has three materially different mehalachim:**
+  1. the rectangles do **not** join the cities (R' Yosef Shalom Elyashiv, R' Nissim
+     Karelitz, and R' Yisroel Belsky as reported by Millunchick);
+  2. overlap joins the cities, but no new joint encompassing rectangle is recursively
+     redrawn (R' Shlomo Miller as reported there);
+  3. overlap joins the cities and a new joint rectangle is drawn (the expansive reading
+     discussed in Chazon Ish OC 110:16; accepted by Minchas Yitzchak 8:32 and Machazeh
+     Eliyahu 82, while Kiryat Ariel reports that the Chazon Ish did not rely on it in
+     practice).
+  There is **no accepted consensus**. The default remains **no join** and the calculation
+  must flag every case in which either alternative would change the result. A binary
+  on/off control cannot faithfully represent R' Shlomo Miller's middle position.
 
 **Computation:** derive the minimum-area rectangle of the cluster's convex hull. Preserve
 that orientation automatically only when the hull fills at least 94% of it; otherwise use
@@ -177,9 +205,12 @@ magnetic north).
 - **Computation:** techum = city rectangle expanded 2000 amos in each cardinal direction
   (half-plane intersection). **Not** a rounded Minkowski buffer — the square corners are
   halachically mandated extra area.
-- A person in an open field (or via eruv techumin) gets a 4000×4000 square centered on his
-  4 amos and **may orient it as he wishes** — including 45°, pointing a corner toward his
-  destination (Peninei Halakha; Halachipedia). → point-mode rotation option.
+- A person in an open field (or via eruv techumin) first receives a **4×4-amah mekom
+  shevisa**, and the 2000 amos are measured beyond each of its four sides. The complete
+  square is therefore **4004×4004 amos**, not 4000×4000 (SA 396:1; Peninei Halakha 30:1–2).
+  He **may orient it as he wishes** — including 45°, pointing a corner toward his
+  destination. → point-mode rotation option. Any current 4000×4000 implementation is an
+  identified 4-amah defect, not an accepted rounding convention.
 
 ### 1.8 How distance is measured (SA OC 399; Rambam 28:11–16; Eruvin 57b–58b)
 
@@ -187,34 +218,69 @@ magnetic north).
   399:7). Terrain: *mavli'in* (spanning valleys horizontally with the rope) and *koder*
   (stepped telescoping on steep slopes) — both are techniques to recover the **horizontal
   plan-view distance**. ⚠ exact width/depth thresholds between the methods vary by Rishon.
-- Therefore **modern horizontal GPS/aerial/map distance is the halachic target quantity**,
-  not an approximation. Peninei Halakha explicitly: today it is best to establish techum
-  with aerial maps or GPS; we need not re-enact the rope method. Kovetz Chaburos cited
-  approvingly for Google-Maps-based measurement of the 70⅔/141⅓/2000 gaps.
+- **Modern-map mehalich:** Peninei Halakha 30:5 says it is now best to establish techum with
+  aerial maps or GPS because the purpose of Chazal's procedures was accurate, convenient
+  measurement. This supports horizontal plan-view geometry and not re-enacting the rope.
+  However, Tikun Eruvin (as reported by Millunchick, pp. 58–59) calculates that the
+  prescribed slope procedures can differ from map distance by as much as about 9.1%.
+  Therefore “horizontal GPS is the only halachic target” is too absolute: the app's default
+  is the documented modern-map mehalich, and a rav must approve any slope adjustment.
 - Conflicting measurements → follow the lenient/larger (Eruvin 58b), within measurement
   doubt only.
-- ⚠ One Hebrew secondary source suggests reducing map distance ~7% (measure ~1860 amos) in
-  hilly terrain as a stringency. Single-source, uncorroborated, and in tension with the
-  horizontal-is-the-target principle; do not implement without a posek.
+- ⚠ A roughly 7–9.1% hilly-terrain adjustment is a sourced later proposal, but no verified
+  general community default was found. Do not apply it automatically; record it as an
+  advanced reviewer mehalich if adopted for a particular calculation.
 
 ### 1.9 Water and terrain features (SA 398:9, 13; Meishiv Davar 4:58; Minchas Yitzchak 8:33)
 
-- An always-flowing **river never extends** the city; but the ribua square and the
-  2000-amos band **pass freely over water** (Chasam Sofer OC 94).
+- Water by itself is not a dwelling that extends the building chain, while the ribua and
+  2000-amos techum can pass over water (Chasam Sofer OC 94). A river or stream can divide a
+  city when it creates a complete >141⅓-amah break, subject to the disputed joining rules
+  in §1.9a; the categorical statement that every flowing river necessarily divides or can
+  never participate in city continuity is too broad.
 - A **dry wadi** with a ≥ 4-amah walkable ledge used by residents joins the city ground;
   otherwise it's simply consumed inside the 2000.
-- Lakes/pools enclosed by the built footprint are interior — the square is drawn to the
-  outer dwellings regardless.
+- Ordinary lakes/pools enclosed by the built footprint do not themselves move the outer
+  dwelling edge. Exception: a very large enclosed void triggers the dispute in §1.9a.
 
-### 1.10a Locating the person's city (implementation rule, rev. 2)
+### 1.9a Full-width breaks and large interior holes
 
-A pin is treated as **in a city** if (priority order): (1) it lies **inside a settlement's
-squared rectangle** — being within the city's squared bounds makes him a resident (whole
-city = 4 amos); if inside several nested rectangles (hamlet inside a city's rect), the
-larger settlement wins; (2) otherwise, if within **70⅔ amos** of a settlement's structure
-(iburah shel ir). Else: open-field point mode. ⚠ The premise that the *filled corners* of
-the ribua count as "in the city" for a person standing there is our reading; confirm with
-a posek (related to ir mubla'as, SA 408).
+- A continuous strip wider than **141⅓ amos** that crosses the entire built settlement can
+  divide it into separate cities. Modern examples include a sufficiently wide highway,
+  railway corridor, river, utility right-of-way, park, or industrial/open strip. Municipal
+  continuity and shared city usage do not by themselves settle the halachic geometry.
+- This must be decided from the qualifying dwelling/perimeter geometry, not a special
+  highway tag: if qualifying buildings or validated residential perimeters bridge the
+  strip within the applicable gap, no complete break exists.
+- A very large empty area **wholly surrounded** by the city is disputed. Zichron Yosef is
+  cited for excluding an interior hole larger than 4000 × 4000 amos by analogy to a bow;
+  Beit Yitzchok distinguishes a closed hole from an open bow, and Tikun Eruvin records a
+  lenient view treating the encircling city as continuous. Therefore an interior hole does
+  not automatically split the default city, but any enclosed void reaching 4000 amos in
+  both dimensions is a mandatory rav-review warning.
+- A carrying eruv, public use of the gap, and overlapping ribua rectangles are each proposed
+  bases for joining sections, but all three are disputed. They must be reported separately
+  in the audit rather than collapsed into a generic “city continuity” heuristic.
+
+### 1.10a Locating the person's city and *ir muvla'at*
+
+A pin is treated as **in a city** when it lies inside that profile's final starting area:
+the settled city and its ribua, plus only the profile-governed karpef/perimeter additions
+that actually apply. Peninei Halakha 30:4 expressly includes one who rests within the
+squared area. The previous unconditional test “within 70⅔ amos of a structure” was too
+broad for Mechaber/Rambam profiles, which do not give every single city the Rema's outer
+karpef. If several candidate cities contain the pin, the engine must report the candidates
+and governing rule rather than silently choosing the geographically largest rectangle.
+
+If the person rests outside every city, he remains in point mode:
+
+- If his 2000-amah reach merely **ends inside** a city, he may walk only to that boundary;
+  the rest of the city does not become his four amos.
+- If an entire city lies **swallowed within** his reach (*ir muvla'at betoch techumo*), the
+  city counts as four amos and his unspent measurement resumes beyond its far edge
+  (SA 408:1; Peninei Halakha 30:4 n. 5). This is a path/direction-dependent calculation,
+  not a switch into resident city mode and not a union with the city's own 2000-amah
+  techum. The audit must show the consumed distance, collapsed city segment, and remainder.
 
 ### 1.10 Person-level rules (context, mostly out of scope v1)
 
@@ -248,10 +314,11 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 - **Squaring orientation reopened** — compass is the baseline, but many poskim follow a
   city's clear natural straight side / right angle (not only the Chazon Ish); Chayei Adam is
   the consistently-compass approach. Kept compass as default, natural-edge as a real option.
-- **Overlapping-squares is a genuine algorithm-changing machlokes** — the Chazon Ish-based
-  approach redraws the joint encompassing rectangle; R' Shlomo Miller is reported not to
-  accept the automatic redraw (J. of Halacha & Contemporary Society 74). Now a toggle, not
-  warning-only. Default off (strict), warning shown when it would trigger.
+- **Overlapping-squares is a genuine algorithm-changing machlokes.** Rev. 12 corrects the
+  earlier implication that R' Shlomo Miller represented the strict/no-join side: he is
+  reported to join overlapping rectangles but not redraw a new joint rectangle. The
+  no-join position is reported in the names of R' Elyashiv, R' Nissim Karelitz, and
+  R' Belsky. The default remains no join, but the complete model is three-valued.
 - **Amah is a first-order variable** (±20% on every distance), not a "smaller" item. One
   consistent measurement profile end-to-end; **no mixing shitos** is an application policy,
   not a sourced psak.
@@ -263,11 +330,11 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 | Amah | 48 cm (R' Chaim Naeh) → 960 m | 57.6 cm → 1,152 m | 48 cm → 960 m |
 | Single-city karpef (+70⅔ before 2000) | **on** (Rema; MB 398:36) | on ⚠ confirm CI's own position | off (Mechaber/Rambam) |
 | Squaring alignment | automatic SA/MB shape rule: preserve a clear existing rectangle; otherwise world directions | same automatic rule; reviewer may set a sourced natural edge (CI OC 110:23) | automatic SA shape rule; reviewer override available |
-| Overlapping-squares rect merge | **off** + warning (R' S. Miller) | on (CI redraw) | off + warning |
+| Overlapping-squares rect merge | **no join** + warning (R' Elyashiv / R' N. Karelitz / R' Belsky); advanced middle option: join without redraw (R' S. Miller) | joint redraw available as the expansive CI reading, but CI's practical conclusion is reported as uncertain | **no join** + warning; alternatives remain explicit |
 | City minimum for the 141⅓ merge | 6 houses (MB 398:38) | 6 + CI courtyard qualifications ⚠ | 6 |
 | Bow/concavity fill (< 4000 amos endpoints) | din applies (SA 398:3, all profiles); v1 detect-and-flag — endpoints are a reviewer decision (rev 3/4) | ” | ” |
 | Unknown-use buildings | include, flagged for review (all profiles — data policy, not psak) | ” | ” |
-| Eruv-enclosure-as-city | **off — measure from buildings** (mainstream map practice; see rev. 5) | off | off |
+| Eruv-enclosure-as-city | **off unless rav-validated** — selected practice/data-confidence default, not settled consensus; validated *hukaf l'dirah* perimeter available | same | same |
 | 12-mil ring / second-shita comparison line | hidden / off (available in all profiles) | ” | ” |
 
 Audit rule: any change to defaults gets a dated rev note in this section (append, don't
@@ -374,7 +441,8 @@ overwrite).
   reviewer designation for ambiguous real-city pockets. Automatic Mechaber chord and Rema
   depth variants belong behind advanced settings once endpoint-designation UI exists; the
   software must not silently invent endpoints.
-- **Confidence and remaining posek input:** high confidence in buildings-based eruv default;
+- **Confidence and remaining posek input (superseded in part by rev. 12):** this revision
+  recorded high confidence in the buildings-based eruv default;
   medium confidence in the operational bow detector because endpoint selection is an
   engineering generalization, not a sourced algorithm. A tight, demonstrably *hukaf
   l'dira* enclosure and every disputed bow endpoint remain review flags, not automatic psak.
@@ -469,6 +537,65 @@ overwrite).
   is explicitly labelled as basemap coloring so its green land-use polygons cannot be
   mistaken for the calculator's green starting boundary.
 
+### Rev. 12 — 2026-07-14 (later-source corpus and calculation corrections)
+
+- **Research corpus established.** No single freely available English work was found that
+  both compiles every detail and represents an accepted ruling across Orthodox communities.
+  The implementation corpus is therefore layered: primary codes establish the rule;
+  recognized later specialists identify real-city applications and machlokos; English
+  syntheses aid access but do not silently choose the app's psak. See the annotated source
+  hierarchy below.
+- **Overlapping ribua corrected to three positions.** Rabbi Mordechai Millunchick,
+  “Techum Shabbat and the Airport,” *Journal of Halacha and Contemporary Society* 74,
+  pp. 50–52, reports: no join (R' Elyashiv, R' Nissim Karelitz, R' Belsky); join without a
+  newly redrawn encompassing rectangle (R' Shlomo Miller); and join/redraw authorities
+  including Minchas Yitzchak 8:32 and Machazeh Eliyahu 82, with Chazon Ish 110:16 discussed
+  but his practical conclusion uncertain. Earlier rev-2 wording incorrectly associated
+  R' Miller with the no-join default. **The default itself does not change:** no join remains
+  the prudent MB/Ashkenazi app default, now attributed accurately. The planned control must
+  become a three-position enum; until then the existing “on” path is not labelled as
+  R' Miller's shita.
+- **Modern structures and validated yards are now explicit calculation inputs.** Some
+  poskim count factories with offices/lunch facilities; qualifying land genuinely enclosed
+  and subsidiary to a dwelling can move the wall-to-wall join origin. Neither result can be
+  inferred safely from an Overture class, parcel, fence, or ordinary carrying-eruv tag, so
+  both require a reviewer determination and preserved source geometry.
+- **Full-width breaks and interior holes added.** A continuous >141⅓-amah break can divide
+  a city even when civil geography calls it one municipality. A fully surrounded void at
+  least 4000 × 4000 amos triggers review because later authorities dispute whether it is
+  analogous to an unfillable bow. Default behavior remains unchanged pending the required
+  reviewer UI: do not automatically subtract the hole.
+- **Point mode corrected to 4004×4004 amos.** The person's 4×4-amah mekom shevisa is not
+  erased before adding 2000 amos beyond every side. The prior 4000×4000 statement and any
+  matching implementation would be undersized by four amos. The current engine already
+  computes `4 + 2×2000` correctly; its golden test confirms conformance.
+- **Added the swallowed-city calculation (SA 408:1).** A city wholly contained along an
+  outside person's remaining reach collapses to four amos and measurement continues beyond
+  it; a city in which the 2000 simply terminates does not. This is distinct from residing
+  inside the city's ribua and remains an implementation gap.
+- **City-membership karpef is profile-governed.** The old unconditional “within 70⅔ amos”
+  pin rule improperly applied the Rema/Rosh single-city karpef to Mechaber/Rambam profiles.
+  Membership now derives from the selected profile's final starting area.
+- **Eruv default confidence narrowed.** Peninei Halakha 30:4, 8, 10 and the authorities
+  collected by Millunchick provide substantial support for a qualifying wall/eruv joining
+  separated areas. “Off” remains the app default because ordinary map data cannot prove
+  *hukaf l'dirah*, perimeter validity, or selected community practice—not because the
+  alternative lacks recognized support. Rev. 5's “high confidence in the buildings-based
+  eruv default” is superseded to that extent.
+- **Modern map measurement remains the default, not an exclusive truth claim.** Peninei
+  Halakha 30:5 endorses aerial/GPS measurement, while Tikun Eruvin as reported by Millunchick
+  calculates a possible slope-method difference up to about 9.1%. Any terrain adjustment
+  is reviewer-only and must identify its source and factor.
+- **Source-sensitive language.** Peninei Halakha ch. 30 is the clearest complete English
+  online synthesis and is used for navigation, diagrams, and a documented modern psak—not
+  as proof of universal consensus. The Va'ad booklet is a field-survey guide whose publisher
+  description disclaims complete analysis. Halachipedia is a research index. The Eruv
+  Network course is practical training. Millunchick and the cited specialist Hebrew works
+  control the edge-case bibliography.
+- This revision changes the written specification and correct attribution, but deliberately
+  does not claim that the current binary overlap implementation, commercial-building model,
+  or interior-hole detector already satisfies the expanded spec.
+
 ---
 
 ## Part 3 — Product spec
@@ -507,7 +634,7 @@ overwrite).
 
 ```
 address ─► geocode ─► snap to footprint + disclosed confirmation requirement
-        ─► fetch OSM footprints with expanding-radius Overpass queries
+        ─► fetch Overture footprints with expanding-radius PMTiles queries
         ─► classify dwellings (tags + heuristics + manual override)
         ─► local true-north tangent/equirectangular projection, all math in meters
         ─► ibur: buffer by (70⅔·amah)/2, union, dissolve → city clusters
@@ -520,7 +647,8 @@ address ─► geocode ─► snap to footprint + disclosed confirmation require
         ─► reproject WGS84 ─► render in Leaflet ─► KML/KMZ/GeoJSON/PNG/PDF
 ```
 
-Modes: **settlement mode** (above), **point mode** (open field: 4000×4000 square, rotatable),
+Modes: **settlement mode** (above), **point mode** (open field: 4004×4004-amah square,
+rotatable),
 **validated-enclosure mode** (implemented, explicit opt-in) uses a rav-supplied hukaf-l'dira
 perimeter as the city edge. **Eruv-techumin relocation mode** remains future work.
 
@@ -536,7 +664,7 @@ makes an expert's judgment fast and visual — it does not hide it.
 
 | # | Risk | Magnitude | Mitigation |
 |---|---|---|---|
-| 1 | Dwelling classification from map data | moves city edge arbitrarily | biggest real risk — manual override UI, satellite backdrop, strict default |
+| 1 | Dwelling classification from map data | moves city edge arbitrarily | biggest real risk — manual override UI, satellite backdrop, included-unknown and verified-only scenarios; neither is inherently strict |
 | 2 | Footprint completeness (OSM Israel ≈ 42% complete; rural US fringes weak) | moves city edge | cross-check Overture vs OSM vs imagery; manual add tool |
 | 3 | Amah machlokes | ±≈190 m | config + dual lines |
 | 4 | Karpef / merge machlokes | ~34–41 m / km-scale merges | config flags, documented |
@@ -592,9 +720,15 @@ see README.md). Implements: geocode → Overture footprint fetch with auto-expan
 classification (auditable tag table) → 70⅔ ibur clustering → 141⅓ city merge (6-house
 minimum) → three-villages rule (flagged) → compass/natural-edge ribua → karpef toggle →
 2000-amos square-cornered techum → psak profiles → per-building overrides → comparison
-shita line → KML/GeoJSON export. The golden geometry suite covers the canonical
-shapes). Live-verified on New Square, NY (real map data, both amah shitos, city-mode
-detection, overlap + ir-mubla'as warnings).
+shita line → KML/GeoJSON export. The golden geometry suite covers the canonical shapes.
+Live-verified on New Square, NY (real map data, both amah shitos, city-mode detection,
+overlap + ir-mubla'as warnings).
+
+**Rev. 12 conformance gaps:** the shipped engine still needs the full *ir muvla'at*
+remainder calculation; a three-position overlapping-ribua enum; validated residential-yard
+perimeters participating in joins;
+full-width-break and ≥4000×4000 interior-hole review; and explicit bow-algorithm selection.
+A warning or binary toggle is not equivalent to implementing these calculations.
 
 **Original recommendation (kept for the record): build it.** The automation gap is confirmed — nobody has the footprint → dwelling filter →
 70⅔ clustering → ribua → 2000-offset engine, and that's exactly where hand-drawn maps make
@@ -609,7 +743,10 @@ the UI for building-level review is the bulk of the work.
    independent-city status for city-level rules, not chain extension. In the config matrix.
 2. ~~**Eruv-enclosure-as-city default**~~ **RESOLVED in rev. 5 — default OFF.** Measure from
    the buildings-derived city. A rav-validated *hukaf l'dira* perimeter remains a supported
-   alternative mehalich, but the app cannot infer that factual status or perimeter from OSM.
+   alternative mehalich, but the app cannot infer that factual status or perimeter from
+   Overture or ordinary carrying-eruv geometry. Rev. 12 clarifies that off is a selected
+   practice/data-confidence default, not an assertion that the validated alternative lacks
+   substantial support.
 3. ~~Ribua scope cap on mega-cities~~ **RESOLVED — no halachic cap** (Peninei Halakha:
    chains can run days' walk). Practical limits come from real breaks (rivers, industry,
    non-qualifying gaps) and data caps, which the app labels as data limits.
@@ -617,11 +754,14 @@ the UI for building-level review is the bulk of the work.
    detect material pockets and require reviewer-designated endpoints; do not silently infer
    endpoints. The Mechaber chord and Rema depth variants apply after endpoints are supplied.
 5. **Modern beis-dirah edge cases** — offices/factories (occupied but not slept in), hotels,
-   hospitals, schools, seasonal cottages, trailers/mobile homes, airports. The classic
-   categories (attended barn = yes, bare shul = no) don't map cleanly.
-6. **Where the 70⅔ is measured from** — building wall to building wall, or do attached
-   fenced yards/courtyards (hukaf l'dira) count as part of the house? Changes borderline
-   joins.
+   hospitals, schools, seasonal cottages, trailers/mobile homes, airports. Rev. 12 records
+   the sourced opinion counting some factories with offices/lunch facilities, but the
+   type-by-type profile matrix still requires a posek.
+6. ~~**Where the 70⅔ is measured from**~~ **SUPPORTED MANUAL MEHALICH in rev. 12:** an
+   attached fenced yard or perimeter genuinely open, subsidiary, and *hukaf l'dirah* may
+   supply the measurement origin (SA 396:2; Millunchick pp. 47–48). Because those facts
+   cannot be inferred from map fences/parcels, the default remains building wall-to-wall;
+   a rav-validated perimeter participates in the same 70⅔/141⅓ geometry.
 7. **Karpef psak confidence** — the default MB/Ashkenazi profile has it **on** (Rema; MB
    398:36) and the Mechaber/Sefardi profile off (corrected rev 4 — this line previously
    carried stale rev-2 "defaulted off" wording). Exactly how MB 398:21 comes down and what
@@ -630,8 +770,10 @@ the UI for building-level review is the bulk of the work.
    but RCN elsewhere)? Default: never mix; one amah drives everything.
 9. **Walled-city timing** (settled-then-walled measures from the wall) — rare, and
    undetectable from data; confirm it's fine as a manual-only option.
-10. **The ~7% hilly-terrain reduction** — single Hebrew secondary source, in tension with
-    horizontal-distance-is-the-target; ignore unless a posek wants it.
+10. **Terrain measurement shita** — Peninei Halakha 30:5 supports modern aerial/GPS
+    measurement; Tikun Eruvin as reported by Millunchick gives a possible slope-procedure
+    difference up to about 9.1%. Default to the modern-map mehalich; a posek may select and
+    document a sourced adjustment for a particular terrain calculation.
 
 **Verification TODO (before shipping anything):** the tool is city-agnostic; these are test
 benchmarks, not scope:
@@ -644,11 +786,56 @@ benchmarks, not scope:
 
 ---
 
-## Key sources
+## Key sources and authority hierarchy (rev. 12)
 
-Shulchan Aruch OC 396–399, 405, 408, 414–415 (SA HaRav via Chabad.org; Sefaria; Wikisource) ·
-Rambam Hil. Shabbos 27–28 · Mishna Berurah 397:1, 398:21/46, 399:7; Biur Halacha 404:1 ·
-Chazon Ish OC 39, 110:16/23/28 · Igros Moshe OC 1:136 · Minchas Yitzchak 7:24, 8:33 ·
-Chasam Sofer OC 94 · Meishiv Davar 4:58 · halachipedia.com/Techum · rabbikaganoff.com ·
-Peninei Halakha (ph.yhb.org.il) Techum chapters · thelehrhaus.com "Modern Technology Meets
-Tehum Shabbat" · chabad.org Borehamwood practical application · dafyomi.co.il Eruvin charts.
+### A. Controlling primary/codified sources
+
+Mishna and Gemara Eruvin 55a–58b · Rambam Hil. Shabbos 27–28 · Shulchan Aruch OC
+396–399, 405, 408, 414–415 · Rema · Mishna Berurah 397:1, 398:21/36/38/46, 399:7 and
+relevant Biur Halacha · Shulchan Aruch HaRav 396–399 · Aruch HaShulchan 398 · Chazon Ish
+OC 39 and 110. These control over a secondary English summary when the citations diverge.
+
+### B. Later specialist works for real-city geometry
+
+- R' Ephraim Ariel Buchwald, *Kiryat Ariel* — specialist Hebrew treatment repeatedly cited
+  for *beis dirah*, squaring, overlapping rectangles, urban breaks, and the Chazon Ish's
+  practical history; especially chapters 4–8. Catalog:
+  <https://www.nli.org.il/he/books/NNL_ALEPH990017860390205171/NLI>. Its full text was not
+  available online during rev. 12 research; these chapter/page references are indirect via
+  Millunchick and Peninei Halakha until checked against a physical or licensed copy.
+- R' Mordechai Millunchick, “Techum Shabbat and the Airport,” *Journal of Halacha and
+  Contemporary Society* 74 (2017), pp. 44–65 — detailed English consolidation of modern
+  structures, yards/enclosures, ribua, overlap, holes, highways, rivers, airports, and the
+  principal later opinions: <https://rjj.edu/journals/74/00.pdf>.
+- *Tikun Eruvin*, ch. 5; *Netivot HaShabbat*, ch. 42; *Machazeh Eliyahu* 79 and 82;
+  *Machazeh Avraham* 70; *Midarkei HaTechum*; Minchas Yitzchak 8:32; Shevet HaLevi 1:59
+  and 6:46; Minchas Shlomo 2:59. These are specialist authorities cited by the works above;
+  obtain and verify the actual text before assigning a disputed app profile to one of them.
+
+### C. Reliable English compilations and practical guides
+
+- R' Eliezer Melamed, *Peninei Halakha: Shabbat*, ch. 30 — the most complete freely
+  accessible illustrated English synthesis found, including orientation, exceptional
+  shapes, joins, overlap, large-city breaks, and eruv techumin:
+  <https://ph.yhb.org.il/en/category/01/01-30/>. It states its own practical rulings; where
+  specialist poskim disagree, cite it as one documented shita rather than “the consensus.”
+- R' Yosef Jacobovits / Eruv Network, *Bringing Eruvin to Life: Techum Shabbos* — practical
+  six-part English video/PDF/transcript primer for field application:
+  <https://outorah.org/series/4080/>. Use its diagrams and workflow after checking cited
+  sources; short practical lessons are not authority for every edge-case algorithm.
+- Va'ad LeTchum Shabbos, *A Guide to T'chum Shabbos* (Feldheim, bilingual, 99 pp.) — useful
+  surveying manual, but the publisher's description says that complete analysis is beyond
+  its scope: <https://feldheim.com/guide-to-t-chum-shabbos>.
+- “Modern Technology Meets Tehum Shabbat,” *The Lehrhaus* — GIS/aerial-imagery methodology
+  and worked metropolitan discussion:
+  <https://thelehrhaus.com/scholarship/modern-technology-meets-tehum-shabbat/>.
+- Halachipedia, “Techum” — detailed English footnote index and issue checklist, not an
+  independent psak authority: <https://www.halachipedia.com/index.php?title=Techum>.
+
+### Source-use rule for every implemented calculation
+
+Every algorithm-changing rule must record: (1) primary/codified source; (2) later specialist
+who applies it to the modern case; (3) competing shitos; (4) selected profile/default;
+(5) confidence and required rav-review condition; and (6) a golden geometry test. A source
+being English, recent, illustrated, or available online makes it easier to audit, but does
+not make it universally accepted or sufficient to choose among recognized shitos.
