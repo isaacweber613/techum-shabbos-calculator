@@ -93,6 +93,11 @@ attended** (SA HaRav 398:8, 10; under 4 amos wide is not a dwelling even if very
 - **Computation:** single-linkage clustering of qualifying dwellings at threshold 70⅔ amos
   (buffer each footprint by half the gap, union, dissolve). Then cluster-level merge passes:
   two-cities 141⅓ rule (cities only), three-villages projection test. All before squaring.
+- **Lone/sub-city building implementation:** when the shevisa pin lies on an included mapped
+  footprint but no qualifying city joins it, the footprint remains a non-city and the techum
+  is measured from the squared mapped walls. It does not receive the city karpef. Unknown-use
+  structures remain included under the data default but carry an explicit beis-dirah review
+  warning; an excluded footprint does not supply building shevisa.
 
 ### 1.5 Ribua ha'ir — squaring the city (SA OC 398:1–3; Rambam Shabbos 28:1–5)
 
@@ -449,6 +454,20 @@ overwrite).
   is disclosed as an engineering heuristic rather than psak, and every result records the
   method, effective angle, and score. Added golden coverage for an off-compass rectangular
   city and retained the circle/world-direction case.
+
+### Rev. 11 — 2026-07-13 (lone-building shevisa correction)
+
+- **Corrected a mode-selection defect.** A pin on an included house whose cluster had fewer
+  than six footprints was previously discarded as a bare open-field point and received only
+  a 4-amah starting square. The six-house threshold decides independent city status; it does
+  not erase the person's house. Such a result now has a separate `building` mode, remains a
+  non-city, and measures from the squared mapped footprint without a city karpef.
+- Unknown-use footprints continue to produce an automatic result, but the result warns that
+  both the mapped walls and beis-dirah qualification require confirmation. Pins outside the
+  footprint and pins on excluded footprints remain open-field point shevisa.
+- Satellite imagery is now the default simplified basemap. The optional illustrated basemap
+  is explicitly labelled as basemap coloring so its green land-use polygons cannot be
+  mistaken for the calculator's green starting boundary.
 
 ---
 

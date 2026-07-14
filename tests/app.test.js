@@ -70,10 +70,12 @@ test('simplified design directions calculate automatically and keep advanced con
   assert.match(main, /const isSimplifiedDirection = \/\^\(9\|10\)\$\//);
   assert.match(main, /scheduleAutomaticCalculation\(\)/);
   assert.match(main, /params\.has\('draftLat'\) && params\.has\('draftLon'\)/);
-  assert.match(main, /'Illustrated map': illustrated, 'Realistic view': realistic/);
+  assert.match(main, /realistic\.addTo\(map\)/);
+  assert.match(main, /'Satellite imagery': realistic, 'Illustrated map \(basemap colors\)': illustrated/);
   assert.match(experience, /quickSettings\.id = 'simple-quick-settings'/);
   assert.match(experience, /simple-settings-summary/);
   assert.match(experience, /mapKey\.id = 'simple-map-key'/);
+  assert.match(experience, /Starting place \(city, building, or 4 amos\)/);
   assert.match(experience, /simple-review-notes/);
   assert.match(experience, /Calculation details/);
   assert.match(experience, /document\.body\.append\(drawer\)/);

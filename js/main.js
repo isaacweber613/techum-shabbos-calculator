@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.2.0 (2026-07-13)';
+  const ENGINE_VERSION = '1.3.0 (2026-07-13)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -127,8 +127,8 @@
         attribution: '© OpenStreetMap contributors © CARTO',
       });
       const realistic = L.layerGroup([imagery, imageryLabels]);
-      illustrated.addTo(map);
-      L.control.layers({ 'Illustrated map': illustrated, 'Realistic view': realistic }, null, {
+      realistic.addTo(map);
+      L.control.layers({ 'Satellite imagery': realistic, 'Illustrated map (basemap colors)': illustrated }, null, {
         collapsed: false, position: 'topright',
       }).addTo(map);
     } else {
@@ -445,7 +445,10 @@
       : `Fresh ${releaseLabel} footprints.`;
     setStatus(`Done — ${state.rawBuildings.length} buildings analyzed. ` +
       (state.result && state.result.mode === 'city'
-        ? 'Techum drawn from the squared city. ' : 'Point-shevisa techum drawn. ') +
+        ? 'Techum drawn from the squared city. '
+        : state.result && state.result.mode === 'building'
+          ? 'Techum drawn from the mapped building walls. '
+          : 'Point-shevisa techum drawn. ') +
       cacheLabel);
     finishCalculationProgress(true);
     track('calc', {
@@ -853,6 +856,7 @@
     const view = { minX: Math.min(sw.x, ne.x), minY: Math.min(sw.y, ne.y), maxX: Math.max(sw.x, ne.x), maxY: Math.max(sw.y, ne.y) };
     const homeMembers = res.mode === 'city' && res.homeCluster >= 0 && res.clusters[res.homeCluster]
       ? new Set(res.clusters[res.homeCluster].members) : new Set();
+    if (res.mode === 'building' && res.homeBuilding >= 0) homeMembers.add(res.homeBuilding);
     state.buildings.forEach((b, i) => {
       if (b.bbox.maxX < view.minX || b.bbox.minX > view.maxX || b.bbox.maxY < view.minY || b.bbox.minY > view.maxY) return;
       const st = { ...(KLASS_STYLE[b.klass] || KLASS_STYLE.unknown) };
@@ -922,10 +926,14 @@
     if (res.karpefCorners && document.getElementById('layer-karpef').checked)
       addRect(res.karpefCorners, { color: MAP_PALETTE.greenStroke, weight: 2, dashArray: '6 5',
         fill: true, fillColor: MAP_PALETTE.greenSoft, fillOpacity: 0.2 }, 'Karpef (+70⅔ amos — Rema/MB 398:36)');
-    if (document.getElementById('layer-city').checked)
+    if (document.getElementById('layer-city').checked) {
+      const startingAreaLabel = res.mode === 'city'
+        ? 'GREEN STARTING CITY (ribua ha’ir)'
+        : res.mode === 'building' ? 'GREEN MAPPED BUILDING — starting walls' : 'GREEN 4-AMOS SHEVISA';
       addRect(res.cityCorners, { color: MAP_PALETTE.greenStroke, weight: 4, fill: true,
         fillColor: MAP_PALETTE.green, fillOpacity: 0.62, casing: true },
-      res.mode === 'city' ? 'GREEN STARTING CITY (ribua ha’ir)' : 'GREEN 4-AMOS SHEVISA');
+      startingAreaLabel);
+    }
     if (settings.show12mil)
       addRect(res.mil12Corners, { color: '#666', weight: 1.5, dashArray: '2 6', fill: false }, '12 mil (d’oraisa shita)');
     for (const region of res.concavityRegions || [])
@@ -950,7 +958,7 @@
         }, state.proj.toXY(state.pin.lat, state.pin.lon));
         if (resV.techumCorners)
           addRect(resV.techumCorners, { color: '#ffb300', weight: 2.5, dashArray: '8 6', fill: false },
-            'Scenario: verified dwellings only (' + (resV.mode === 'point' ? 'point shevisa!' : 'city') + ') — data-uncertainty bracket, not a psak', layerGroups.second);
+            'Scenario: verified dwellings only (' + (resV.mode === 'city' ? 'city' : resV.mode === 'building' ? 'building shevisa' : 'point shevisa!') + ') — data-uncertainty bracket, not a psak', layerGroups.second);
       }
     }
 
@@ -1142,7 +1150,10 @@
       if (state.snapInfo.snapped) lines.push(`<div class="note"><b>Pin snapped to mapped footprint</b> — moved ${state.snapInfo.distanceM.toFixed(1)} m to ${escapeHtml(state.snapInfo.klass)} (${escapeHtml(state.snapInfo.reason)}). Confirm the marker against the imagery; drag it to correct.</div>`);
       else lines.push(`<div class="note"><b>Pin check:</b> ${escapeHtml(state.snapInfo.reason || 'Already on a mapped footprint')}. Confirm against imagery.</div>`);
     }
-    lines.push(`<div class="stat"><b>Mode:</b> ${res.mode === 'city' ? 'city (whole city = 4 amos)' : 'open field (point shevisa)'}</div>`);
+    const modeLabel = res.mode === 'city'
+      ? 'city (whole city = 4 amos)'
+      : res.mode === 'building' ? 'building shevisa (measured from mapped walls)' : 'open field (point shevisa)';
+    lines.push(`<div class="stat"><b>Mode:</b> ${modeLabel}</div>`);
     if (res.mode === 'city' && res.squaring) {
       const angleText = `${Math.abs(res.squaring.angleDeg || 0).toFixed(1)}°`;
       const squareText = res.squaring.method === 'preserved-rectangle'
@@ -1162,6 +1173,10 @@
       lines.push('<div class="note"><b>Comparison-amah line omitted:</b> this optional second full-city scenario is disabled above 10,000 footprints. Change the primary amah and recalculate to evaluate that shita on a large city.</div>');
     }
     if (res.mode === 'city') lines.push(`<div class="stat"><b>Home city cluster:</b> ${homeSize} structures</div>`);
+    if (res.mode === 'building' && res.homeBuilding >= 0) {
+      const homeBuilding = state.buildings[res.homeBuilding];
+      lines.push(`<div class="stat"><b>Starting structure:</b> mapped footprint ${escapeHtml(homeBuilding && homeBuilding.id ? homeBuilding.id : String(res.homeBuilding + 1))}</div>`);
+    }
     const smallCount = settings.minSizeFilter
       ? state.buildings.filter((b) => isTooSmall(b) && state.overrides.get(b.id) !== 'include').length : 0;
     if (smallCount) lines.push(`<div class="stat"><b>Below 4×4 amos (excluded):</b> ${smallCount} structures</div>`);
@@ -1180,8 +1195,9 @@
     }
     for (const [key, count] of seenWarnings) {
       const [type, text] = [key.slice(0, key.indexOf('|')), key.slice(key.indexOf('|') + 1)];
-      const cls = type === 'point-mode' ? 'note' : 'warn';
-      lines.push(`<div class="${cls}">${type === 'point-mode' ? 'ℹ' : '⚠'} ${escapeHtml(text)}${count > 1 ? ` <b>(×${count})</b>` : ''}</div>`);
+      const informational = type === 'point-mode';
+      const cls = informational ? 'note' : 'warn';
+      lines.push(`<div class="${cls}">${informational ? 'ℹ' : '⚠'} ${escapeHtml(text)}${count > 1 ? ` <b>(×${count})</b>` : ''}</div>`);
     }
     el.innerHTML = lines.join('');
     renderConfidence(counts);

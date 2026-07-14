@@ -164,13 +164,27 @@ function rectSpan(corners) {
   assert('point techum = 4 amos + 2*2000 amos', approx(t.w, 4 * RCN + 2 * TECHUM, 0.01), `w=${t.w}`);
 }
 
-// 6b. A footprint is not automatically a qualifying city ---------------------
+// 6b. A footprint is not a city, but shevisa is measured from its walls -------
 {
   const loneHouse = [squareHouse(0, 0)];
   const res = G.runPipeline(loneHouse, S, { x: 0, y: 0 });
-  assert('sub-city cluster at the pin does not become a city',
-    res.mode === 'point' && res.clusters[0].qualifiesAsCity === false,
+  assert('sub-city footprint at the pin uses building mode without becoming a city',
+    res.mode === 'building' && res.homeBuilding === 0 && res.clusters[0].qualifiesAsCity === false,
     `mode=${res.mode}`);
+  const base = rectSpan(res.cityCorners), techum = rectSpan(res.techumCorners);
+  assert('lone building starts from its mapped 10m walls',
+    approx(base.w, 10) && approx(base.h, 10), JSON.stringify(base));
+  assert('lone building techum expands 2000 amos from its walls',
+    approx(techum.w, 10 + 2 * TECHUM) && approx(techum.h, 10 + 2 * TECHUM), JSON.stringify(techum));
+
+  const outside = G.runPipeline(loneHouse, S, { x: 20, y: 0 });
+  assert('pin outside a non-city footprint remains open-field point shevisa',
+    outside.mode === 'point' && outside.homeBuilding === -1, `mode=${outside.mode}`);
+
+  const excluded = [{ ...squareHouse(0, 0), included: false }];
+  const excludedResult = G.runPipeline(excluded, S, { x: 0, y: 0 });
+  assert('excluded footprint under pin does not become building shevisa',
+    excludedResult.mode === 'point' && excludedResult.homeBuilding === -1, `mode=${excludedResult.mode}`);
 }
 
 // 7. Natural-edge squaring (rotation) -----------------------------------------
