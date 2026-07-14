@@ -772,7 +772,22 @@
     const validatedPerimeter = Array.isArray(settings.validatedCityPerimeter) && settings.validatedCityPerimeter.length >= 3
       ? settings.validatedCityPerimeter.map(rot) : null;
     const perimeterActive = !!(validatedPerimeter && pointInRing(workPin, validatedPerimeter));
-    const mode = perimeterActive || (home >= 0 && bestD <= joinM) ? 'city' : 'point';
+    // A footprint under the pin is the person's place of shevisa even when its
+    // cluster has fewer than the six houses required for independent city status.
+    // Choose the smallest containing included footprint so nested roof outlines do
+    // not accidentally promote a larger parent geometry.
+    let homeBuilding = -1, homeBuildingArea = Infinity;
+    work.forEach((building, index) => {
+      if (!building.included || !pointInOrOnRing(workPin, building.ring)) return;
+      const area = Math.abs(ringArea(building.ring));
+      if (area < homeBuildingArea) {
+        homeBuilding = index;
+        homeBuildingArea = area;
+      }
+    });
+    const mode = perimeterActive || (home >= 0 && bestD <= joinM)
+      ? 'city'
+      : homeBuilding >= 0 ? 'building' : 'point';
     markStage('homeSelection');
 
     let cityRect = null, karpefRect = null, techumRect = null, concavity = [];
@@ -833,6 +848,17 @@
           warnings.push({ type: 'ir-mublaas', text: 'A settlement lies entirely inside the techum: it counts as 4 amos, so one may effectively continue beyond the line on that side (ir mubla’as). Not drawn; ask a rav.' });
         }
       }
+    } else if (mode === 'building') {
+      // A lone/sub-city qualifying building is measured from its own walls. It is
+      // not promoted to a city and receives no city karpef.
+      squaring = deriveSquaring(work[homeBuilding].ring, { reviewerAngleApplied: angle !== 0 });
+      boundaryAngleRad = squaring.angleRad;
+      cityRect = { ...squaring.rect };
+      techumRect = expandRect(cityRect, techumM);
+      warnings.push({
+        type: 'building-mode',
+        text: 'No qualifying city joins this footprint. The techum is measured from the mapped building walls; confirm the footprint and that this structure qualifies as a place of dwelling.',
+      });
     } else {
       // Person in an open field: 4 amos + 2000 each direction, square, rotatable (SA 397:1; 399)
       const half = 2 * settings.amahM; // half of 4 amos
@@ -860,7 +886,7 @@
 
     const cityCorners = rotatePointCorners(rectToCorners(cityRect, boundaryAngleRad));
     const techumCorners = rotatePointCorners(rectToCorners(techumRect, boundaryAngleRad));
-    const mil12Corners = rotatePointCorners(mode === 'city'
+    const mil12Corners = rotatePointCorners(mode !== 'point'
       ? rectToCorners(expandRect(karpefRect || cityRect, AMOS.MIL12 * settings.amahM), boundaryAngleRad)
       : rectToCorners(expandRect(cityRect, AMOS.MIL12 * settings.amahM)));
 
@@ -869,6 +895,7 @@
       validatedPerimeterActive: perimeterActive,
       labels,
       homeCluster: home,
+      homeBuilding,
       clusters: clusters.map((c) => {
         const clusterSq = c.qualifiesAsCity ? getClusterSquaring(c) : null;
         return ({
@@ -892,7 +919,7 @@
       mil12Corners,
       squaring: {
         method: squaring.method,
-        angleDeg: mode === 'city'
+        angleDeg: mode !== 'point'
           ? (settings.squaringAngleDeg || 0) + boundaryAngleRad * 180 / Math.PI
           : (settings.pointRotationDeg || 0),
         rectangularity: squaring.rectangularity,

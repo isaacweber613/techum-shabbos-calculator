@@ -89,7 +89,7 @@
       mapKey.innerHTML = `
         <b>Map lines</b>
         <span><i class="key-line techum"></i><strong>Pink</strong> Your techum area</span>
-        <span><i class="key-line city"></i><strong>Green</strong> Starting city</span>
+        <span><i class="key-line city"></i><strong>Green</strong> Starting place (city, building, or 4 amos)</span>
         <span><i class="key-line karpef"></i><strong>Pale green</strong> Extra city space</span>
         <span><i class="key-line alternate"></i><strong>Amber</strong> Alternate, when shown</span>`;
       document.getElementById('map')?.append(mapKey);
@@ -101,12 +101,13 @@
           const original = [...results.children];
           const modeStat = original.find((node) => node.classList.contains('stat') && node.textContent.includes('Mode:'));
           const isCity = modeStat?.textContent.includes('city (') || false;
+          const isBuilding = modeStat?.textContent.includes('building shevisa') || false;
           const confidence = document.getElementById('confidence')?.textContent.trim() || '';
           const card = document.createElement('section');
           card.className = 'simple-result-card';
           card.innerHTML = `
             <h3>Your techum is ready</h3>
-            <p><b>Pink area = your techum.</b> The green area is ${isCity ? 'the starting city' : 'your starting square'}. Drag the pin to update automatically.</p>
+            <p><b>Pink area = your techum.</b> The green area is ${isCity ? 'the starting city' : isBuilding ? 'the mapped building used as your starting place' : 'your 4-amah starting square'}. Drag the pin to update automatically.</p>
             <details class="simple-result-explainer">
               <summary>How was this calculated? <span aria-hidden="true">i</span></summary>
               <p>${isCity
