@@ -1,6 +1,6 @@
 # Rav review packet — Techum Shabbos Calculator
 
-Prepared 2026-07-12. This is a decision sheet, not a psak. The detailed reasoning,
+Prepared 2026-07-14 for spec rev. 13. This is a decision sheet, not a psak. The detailed reasoning,
 citations, revision history, and alternatives are in `TECHUM-SPEC.md`; implementation
 evidence and known gaps are in `HALACHA-AUDIT.md`.
 
@@ -14,14 +14,15 @@ current software behavior may remain; it does not certify a particular city's in
 |---|---|---|---|
 | 1 | Which modern structures are a *beis dirah*: hotels, hospitals, schools, offices/factories, seasonal homes, trailers, airport buildings? | Tag-based inclusion with unknowns visibly flagged and manually overridable | Classification table and every affected city edge |
 | 2 | May six mapped footprints approximate 3 *chatzeros* × 2 houses for independent-city status? How should apartments/shared entrances count? | Six-footprint approximation, warned; it affects 141⅓ merges, not ordinary 70⅔ chaining | Cluster qualification and potentially kilometer-scale merges |
-| 3 | In the MB/Ashkenazi profile, is a 70⅔-amah karpef added before the 2,000? Does an annexed outlying house generate another karpef? | Single-city karpef on; after-ibur detail approximated by the same toggle | Tens of meters at each outer edge; possibly topology |
-| 4 | Does standing in a filled corner of the city's *ribua* make the person a city resident? | Yes; larger containing settlement wins | City mode versus point mode |
-| 5 | What establishes *ribua* orientation for irregular cities or a natural straight edge? | Compass in MB/Mechaber profiles; reviewer angle allowed; CI profile permits natural edge | Rectangle orientation and corner reach |
-| 6 | For a real bow/L-shape, who designates endpoints, and should Mechaber chord/Rema depth variants be offered? | Detect and warn; no silent endpoint invention or fill | Concavity treatment and possibly large areas |
+| 3 | In the MB/Ashkenazi profile, is one 70⅔-amah karpef added after the final permitted ribua/overlap regions? | Yes; one post-ribua karpef, with no recursive karpef-generated merger | Tens of meters at each outer edge; possibly topology |
+| 4 | Does standing in a filled corner of the city's *ribua* make the person a city resident? | Yes; a physically containing dwelling takes priority, then the final profile-governed starting region; unrelated no-join candidates use their common permission | City mode versus point mode and the selected home city |
+| 5 | What establishes *ribua* orientation for existing rectangles, trapezoids, irregular cities, or a natural straight edge? | Preserve a high-confidence rectangle; extend an exact trapezoid on its parallel pair; otherwise true world directions; reviewer angle allowed | Rectangle orientation and corner reach |
+| 6 | For a real bow/L-shape, who designates endpoints, and which chord/depth rule applies? | Reviewer supplies endpoints. Until then, provisional no-fill; afterward MB/Ashkenazi uses the Rema-majority chord-or-depth rule and Mechaber uses the chord rule | Concavity treatment and possibly large areas |
 | 7 | Can a validated *hukaf l'dira* eruv/perimeter define the city? | Ordinary eruv ignored; buildings-derived city. Alternative only after rav validates the perimeter | Starting boundary for the entire techum |
-| 8 | Is the 70⅔ gap measured wall-to-wall, or may attached courtyards/fenced residential areas count? | Building-footprint wall to wall | Borderline chains and outer edge |
-| 9 | Confirm profile consistency: one amah value drives 4, 70⅔, 141⅓, 2,000, 4,000 and 24,000 amos; no mixing shitos. | One selected amah drives all thresholds | All scale and topology calculations |
-| 10 | Any role for a roughly 7% hilly-terrain reduction? | Not implemented; horizontal plan distance is used | Distance model |
+| 8 | Is the 70⅔ gap measured wall-to-wall, or may attached courtyards/fenced residential areas count? | Footprint wall to wall; a rav may add a validated residential joining perimeter that affects geometry but counts as zero houses | Borderline chains and outer edge |
+| 9 | Is a wholly enclosed void at least 4,000 × 4,000 amos included? | Include with mandatory warning (Beit Yitzchok / R' Shulem Weiss); strict exclusion is available | Internal starting area and its resulting techum |
+| 10 | Confirm profile consistency: one amah value drives 4, 70⅔, 141⅓, 2,000, 4,000 and 24,000 amos; no mixing shitos. | One selected amah drives all thresholds | All scale and topology calculations |
+| 11 | Any role for a roughly 7% hilly-terrain reduction? | Not implemented; horizontal plan distance is used | Distance model |
 
 Suggested first pass: decide 1–4. They affect ordinary results most often. Questions 5–8
 can then be tested on a city where they are concrete rather than in the abstract.
@@ -31,9 +32,14 @@ can then be tested on a city where they are concrete rather than in the abstract
 - 70⅔-amah single-link dwelling chain, measured footprint edge to edge.
 - 141⅓-amah merge only between qualifying settlements; a lone dwelling gets only 70⅔.
 - Three-villages rule, including the 2,000/4,000-amah conditions.
-- Compass-aligned rectangular *ribua* baseline and square-cornered 2,000-amah techum.
+- Shape-aware rectangle/trapezoid/world-direction *ribua* and square-cornered 2,000-amah techum.
 - Rotatable 4,000 × 4,000-amah point-mode square outside a city.
-- Overlapping squared rectangles do not automatically merge in the default profile.
+- Overlapping squared rectangles do not automatically merge in the public default. The
+  advanced choices calculate R' Shlomo Miller's joined stepped union or the expansive
+  recursive joint redraw rather than treating them as a binary label.
+- A confirmed bow/L endpoint pair changes the calculation; an unconfirmed material pocket
+  remains a visibly provisional no-fill result.
+- Multi-region starting areas remain multi-region on the map and in KML/KMZ/GeoJSON.
 - R' Chaim Naeh 48 cm is the MB/Ashkenazi and Mechaber profile default; Chazon Ish is
   57.6 cm. Alternate results are labeled scenarios, not automatically lenient/stringent.
 
@@ -60,7 +66,8 @@ append-only spec revision.
 
 It does not prove that OSM is complete, that a mapped building is a halachic dwelling, that
 six footprints equal three qualifying courtyards, that a community eruv is *hukaf l'dira*,
-or that automatically detected concavity endpoints are halachically correct. It also does
+or that an automatically detected bow/hole mask identifies the halachically correct factual
+endpoints. It also does
 not replace the *mumcheh* required for techum measurement (MB 399:7).
 
 ## Source lookup order

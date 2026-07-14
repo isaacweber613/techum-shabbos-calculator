@@ -70,7 +70,7 @@ proxy), and Esri World Imagery (satellite tiles).
 
 | File | What it does |
 |---|---|
-| `js/geometry.js` | The halachic engine (pure, no deps, node-testable): local true-north projection, 70⅔ clustering, city merges, ribua bounding rectangle, karpef, techum, concavity warnings |
+| `js/geometry.js` | The halachic engine (pure, no deps, node-testable): local true-north projection, fixed-point city merges, shape-aware ribua regions, applied bow/hole masks, three overlap approaches, karpef, and multi-region techum |
 | `js/data.js` | Overture fetch/cache client, Nominatim geocode, the auditable dwelling-classification tag table |
 | `worker/overture.ts` | Range-fetches and decodes the public Overture Buildings PMTiles archive |
 | `js/settings.js` | Psak profiles (spec Part 2) + persistence |
@@ -85,7 +85,10 @@ proxy), and Esri World Imagery (satellite tiles).
 - City-merge distance checks are exact but O(pairs) — metro-scale runs (>20k buildings)
   may be slow; the fetch cap (settings) is a **data limit, not a halachic cap**, and the
   app says so when hit.
-- Bow/concavity rule (SA 398:3, ≥4000-amos gaps) is detected and **warned**, not auto-resolved.
+- Bow/L endpoints on an irregular real city remain a rav-reviewed factual input. Before
+  confirmation the app draws a labelled smaller no-fill result; afterward it applies the
+  selected bow rule to the geometry.
 - Eruv-enclosure-as-city defaults off: the engine measures from the buildings-derived city.
-  A rav-validated *hukaf l'dira* perimeter remains an advanced future input (spec rev. 5).
-  Ir mubla'as extension and eruv-techumin mode are flagged/planned, not computed.
+  Rav-validated *hukaf l'dira* city edges and zero-house residential joining perimeters are
+  implemented advanced inputs. Ir muvla'at remains a destination/path-specific warning,
+  not a fabricated universal extension polygon; eruv-techumin relocation is future scope.

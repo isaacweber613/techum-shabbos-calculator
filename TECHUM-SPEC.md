@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched draft (rev. 12, 2026-07-14) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 13, 2026-07-14) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -172,16 +172,40 @@ Rules by shape:
   must flag every case in which either alternative would change the result. A binary
   on/off control cannot faithfully represent R' Shlomo Miller's middle position.
 
-**Computation:** derive the minimum-area rectangle of the cluster's convex hull. Preserve
-that orientation automatically only when the hull fills at least 94% of it; otherwise use
-the compass-aligned bounding rectangle. **The 94% threshold is an engineering confidence
-guard, not a halachic shiur.** It prevents an arbitrary long diagonal edge on an irregular
-city from silently choosing the orientation, and the selected method, angle, and
-rectangularity score are included in the calculation audit. The reviewer-angle control
-remains the documented override for a rav-selected natural edge/right angle. Material
-concavities are detected and warned; filling awaits reviewer-designated endpoints. The
-implemented local true-north tangent projection makes compass axes cardinal (never
-magnetic north).
+**Executable default computation (rev. 13):**
+
+1. Freeze qualifying dwellings and rav-validated subsidiary residential perimeters.
+2. Build 70⅔-amah components; qualify independent cities; then run 141⅓-amah and
+   three-village mergers repeatedly to a fixed point. Karpef never feeds backward into a
+   merge.
+3. Choose axes: a reviewer angle controls when supplied; otherwise preserve a
+   minimum-area-rectangle direction only when the convex hull fills at least 94% of it; an
+   exact four-vertex trapezoid with an opposite pair parallel within the 1° engineering
+   tolerance follows that pair; everything else uses true world directions. **94% and 1°
+   are conservative engineering classifiers, not halachic shiurim.** The audit records the
+   classifier, score, tolerance, angle, and any reviewer override.
+4. On the chosen axes, every qualifying protrusion fixes the support line of its entire
+   side. No small outlier is discarded after its dwelling/perimeter status is accepted.
+5. Detect material open bow/L/gamma pockets and wholly enclosed holes before finalizing
+   the starting area. A ≥4000-amah open pocket without reviewer-confirmed endpoints gets a
+   visibly **provisional smaller no-fill result**; the generic bounding rectangle may not
+   silently grant it. Once endpoints are supplied, the Rema-majority default fills when
+   the chord is <4000 amos or the depth is <2000 amos; equality belongs to the ≥ branch.
+   The remaining wide/deep pocket stays excluded. The Mechaber/Rambam and
+   Rashba/Ritva-in-exigency alternatives are named settings. The engine represents a
+   no-fill result as a deterministic union of non-overlapping rectangular review-mask
+   pieces, not as a fake encompassing rectangle. The mask is an engineering rendering of
+   the detected void and remains subject to the review banner; only its supplied endpoints
+   are treated as factual reviewer input.
+6. Apply the selected overlap rule to the resulting city rectangles: `no_join` (public
+   default); `join_no_redraw` (R' Shlomo Miller — retain a stepped union); or
+   `join_redraw` (expansive approach — redraw and test again to a fixed point).
+7. Apply one profile-governed karpef to each final permitted starting region, then the
+   2000-amah square-corner expansion to each region. The union is the displayed techum.
+
+The local true-north tangent projection makes compass axes cardinal (never magnetic
+north). Multi-region starting areas, karpefs, and techumin remain multi-region in the map,
+snapshot, KML/KMZ, and GeoJSON audit; they are never flattened to a larger bounding box.
 
 ### 1.6 Karpef — the extra 70⅔ buffer (SA OC 398:5; MB 398:21, 398:36)
 
@@ -190,10 +214,11 @@ magnetic north).
 1. **`single_city_karpef`** — Mechaber/Rambam: no karpef for a single city (2000 from the
    outermost dwellings). Rema (recorded MB 398:36): add 70⅔ first. **Profile-governed:
    ON in the MB/Ashkenazi default profile, OFF in Mechaber/Sefardi.**
-2. **`karpef_after_joined_outlying_house`** — whether a structure annexed through *ibur*
-   itself generates another 70⅔ beyond it. The MB/Biur Halacha and Chazon Ish treatments
-   are not identical and are **not** captured by one "inflate rectangle by 70⅔" operation.
-   ⚠ v1 approximates this inside the single toggle; split pending posek input (open Q).
+2. **`karpef_after_joined_outlying_house`** — executable MB/Rema default: finish all
+   dwelling, 70⅔, 141⅓, three-village, bow/hole, ribua, and selected overlap processing;
+   then add **one** outer 70⅔-amah karpef to every final permitted starting region. An
+   annexed house does not recursively generate another merger-stage karpef. This is the
+   documented default; another community practice requires a named reviewer profile.
 3. **Two-city 141⅓ allowance** — each settlement's 70⅔ margin toward its neighbor. **Not
    optional** in the same sense; always applied in the merge test (all profiles).
 
@@ -257,7 +282,10 @@ magnetic north).
   Beit Yitzchok distinguishes a closed hole from an open bow, and Tikun Eruvin records a
   lenient view treating the encircling city as continuous. Therefore an interior hole does
   not automatically split the default city, but any enclosed void reaching 4000 amos in
-  both dimensions is a mandatory rav-review warning.
+  both governing axes is a mandatory rav-review warning. The advanced
+  `exclude_large_hole` setting follows Zichron Yosef/R' Pesach Falk and preserves the void
+  as an exclusion mask; later ribua processing may not refill it. The implemented default
+  `include_with_warning` follows Beit Yitzchok/R' Shulem Weiss.
 - A carrying eruv, public use of the gap, and overlapping ribua rectangles are each proposed
   bases for joining sections, but all three are disputed. They must be reported separately
   in the audit rather than collapsed into a generic “city continuity” heuristic.
@@ -269,8 +297,11 @@ the settled city and its ribua, plus only the profile-governed karpef/perimeter 
 that actually apply. Peninei Halakha 30:4 expressly includes one who rests within the
 squared area. The previous unconditional test “within 70⅔ amos of a structure” was too
 broad for Mechaber/Rambam profiles, which do not give every single city the Rema's outer
-karpef. If several candidate cities contain the pin, the engine must report the candidates
-and governing rule rather than silently choosing the geographically largest rectangle.
+karpef. Priority is: (1) the qualifying dwelling/perimeter component physically containing
+the pin; then (2) a final starting region containing it. If the pin lies only in the empty
+overlap of several unrelated `no_join` ribua rectangles, the public result is the exact
+intersection of their candidate permissions and is labelled provisional; the engine never
+silently chooses the geographically largest rectangle.
 
 If the person rests outside every city, he remains in point mode:
 
@@ -280,7 +311,11 @@ If the person rests outside every city, he remains in point mode:
   city counts as four amos and his unspent measurement resumes beyond its far edge
   (SA 408:1; Peninei Halakha 30:4 n. 5). This is a path/direction-dependent calculation,
   not a switch into resident city mode and not a union with the city's own 2000-amah
-  techum. The audit must show the consumed distance, collapsed city segment, and remainder.
+  techum. A single universal two-dimensional polygon for arbitrary destinations, repeated
+  swallowed cities, and rotated point squares is not established by the cited sources.
+  Therefore the ordinary map detects and flags swallowed-city candidates but does not draw
+  an invented universal extension. A route/destination-specific audit must show consumed
+  distance, collapsed city segment, and remainder after a posek approves that formal model.
 
 ### 1.10 Person-level rules (context, mostly out of scope v1)
 
@@ -332,7 +367,8 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 | Squaring alignment | automatic SA/MB shape rule: preserve a clear existing rectangle; otherwise world directions | same automatic rule; reviewer may set a sourced natural edge (CI OC 110:23) | automatic SA shape rule; reviewer override available |
 | Overlapping-squares rect merge | **no join** + warning (R' Elyashiv / R' N. Karelitz / R' Belsky); advanced middle option: join without redraw (R' S. Miller) | joint redraw available as the expansive CI reading, but CI's practical conclusion is reported as uncertain | **no join** + warning; alternatives remain explicit |
 | City minimum for the 141⅓ merge | 6 houses (MB 398:38) | 6 + CI courtyard qualifications ⚠ | 6 |
-| Bow/concavity fill (< 4000 amos endpoints) | din applies (SA 398:3, all profiles); v1 detect-and-flag — endpoints are a reviewer decision (rev 3/4) | ” | ” |
+| Bow/L/gamma | **Rema-majority:** fill when confirmed chord <4000 or depth <2000; otherwise no-fill; unresolved endpoints use provisional no-fill | same default; reviewer may select another sourced shita | **Mechaber/Rambam:** narrow chord fills; wide remainder follows inhabited/curved edge; reviewer endpoints required |
+| Wholly enclosed ≥4000×4000-amah hole | **include + mandatory warning** (Beit Yitzchok / R' Shulem Weiss); strict exclusion available | same | same |
 | Unknown-use buildings | include, flagged for review (all profiles — data policy, not psak) | ” | ” |
 | Eruv-enclosure-as-city | **off unless rav-validated** — selected practice/data-confidence default, not settled consensus; validated *hukaf l'dirah* perimeter available | same | same |
 | 12-mil ring / second-shita comparison line | hidden / off (available in all profiles) | ” | ” |
@@ -357,11 +393,12 @@ overwrite).
 - **Unknown-buildings "include" default is NOT conservative** (annexing an unknown chain
   can enlarge the area). The app now draws a second **verified-dwellings-only scenario**
   line; the two lines bracket the data uncertainty and neither is authoritative.
-- **Karpef split into three rules** (see §1.6); v1 approximates #2 inside the toggle.
+- **Karpef split into three rules** (see §1.6); this rev-3 implementation note is
+  superseded by rev. 13's one-post-ribua MB/Rema default.
 - **Ribua "RESOLVED" retracted**; orientation is an explicit reviewer decision (§1.5).
-- **Bow/concavity pass is detect-and-flag, not auto-fill** — arbitrary suburban polygons
-  have no unique "two endpoints of the bow"; the reviewer designates them (v1: warning
-  regions on the map; endpoint designation UI planned).
+- **Bow/concavity pass was detect-and-flag in rev. 3** — arbitrary suburban polygons have
+  no unique "two endpoints of the bow." Rev. 13 now applies confirmed endpoints and uses a
+  provisional no-fill geometry before confirmation.
 - **Determinism, caching & the "database" question (Isaac, 2026-07-10):** the engine is
   pure (same data + settings → same output). Nondeterminism enters only through OSM data
   updates. Three-layer answer to "save city boundaries in a DB vs compute each time":
@@ -403,9 +440,9 @@ overwrite).
   MB/Ashkenazi profile (Rema; MB 398:36); **off** is the Mechaber/Sefardi profile. No
   default changed here — only the stale sentence.
 - **Profile-matrix bow row clarified** — the row read "fill on", which overstated v1: per
-  rev 3 the implementation is detect-and-flag (no auto-fill; endpoints are a reviewer
-  decision). The din itself (SA 398:3) is undisputed across profiles; the cell now says
-  "din applies; v1 detect-and-flag".
+  rev 3 the implementation was detect-and-flag (no auto-fill; endpoints are a reviewer
+  decision). Rev. 13 supersedes that implementation with provisional no-fill and applied
+  reviewer endpoints.
 - **settings.js header** said "mirrors Part 2 (rev. 2)"; it matches rev. 3 — comment fixed.
 - **Hunter, NY validation benchmark = standing TODO** (Isaac, 2026-07-10: deferred, keep
   as todo). Published under both R' Moshe and Chazon Ish shiurim — two-shita cross-check.
@@ -596,6 +633,39 @@ overwrite).
   does not claim that the current binary overlap implementation, commercial-building model,
   or interior-hole detector already satisfies the expanded spec.
 
+### Rev. 13 — 2026-07-14 (complete executable city-squaring model)
+
+- **One ordinary default is now explicit.** MB/Ashkenazi uses `no_join` for overlapping
+  ribua rectangles. The two recognized joining approaches remain advanced rav settings;
+  ordinary users are not asked to choose.
+- **Every squaring branch now terminates deterministically.** Existing high-confidence
+  rectangles preserve their axes; exact trapezoids follow their parallel pair; ordinary
+  irregular cities use world directions; protrusions fix full support lines; unresolved
+  material bows use a smaller provisional no-fill result instead of an unsafe generic fill.
+- **Overlap is genuinely three-valued.** `no_join` keeps unrelated cities separate;
+  `join_no_redraw` retains the original rectangles and produces stepped green/pink unions;
+  `join_redraw` repeatedly redraws and retests until stable. Karpef is applied only after
+  that choice and never creates a new overlap join.
+- **Bow endpoints now change geometry.** The app records the reviewer-confirmed endpoints,
+  calculates chord and depth, applies the selected Rema/Mechaber/emergency profile, and
+  preserves excluded pockets as multiple regions. Before endpoints, the no-fill result is
+  clearly marked provisional.
+- **Large enclosed holes now have a complete default and alternative.** The public default
+  includes the hole with a mandatory warning; strict exclusion is selectable and preserved
+  through ribua, karpef, display, and exports.
+- **Validated residential yards/perimeters participate in joining geometry without
+  becoming houses.** Their polygons carry `joinOnly=true`, affect 70⅔/141⅓ distances, add
+  zero to the six-house approximation, and are frozen in snapshots and audit exports.
+- **City membership is profile-correct.** Rema karpef can contain the pin; Mechaber mode
+  does not receive that membership. An empty overlap of unrelated no-join cities returns
+  the exact common permission area rather than an arbitrary largest city.
+- **Scope boundary for ir muvla'at is now honest.** It is a destination/path calculation,
+  not part of ribua. The map detects swallowed-city candidates but does not fabricate a
+  universal extension polygon unsupported by the sources.
+- Golden tests cover all three overlap approaches, stepped multi-region output, fixed
+  profile membership, trapezoid axes, provisional and reviewed bow behavior, both large
+  hole policies, and zero-house validated join perimeters.
+
 ---
 
 ## Part 3 — Product spec
@@ -638,12 +708,12 @@ address ─► geocode ─► snap to footprint + disclosed confirmation require
         ─► classify dwellings (tags + heuristics + manual override)
         ─► local true-north tangent/equirectangular projection, all math in meters
         ─► ibur: buffer by (70⅔·amah)/2, union, dissolve → city clusters
-        ─► merge passes: two-cities ≤141⅓ (cities only) ; three-villages test
-        ─► concavity detection + warning + reviewer endpoint record [rule application awaits rav]
-        ─► ribua: preserve a high-confidence existing rectangle; otherwise compass-aligned
-            bounding rectangle (local tangent true north); reviewer angle can override
-        ─► [karpef toggle: inflate rectangle 70⅔]
-        ─► techum: expand rectangle 2000·amah on all four sides (square corners)
+        ─► fixed-point merge passes: two-cities ≤141⅓ (cities only) ; three-villages test
+        ─► bow/L/hole masks: provisional no-fill until endpoints; then selected rule applied
+        ─► ribua regions: rectangle/trapezoid/compass/reviewer-axis support lines
+        ─► overlap policy: no-join | joined stepped regions | recursive joint redraw
+        ─► one post-ribua karpef expansion of every permitted region (profile-governed)
+        ─► techum: expand every region 2000·amah with square corners; retain the union
         ─► reproject WGS84 ─► render in Leaflet ─► KML/KMZ/GeoJSON/PNG/PDF
 ```
 
@@ -651,6 +721,9 @@ Modes: **settlement mode** (above), **point mode** (open field: 4004×4004-amah 
 rotatable),
 **validated-enclosure mode** (implemented, explicit opt-in) uses a rav-supplied hukaf-l'dira
 perimeter as the city edge. **Eruv-techumin relocation mode** remains future work.
+**Validated-join-perimeter mode** adds rav-confirmed residential yards/perimeters to the
+join geometry with zero contribution to the house-count approximation. Multi-region
+ribua/karpef/techum output is first-class in every renderer and export.
 
 ### 3.3 Human-in-the-loop is the product
 
@@ -715,20 +788,21 @@ engineering is easy; the psak configuration is the project.**
 
 ## Part 7 — Status, recommendation & open questions
 
-**BUILT — v1 shipped 2026-07-10.** Static web app in this folder (`node serve.mjs`,
+**BUILT — city-squaring engine v1.4 completed 2026-07-14.** Static web app in this folder (`node serve.mjs`,
 see README.md). Implements: geocode → Overture footprint fetch with auto-expansion →
 classification (auditable tag table) → 70⅔ ibur clustering → 141⅓ city merge (6-house
-minimum) → three-villages rule (flagged) → compass/natural-edge ribua → karpef toggle →
-2000-amos square-cornered techum → psak profiles → per-building overrides → comparison
-shita line → KML/GeoJSON export. The golden geometry suite covers the canonical shapes.
-Live-verified on New Square, NY (real map data, both amah shitos, city-mode detection,
-overlap + ir-mubla'as warnings).
+minimum) → fixed-point three-villages/city mergers → rectangle/trapezoid/compass ribua →
+reviewed bow/L and enclosed-hole masks → three-position overlap handling → one final
+karpef → multi-region 2000-amah square-cornered techum → psak profiles → per-building and
+validated-perimeter overrides → comparison line → KML/KMZ/GeoJSON/PNG/PDF export. The
+golden suite covers every executable branch in §1.5.
 
-**Rev. 12 conformance gaps:** the shipped engine still needs the full *ir muvla'at*
-remainder calculation; a three-position overlapping-ribua enum; validated residential-yard
-perimeters participating in joins;
-full-width-break and ≥4000×4000 interior-hole review; and explicit bow-algorithm selection.
-A warning or binary toggle is not equivalent to implementing these calculations.
+**Rev. 13 city-squaring conformance:** complete. No known written squaring rule above is
+represented only by the old warning/binary-toggle shortcuts. Two matters remain outside
+the universal ribua calculation: (1) a real city's halachic bow endpoints are factual rav
+input, for which the app supplies a safe provisional no-fill result; and (2) *ir muvla'at*
+is destination/path-specific and therefore detected but not fabricated as one universal
+two-dimensional polygon. Neither permits the app to present an unreviewed output as psak.
 
 **Original recommendation (kept for the record): build it.** The automation gap is confirmed — nobody has the footprint → dwelling filter →
 70⅔ clustering → ribua → 2000-offset engine, and that's exactly where hand-drawn maps make
@@ -752,7 +826,8 @@ the UI for building-level review is the bulk of the work.
    non-qualifying gaps) and data caps, which the app labels as data limits.
 4. ~~**Generalizing the bow rule to real city outlines**~~ **DEFAULT RESOLVED in rev. 5:**
    detect material pockets and require reviewer-designated endpoints; do not silently infer
-   endpoints. The Mechaber chord and Rema depth variants apply after endpoints are supplied.
+   endpoints. Rev. 13 applies the selected Mechaber/Rema/emergency variant after endpoints
+   are supplied and uses provisional no-fill beforehand.
 5. **Modern beis-dirah edge cases** — offices/factories (occupied but not slept in), hotels,
    hospitals, schools, seasonal cottages, trailers/mobile homes, airports. Rev. 12 records
    the sourced opinion counting some factories with offices/lunch facilities, but the
@@ -775,10 +850,11 @@ the UI for building-level review is the bulk of the work.
     difference up to about 9.1%. Default to the modern-map mehalich; a posek may select and
     document a sourced adjustment for a particular terrain calculation.
 
-**Verification TODO (before shipping anything):** the tool is city-agnostic; these are test
-benchmarks, not scope:
-- Golden unit tests from the Gemara's canonical shapes (circle, bow, gamma, trapezoid,
-  rotated square, three villages).
+**Validation benchmarks:** the tool is city-agnostic; these are continuing cross-checks,
+not scope or release blockers:
+- **Completed:** golden unit tests from the Gemara's canonical shapes (circle, bow, gamma,
+  trapezoid, rotated square, three villages), plus all three overlap positions, both
+  large-hole positions, profile-correct membership, and multi-region preservation.
 - End-to-end regression against at least one **published** techum map (Borehamwood UK,
   Chicago per *Mi-Darkei ha-Techum*, or a techumshabbos.com project city like Hunter, NY —
   the latter conveniently has boundaries published under both R' Moshe and Chazon Ish
@@ -786,7 +862,7 @@ benchmarks, not scope:
 
 ---
 
-## Key sources and authority hierarchy (rev. 12)
+## Key sources and authority hierarchy (rev. 13)
 
 ### A. Controlling primary/codified sources
 

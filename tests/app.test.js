@@ -139,9 +139,35 @@ test('audit map and city-status controls use the correct merge stage', () => {
 test('settings profile and non-default analytics stay deterministic', () => {
   const ci = S.applyProfile({ ...S.DEFAULTS }, 'chazon-ish');
   assert.equal(S.effectiveProfile(ci), 'chazon-ish');
+  assert.equal(ci.overlapPolicy, 'join-redraw');
   ci.karpef = false;
   assert.equal(S.effectiveProfile(ci), 'custom');
   assert.equal(S.diffFromDefaults(ci).karpef, false);
+});
+
+test('the public overlap default is one choice while rav mode preserves all three sourced approaches', () => {
+  assert.equal(S.DEFAULTS.overlapPolicy, 'no-join');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  assert.match(html, /value="no-join"/);
+  assert.match(html, /value="join-no-redraw"/);
+  assert.match(html, /value="join-redraw"/);
+});
+
+test('multi-region ribua and techum survive KML and GeoJSON export', () => {
+  const square = (west, south, east, north) => [
+    { lat: south, lon: west }, { lat: south, lon: east },
+    { lat: north, lon: east }, { lat: north, lon: west },
+  ];
+  const layers = {
+    cityRegions: [square(-74, 41, -73.9, 41.1), square(-73.95, 41.05, -73.85, 41.15)],
+    techumRegions: [square(-74.1, 40.9, -73.8, 41.2), square(-74.05, 40.95, -73.75, 41.25)],
+  };
+  const kml = K.buildKML(layers, 'three-valued overlap');
+  assert.match(kml, /City starting area \(ribua ha’ir\) — region 2 of 2/);
+  assert.match(kml, /TECHUM boundary \(2000 amos\) — region 2 of 2/);
+  const geojson = K.buildGeoJSON(layers, {});
+  assert.equal(geojson.features.filter((feature) => feature.properties.layer === 'city-ribua').length, 2);
+  assert.equal(geojson.features.filter((feature) => feature.properties.layer === 'techum').length, 2);
 });
 
 test('KML escapes dynamic description and names', () => {
@@ -159,6 +185,14 @@ test('validated enclosures can be drawn easily but remain inactive by default', 
   assert.match(html, /id="btn-draw-perimeter"/);
   assert.match(mainJs, /startDrawing\('enclosure'\)/);
   assert.match(mainJs, /settings\.useValidatedPerimeter = false/);
+});
+
+test('rav-validated residential perimeters are separate zero-house joining inputs', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const mainJs = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.match(html, /id="btn-draw-join-perimeter"/);
+  assert.match(mainJs, /startDrawing\('join-perimeter'\)/);
+  assert.match(mainJs, /joinOnly: true/);
 });
 
 test('Overture GeoJSON parser preserves source identity without guessing dwelling status', () => {

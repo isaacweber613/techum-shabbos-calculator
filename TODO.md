@@ -14,7 +14,10 @@ This list separates confirmed software defects from halachic/data validation wor
 - [ ] Va'ad Le'Tchum Shabbos parity: obtain and document the Va'ad's actual Woodbourne/Fallsburg calculation method (not merely the printed outline), then add a reproducible snapshot benchmark. Confirm especially ribua orientation, overlapping-ribua joining/redraw, rivers/highways, eligible structures, karpef, and the Chazon Ish amah used. Do not label the 94% rectangularity heuristic as Va'ad parity.
 
 - [ ] Digitize the supplied Woodbourne 2023 rav map as a benchmark: green city polygon, pink techum polygon, stated road/address crossings, map date, amah shita, and issuer.
-- [ ] Determine and document the halachic construction behind Woodbourne's stepped green and pink polygons. The present engine deliberately produces one squared city rectangle and one expanded techum rectangle; it cannot reproduce this stepped union yet.
+- [ ] Determine and document the exact psak/construction behind Woodbourne's stepped green
+  and pink polygons. The engine can now reproduce stepped unions through the sourced
+  `join-no-redraw` approach, but do not claim that the photographed Va'ad map used that
+  shita until its survey record or guide confirms it.
 - [ ] After the construction is confirmed, add a Woodbourne golden geometry fixture and implement a reviewed multi-rectangle/stepped-boundary mode if the map represents the applicable shita.
 - [ ] Digitize the supplied Belz/Woodridge map and compare the R' Chaim Naeh and Chazon Ish final boundaries at its four stated road/address checkpoints.
 - [ ] Add an on-map diagnostic that measures the closest real footprint-to-footprint gap when a user taps a settlement edge, so a nearby roof cannot be confused with the straight ribua line.
