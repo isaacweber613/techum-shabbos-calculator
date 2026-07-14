@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.4.0 (2026-07-14)';
+  const ENGINE_VERSION = '1.5.0 (2026-07-14)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -1085,12 +1085,12 @@
       const ll = state.proj.toLatLon(center.x, center.y);
       L.marker([ll.lat, ll.lon], {
         interactive: false,
-        icon: L.divIcon({ className: 'cluster-label', html: `<span>${isHome ? 'HOME · ' : ''}#${index + 1} · ${houses} houses</span>` }),
+        icon: L.divIcon({ className: 'cluster-label', html: `<span>${isHome ? 'HOME · ' : ''}#${index + 1} · ${houses} footprints</span>` }),
       }).addTo(layerGroups.settlements);
     });
     const home = res.homeCluster >= 0 ? res.clusters[res.homeCluster] : null;
     summary.textContent = `${res.clusters.length} settlement${res.clusters.length === 1 ? '' : 's'} derived; ` +
-      (home ? `home is #${res.homeCluster + 1} with ${home.houseCount == null ? home.members.length : home.houseCount} counted houses. ` : 'the pin did not join a settlement. ') +
+      (home ? `home is #${res.homeCluster + 1} with ${home.houseCount == null ? home.members.length : home.houseCount} counted footprints. ` : 'the pin did not join a settlement. ') +
       `70⅔ amos = ${res.thresholds.joinM.toFixed(1)} m; 141⅓ amos = ${res.thresholds.t2.toFixed(1)} m.`;
     const review = document.getElementById('cluster-review');
     review.replaceChildren();
@@ -1098,21 +1098,44 @@
     qualificationClusters.forEach((cluster, index) => {
       const row = document.createElement('label');
       const text = document.createElement('span');
-      text.innerHTML = `Component #${index + 1} · ${cluster.houseCount == null ? cluster.members.length : cluster.houseCount} counted houses<small>${cluster.qualifiesAsCity ? 'qualifies' : 'does not qualify'} via ${escapeHtml(cluster.qualificationSource)}</small>`;
+      text.innerHTML = `Component #${index + 1} · ${cluster.houseCount == null ? cluster.members.length : cluster.houseCount} counted footprints<small>${cluster.qualifiesAsCity ? 'qualifies' : 'does not qualify'} via ${escapeHtml(cluster.qualificationSource)}${cluster.qualificationProvisional ? ' · PROVISIONAL' : ''}</small>`;
       const select = document.createElement('select'); select.setAttribute('aria-label', `Pre-merge component ${index + 1} city status`);
-      [['','Use footprint-count proxy'],['true','Rav/reviewer: qualifies'],['false','Rav/reviewer: does not qualify']].forEach(([value, label]) => {
+      [
+        ['', 'Use provisional six-footprint proxy'],
+        ['three-courtyards', 'Qualifies: 3 courtyards × 2 houses'],
+        ['fifty-residents', 'Qualifies: at least 50 residents'],
+        ['rav-attestation', 'Qualifies: rav-attested other basis'],
+        ['does-not-qualify', 'Does not qualify'],
+      ].forEach(([value, label]) => {
         const option = document.createElement('option'); option.value = value; option.textContent = label; select.appendChild(option);
       });
       const saved = (settings.cityQualificationOverrides || {})[cluster.key];
       const savedDecision = typeof saved === 'boolean' ? saved : saved && saved.decision;
-      select.value = typeof savedDecision === 'boolean' ? String(savedDecision) : (cluster.qualificationSource === 'reviewer-remapped' ? String(cluster.qualifiesAsCity) : '');
-      select.addEventListener('change', () => {
+      const savedBasis = saved && typeof saved === 'object' && saved.basis;
+      select.value = typeof savedDecision === 'boolean'
+        ? (savedDecision ? (savedBasis || 'rav-attestation') : 'does-not-qualify')
+        : (cluster.qualificationSource === 'reviewer-remapped'
+          ? (cluster.qualifiesAsCity ? (cluster.qualificationBasis || 'rav-attestation') : 'does-not-qualify') : '');
+      const evidence = document.createElement('input'); evidence.type = 'text';
+      evidence.maxLength = 1000; evidence.placeholder = 'Evidence note: courtyard groups, resident source, or rav/date';
+      evidence.setAttribute('aria-label', `Pre-merge component ${index + 1} qualification evidence`);
+      evidence.value = saved && typeof saved === 'object' && saved.evidence || cluster.qualificationEvidence || '';
+      evidence.disabled = select.value === '';
+      const saveDecision = () => {
         settings.cityQualificationOverrides = { ...(settings.cityQualificationOverrides || {}) };
         if (select.value === '') delete settings.cityQualificationOverrides[cluster.key];
-        else settings.cityQualificationOverrides[cluster.key] = { decision: select.value === 'true', memberIds: cluster.memberIds || [] };
+        else settings.cityQualificationOverrides[cluster.key] = {
+          decision: select.value !== 'does-not-qualify', basis: select.value,
+          evidence: evidence.value.trim(), memberIds: cluster.memberIds || [],
+        };
         S.save(settings); recompute();
+      };
+      select.addEventListener('change', () => {
+        evidence.disabled = select.value === '';
+        saveDecision();
       });
-      row.append(text, select); review.appendChild(row);
+      evidence.addEventListener('change', saveDecision);
+      row.append(text, select, evidence); review.appendChild(row);
     });
     const omitted = settlementClusters.length - Math.min(40, visibleSettlements.length);
     if (omitted > 0) {
@@ -1211,7 +1234,7 @@
     if (settings.secondAmahCm && settings.secondAmahCm !== settings.amahCm && state.buildings.length > 10000) {
       lines.push('<div class="note"><b>Comparison-amah line omitted:</b> this optional second full-city scenario is disabled above 10,000 footprints. Change the primary amah and recalculate to evaluate that shita on a large city.</div>');
     }
-    if (res.mode === 'city') lines.push(`<div class="stat"><b>Home city cluster:</b> ${homeSize} counted houses</div>`);
+    if (res.mode === 'city') lines.push(`<div class="stat"><b>Home city cluster:</b> ${homeSize} counted footprints</div>`);
     if (res.mode === 'building' && res.homeBuilding >= 0) {
       const homeBuilding = state.buildings[res.homeBuilding];
       lines.push(`<div class="stat"><b>Starting structure:</b> mapped footprint ${escapeHtml(homeBuilding && homeBuilding.id ? homeBuilding.id : String(res.homeBuilding + 1))}</div>`);
@@ -1325,7 +1348,7 @@
       `Overlapping-ribua policy: ${settings.overlapPolicy}`,
       `Large enclosed-hole policy: ${settings.largeHolePolicy}`,
       `Bow/L policy: ${settings.bowPolicy}`,
-      `City minimum: ${settings.minCityHouses} footprints (MB 398:38 — COUNT-BASED APPROXIMATION of the 3-chatzeros model; courtyard structure not modeled)`,
+      `City minimum: actual rule is 3 courtyards × 2 houses (or sourced resident-count route); unreviewed components use a PROVISIONAL ${settings.minCityHouses}-footprint proxy`,
       `Min dwelling size 4x4 amos filter: ${settings.minSizeFilter ? 'on' : 'off'}`,
       `Untagged buildings: ${settings.includeUnknown ? 'included (flagged)' : 'excluded'}; ambiguous: ${settings.includeReview ? 'included (flagged)' : 'excluded'}`,
       '== Audit / reproducibility ==',

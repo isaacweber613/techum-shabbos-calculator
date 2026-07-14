@@ -344,11 +344,20 @@
         }
       }
       const decision = typeof record === 'boolean' ? record : record && typeof record.decision === 'boolean' ? record.decision : null;
+      const basis = record && typeof record === 'object' && typeof record.basis === 'string'
+        ? record.basis : null;
+      const evidence = record && typeof record === 'object' && typeof record.evidence === 'string'
+        ? record.evidence.trim().slice(0, 1000) : '';
       cluster.houseCount = cluster.members.reduce((count, index) => count + (buildings[index].joinOnly ? 0 : 1), 0);
       cluster.qualifiesAsCity = typeof decision === 'boolean'
         ? decision
         : cluster.houseCount >= minCityHouses;
-      cluster.qualificationSource = typeof decision === 'boolean' ? (remapScore == null ? 'reviewer' : 'reviewer-remapped') : 'footprint-count';
+      cluster.qualificationSource = typeof decision === 'boolean'
+        ? (remapScore == null ? 'reviewer' : 'reviewer-remapped')
+        : 'provisional-six-footprint-proxy';
+      cluster.qualificationBasis = basis || (typeof decision === 'boolean' ? 'rav-attestation' : 'footprint-proxy');
+      cluster.qualificationEvidence = evidence;
+      cluster.qualificationProvisional = typeof decision !== 'boolean';
       cluster.qualificationRemapScore = remapScore;
       cluster.componentKeys = [cluster.key];
     }
@@ -564,7 +573,7 @@
     return best;
   }
 
-  // ---------- Stage 2: city-to-city 141 1/3 merge (SA 398:5; MB 398:38 six-house min) ----------
+  // ---------- Stage 2: city-to-city 141 1/3 merge (SA 398:5; reviewed city status) ----------
   function mergeCities(clusters, buildings, t2, minCityHouses) {
     const notes = [];
     const qualifies = (cluster) => cluster.qualifiesAsCity == null
@@ -617,9 +626,11 @@
   }
 
   // ---------- Stage 3: three-villages rule (SA 398:6-8 / SA HaRav 398:12) ----------
-  // Middle village B "placed on the line" between outer A and C: merge all three if the
-  // gap A-C minus B's width along the A->C axis leaves <= 141 1/3 on each side, B is within
-  // 2000 of each outer, and B is not wider than the A-C gap. Always flagged for review.
+  // Middle village B is notionally lowered onto the line between outer A and C.  The
+  // canonical real-polygon construction preserves B's projection on the A->C axis: its
+  // projected interval must fit between the outer support intervals and leave no more than
+  // 141 1/3 amos on either side.  B's actual footprint must also be <= 2000 amos from each
+  // outer village.  There is deliberately no 4000-amah cap on A-C (SA HaRav 398:12).
   function threeVillages(clusters, buildings, settings) {
     const t2 = AMOS.JOIN2 * settings.amahM;
     const techum = AMOS.TECHUM * settings.amahM;
@@ -653,27 +664,46 @@
           for (let ci = ai + 1; ci < nearby.length; ci++) {
             const c = nearby[ci];
             const A = clusters[a], B = clusters[b], C = clusters[c];
-            const maxOuterGap = Math.hypot(B.bbox.maxX - B.bbox.minX, B.bbox.maxY - B.bbox.minY) + 2 * t2;
-            const dAC = clusterGapIndexed(A, C, buildings, maxOuterGap, buildingGrid);
-            if (!isFinite(dAC)) continue;
-            // width of B along the A->C direction
+            // Canonical lowering axis for irregular mapped villages: line through the
+            // centers of the two outer physical bounding boxes.  The sources give the
+            // lowering construction but not a competing numeric center for real polygons,
+            // so the axis and all support intervals are retained in the audit warning.
             const ax = (A.bbox.minX + A.bbox.maxX) / 2, ay = (A.bbox.minY + A.bbox.maxY) / 2;
             const cx = (C.bbox.minX + C.bbox.maxX) / 2, cy = (C.bbox.minY + C.bbox.maxY) / 2;
             const ux = cx - ax, uy = cy - ay;
             const ulen = Math.hypot(ux, uy) || 1;
-            let minP = Infinity, maxP = -Infinity;
-            for (const i of B.members) {
-              for (const p of buildings[i].ring) {
-                const proj = (p.x * ux + p.y * uy) / ulen;
-                if (proj < minP) minP = proj;
-                if (proj > maxP) maxP = proj;
+            const nx = ux / ulen, ny = uy / ulen;
+            const support = (cluster) => {
+              let min = Infinity, max = -Infinity;
+              for (const i of cluster.members) {
+                for (const p of buildings[i].ring) {
+                  const projected = p.x * nx + p.y * ny;
+                  min = Math.min(min, projected); max = Math.max(max, projected);
+                }
               }
-            }
-            const widthB = maxP - minP;
-            if (widthB <= dAC && dAC - widthB <= 2 * t2) {
+              return { min, max, width: max - min };
+            };
+            const aSupport = support(A), bSupport = support(B), cSupport = support(C);
+            const outerGap = cSupport.min - aSupport.max;
+            const leftGap = bSupport.min - aSupport.max;
+            const rightGap = cSupport.min - bSupport.max;
+            if (outerGap >= 0 && bSupport.width <= outerGap &&
+                leftGap >= 0 && rightGap >= 0 && leftGap <= t2 && rightGap <= t2) {
+              const outerDistance = clusterGap(A, C, buildings, Infinity);
               warnings.push({
                 type: 'three-villages',
-                text: 'Three-villages rule (SA 398) merged three settlements — REVIEW: geometric placement test is an approximation.',
+                text: 'Three-villages rule (SA HaRav 398:12) merged three settlements using the disclosed outer-center lowering axis; confirm the axis if an irregular outline makes another placement material.',
+                middleComponentKeys: [...B.componentKeys],
+                outerComponentKeys: [A.componentKeys, C.componentKeys].map((keys) => [...keys]),
+                axis: { x: nx, y: ny },
+                actualMiddleGapsM: {
+                  toFirstOuter: clusterGap(A, B, buildings, techum),
+                  toSecondOuter: clusterGap(B, C, buildings, techum),
+                },
+                projectedPlacementM: {
+                  outerGap, middleWidth: bSupport.width, leftGap, rightGap,
+                  outerDistance,
+                },
               });
               const mergedCluster = {
                 members: A.members.concat(B.members, C.members),
@@ -819,6 +849,9 @@
       key: cluster.key, members: [...cluster.members], memberIds: [...cluster.memberIds], bbox: { ...cluster.bbox },
       houseCount: cluster.houseCount, qualifiesAsCity: cluster.qualifiesAsCity,
       qualificationSource: cluster.qualificationSource, qualificationRemapScore: cluster.qualificationRemapScore,
+      qualificationBasis: cluster.qualificationBasis,
+      qualificationEvidence: cluster.qualificationEvidence,
+      qualificationProvisional: cluster.qualificationProvisional,
     }));
     markStage('cityQualification');
 
@@ -1077,6 +1110,9 @@
         corners: clusterSq ? rectToCorners(clusterSq.rect, clusterSq.angleRad) : rectToCorners(cluster.bbox),
         key: cluster.key, qualifiesAsCity: cluster.qualifiesAsCity,
         qualificationSource: cluster.qualificationSource, qualificationRemapScore: cluster.qualificationRemapScore,
+        qualificationBasis: cluster.qualificationBasis,
+        qualificationEvidence: cluster.qualificationEvidence,
+        qualificationProvisional: cluster.qualificationProvisional,
         componentKeys: cluster.componentKeys };
     });
     if (mode === 'city' && selectedClosures.length === 1 && home >= 0 && selectedClosures[0].indices.length > 1) {
@@ -1099,6 +1135,9 @@
         key: cluster.key, members: cluster.members, memberIds: cluster.memberIds, houseCount: cluster.houseCount,
         corners: rectToCorners(cluster.bbox), qualifiesAsCity: cluster.qualifiesAsCity,
         qualificationSource: cluster.qualificationSource, qualificationRemapScore: cluster.qualificationRemapScore,
+        qualificationBasis: cluster.qualificationBasis,
+        qualificationEvidence: cluster.qualificationEvidence,
+        qualificationProvisional: cluster.qualificationProvisional,
       })),
       cityRegions, karpefRegions, techumRegions, mil12Regions,
       // Compatibility aliases for callers that predate multi-region boundaries.

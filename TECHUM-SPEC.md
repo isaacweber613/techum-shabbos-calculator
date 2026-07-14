@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 13, 2026-07-14) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 14, 2026-07-14) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -93,13 +93,23 @@ attended** (SA HaRav 398:8, 10; under 4 amos wide is not a dwelling even if very
 - **Two settlements merge at ≤ 141⅓ amos** (2 × 70⅔ — each town gets its own margin and they
   meet). **Asymmetry:** only a *settlement* gets the double margin; a **lone house** joins
   anything only within a single 70⅔ (SA HaRav 398:11).
-- **Three-villages rule** (SA HaRav 398:12): a middle village within 2000 amos of each of
-  two outer ones merges all three if, when notionally placed on the line between the outer
-  two, the gaps become ≤ 141⅓ amos each; the middle may not be wider than the outer gap;
-  no merge if the outer two are ≥ 4000 amos apart and the middle sits ≥ 2000 amos off the
-  line.
-- Halachipedia frames a "city" as ≥ 6 houses so linked; a lone house beyond joining range is
-  measured from its own walls. ⚠ verify the 6-house threshold before enforcing it.
+- **Three-villages rule** (SA HaRav 398:12): an actual middle village at **≤ 2000 amos
+  from each outer village** (equality included) is notionally lowered onto the line between
+  the two outer villages. All three merge when the middle village fits inside the projected
+  outer gap and the remaining gap to each outer village is **≤ 141⅓ amos**. There is **no
+  separate 4000-amah cap on the outer-to-outer span**: a span greater than 4000 can qualify
+  when the middle village fits. Rev. 14 retracts the prior sentence that imposed a
+  4000-amah/no-merge shortcut. For irregular real polygons, the engine uses and audits the
+  line through the two outer physical bounding-box centers; the code treats that centerline
+  as a disclosed engineering placement, and its warning asks a reviewer to confirm the axis
+  when another factual placement would be material.
+- **Independent city status is not simply “six footprints.”** SA OC 398:10 and MB 398:38
+  give the structured minimum of three *chatzeros*, each with two permanent houses; the
+  later practical literature also records the 50-resident city basis. A raw roof-footprint
+  count does not prove either basis. The automatic six-count remains only a visibly
+  **provisional proxy**. A reviewer can instead record three-courtyard/two-house evidence,
+  at least 50 residents, another rav-attested basis, or disqualification; the factual basis
+  and evidence are preserved in the calculation audit and snapshot.
 - **Computation:** single-linkage clustering of qualifying dwellings at threshold 70⅔ amos
   (buffer each footprint by half the gap, union, dissolve). Then cluster-level merge passes:
   two-cities 141⅓ rule (cities only), three-villages projection test. All before squaring.
@@ -172,7 +182,7 @@ Rules by shape:
   must flag every case in which either alternative would change the result. A binary
   on/off control cannot faithfully represent R' Shlomo Miller's middle position.
 
-**Executable default computation (rev. 13):**
+**Executable default computation (rev. 14):**
 
 1. Freeze qualifying dwellings and rav-validated subsidiary residential perimeters.
 2. Build 70⅔-amah components; qualify independent cities; then run 141⅓-amah and
@@ -327,7 +337,7 @@ If the person rests outside every city, he remains in point mode:
 
 ---
 
-## Part 2 — Psak configuration: PROFILES & DEFAULTS (rev. 5 — 2026-07-11)
+## Part 2 — Psak configuration: PROFILES & DEFAULTS (rev. 14 — 2026-07-14)
 
 Policy (per Isaac): follow the widely-known psak as the default; **every** disputed rule is
 a setting the user can change; the app decides automatically wherever it can and makes human
@@ -339,7 +349,9 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
   clarified: the minimum governs when a cluster is an **independent city** that receives
   city-level rules (the 141⅓ city-to-city merge); it is **not** required for an individual
   beis dirah to extend an existing city — a single qualifying house within 70⅔ joins and
-  chains onward.
+  chains onward. **Rev. 14 precision:** this is a structured courtyard/house rule, not a
+  bare count of six mapped roofs; the 50-resident basis is also recorded. The six-footprint
+  fallback is explicitly provisional.
 - **No halachic maximum metro size** — Peninei Halakha states the chain can extend "even a
   distance of days' walk" as long as each gap qualifies. Any cap in the app is a **data
   limit** and must be labeled as such (techum shown as an inner/machmir bound when hit).
@@ -366,7 +378,7 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 | Single-city karpef (+70⅔ before 2000) | **on** (Rema; MB 398:36) | on ⚠ confirm CI's own position | off (Mechaber/Rambam) |
 | Squaring alignment | automatic SA/MB shape rule: preserve a clear existing rectangle; otherwise world directions | same automatic rule; reviewer may set a sourced natural edge (CI OC 110:23) | automatic SA shape rule; reviewer override available |
 | Overlapping-squares rect merge | **no join** + warning (R' Elyashiv / R' N. Karelitz / R' Belsky); advanced middle option: join without redraw (R' S. Miller) | joint redraw available as the expansive CI reading, but CI's practical conclusion is reported as uncertain | **no join** + warning; alternatives remain explicit |
-| City minimum for the 141⅓ merge | 6 houses (MB 398:38) | 6 + CI courtyard qualifications ⚠ | 6 |
+| City status for 141⅓ / three villages | 3 courtyards × 2 houses or sourced 50-resident basis; six footprints only a provisional fallback | same, with CI courtyard/entrance qualifications | same sourced structure; provisional fallback remains labelled |
 | Bow/L/gamma | **Rema-majority:** fill when confirmed chord <4000 or depth <2000; otherwise no-fill; unresolved endpoints use provisional no-fill | same default; reviewer may select another sourced shita | **Mechaber/Rambam:** narrow chord fills; wide remainder follows inhabited/curved edge; reviewer endpoints required |
 | Wholly enclosed ≥4000×4000-amah hole | **include + mandatory warning** (Beit Yitzchok / R' Shulem Weiss); strict exclusion available | same | same |
 | Unknown-use buildings | include, flagged for review (all profiles — data policy, not psak) | ” | ” |
@@ -514,7 +526,9 @@ overwrite).
 ### Rev. 8 — 2026-07-12 (settings clarity and performance; no default changes)
 
 - The six-house city qualification remains fixed at MB 398:38 and is no longer exposed as
-  an arbitrary user control. Amah choices are displayed in inches.
+  an arbitrary user control. Amah choices are displayed in inches. **Superseded by rev. 14:**
+  six footprints are a provisional map proxy, not the MB courtyard rule itself, and the
+  structured factual basis is now reviewable.
 - Ribua orientation is labelled as a halachic shita: cardinal directions are the baseline
   (SA 398:3), while an existing rectangular/natural alignment and some irregular shapes
   require the documented SA 398:1 / poskim analysis. The choice remains because the case is
@@ -666,6 +680,46 @@ overwrite).
   profile membership, trapezoid axes, provisional and reviewed bow behavior, both large
   hole policies, and zero-house validated join perimeters.
 
+### Rev. 14 — 2026-07-14 (city-status evidence, canonical three villages, Woodbourne benchmark)
+
+- **Three villages corrected from the primary English text.** SA HaRav 398:12 requires the
+  actual middle village to be within 2000 amos of each outer village, then lowers it between
+  the outers: it must fit in their projected gap, leaving no more than 141⅓ amos on either
+  side. Equality at 2000 is included, and the source explicitly permits outer villages more
+  than 4000 amos apart when the middle village fits. The previous 4000-amah shortcut is
+  retracted. The engine now applies that construction to support intervals on the disclosed
+  outer-center axis and records the axis, actual distances, projected gaps, widths, and
+  component identities. Golden cases cover equality, a greater-than-4000 outer span, and an
+  offset middle village that may move toward the line but may not slide along it.
+- **City qualification now separates din from map approximation.** The controlling model is
+  three *chatzeros* with two permanent houses each (SA 398:10; MB 398:38), with the
+  later-literature 50-resident basis also available for attestation. Six counted roof
+  polygons remain the deterministic automatic fallback, but are labelled and exported as a
+  provisional footprint proxy rather than MB 398:38 itself. The review record now stores a
+  structured basis (`three-courtyards`, `fifty-residents`, `rav-attestation`, or
+  disqualification) and free-text evidence; remapping and later settlement mergers retain
+  that provenance.
+- **Commercial/industrial labels moved from automatic exclusion to review.** Offices,
+  industrial/commercial buildings, and factories can contain recurring eating/sleeping or
+  attended facilities that later poskim may count. Overture/OSM labels cannot establish
+  those facts. These types now enter the same explicit beis-dirah review queue as hotels,
+  hospitals, and schools instead of being silently classified as non-dwellings. Clearly
+  nonresidential categories such as an ordinary warehouse or retail shell remain excluded
+  absent contrary factual review.
+- **The issuing Va'ad's Woodbourne map is now a reproducible published-output benchmark.**
+  The original 2023 one-page PDF from Va'ad Le'Tchum Shabbos is preserved by URL and SHA-256
+  in `benchmarks/woodbourne-vaad-2023.json`. Its green city-ribua path and pink techum path
+  are extracted exactly from the PDF vectors in page coordinates, together with the printed
+  Chazon Ish label and seven road/address checkpoints. Tests verify fixture identity,
+  topology, page bounds, and that the published techum encloses the published city path.
+  This is authoritative reproduction of the Va'ad's **published result**, not hidden-method
+  parity: the source does not reveal its dwelling selection, courtyard facts, joins, bow
+  endpoints, or intermediate measurements. Geographic registration and a reviewed input
+  snapshot remain the next benchmark layer.
+- The executable engine is version 1.5.0. The ordinary result remains decision-support for
+  a rav/mumcheh; none of these evidence fields or benchmark checks turns it into autonomous
+  psak.
+
 ---
 
 ## Part 3 — Product spec
@@ -788,16 +842,17 @@ engineering is easy; the psak configuration is the project.**
 
 ## Part 7 — Status, recommendation & open questions
 
-**BUILT — city-squaring engine v1.4 completed 2026-07-14.** Static web app in this folder (`node serve.mjs`,
+**BUILT — city-squaring engine v1.5 completed 2026-07-14.** Static web app in this folder (`node serve.mjs`,
 see README.md). Implements: geocode → Overture footprint fetch with auto-expansion →
-classification (auditable tag table) → 70⅔ ibur clustering → 141⅓ city merge (6-house
-minimum) → fixed-point three-villages/city mergers → rectangle/trapezoid/compass ribua →
+classification (auditable tag table) → 70⅔ ibur clustering → reviewed city qualification
+(provisional six-footprint fallback) → 141⅓ city merge → fixed-point three-villages/city
+mergers → rectangle/trapezoid/compass ribua →
 reviewed bow/L and enclosed-hole masks → three-position overlap handling → one final
 karpef → multi-region 2000-amah square-cornered techum → psak profiles → per-building and
 validated-perimeter overrides → comparison line → KML/KMZ/GeoJSON/PNG/PDF export. The
 golden suite covers every executable branch in §1.5.
 
-**Rev. 13 city-squaring conformance:** complete. No known written squaring rule above is
+**Rev. 14 city-squaring conformance:** complete. No known written squaring rule above is
 represented only by the old warning/binary-toggle shortcuts. Two matters remain outside
 the universal ribua calculation: (1) a real city's halachic bow endpoints are factual rav
 input, for which the app supplies a safe provisional no-fill result; and (2) *ir muvla'at*
@@ -813,8 +868,11 @@ the UI for building-level review is the bulk of the work.
 
 **Open halachic questions (need a posek — rev. 2, resolved items moved to Part 2):**
 
-1. ~~Six-house minimum~~ **RESOLVED** — MB 398:38 (3 chatzeros × 2 houses); governs
-   independent-city status for city-level rules, not chain extension. In the config matrix.
+1. ~~Six-house minimum~~ **SOURCE RULE RESOLVED; FACTUAL INPUT REMAINS REVIEWABLE** —
+   SA 398:10 / MB 398:38 require three *chatzeros* × two permanent houses; later practical
+   literature also records the 50-resident basis. Six roof footprints are only a provisional
+   automatic proxy. The reviewer records the actual basis/evidence before relying on a
+   city-level 141⅓ or three-villages merger.
 2. ~~**Eruv-enclosure-as-city default**~~ **RESOLVED in rev. 5 — default OFF.** Measure from
    the buildings-derived city. A rav-validated *hukaf l'dira* perimeter remains a supported
    alternative mehalich, but the app cannot infer that factual status or perimeter from
@@ -855,14 +913,19 @@ not scope or release blockers:
 - **Completed:** golden unit tests from the Gemara's canonical shapes (circle, bow, gamma,
   trapezoid, rotated square, three villages), plus all three overlap positions, both
   large-hole positions, profile-correct membership, and multi-region preservation.
-- End-to-end regression against at least one **published** techum map (Borehamwood UK,
-  Chicago per *Mi-Darkei ha-Techum*, or a techumshabbos.com project city like Hunter, NY —
-  the latter conveniently has boundaries published under both R' Moshe and Chazon Ish
-  shiurim, a two-shita cross-check for free).
+- **Completed published-output reproduction:** the issuing Va'ad Le'Tchum Shabbos 2023
+  Woodbourne PDF, explicitly labelled Chazon Ish, is fingerprinted and its exact vector
+  green/pink paths plus printed checkpoints are frozen in
+  `benchmarks/woodbourne-vaad-2023.json` with conformance tests.
+- **Still required for full method parity:** register that published page to geographic
+  coordinates and compare a rav-reviewed calculator input snapshot. The public map does not
+  disclose enough intermediate facts to infer its selected houses/courtyards, joins, bow
+  endpoints, or exact construction merely from the colored outline. Borehamwood, Chicago,
+  or Hunter remain useful independent/two-shita cross-checks.
 
 ---
 
-## Key sources and authority hierarchy (rev. 13)
+## Key sources and authority hierarchy (rev. 14)
 
 ### A. Controlling primary/codified sources
 
@@ -870,6 +933,8 @@ Mishna and Gemara Eruvin 55a–58b · Rambam Hil. Shabbos 27–28 · Shulchan Ar
 396–399, 405, 408, 414–415 · Rema · Mishna Berurah 397:1, 398:21/36/38/46, 399:7 and
 relevant Biur Halacha · Shulchan Aruch HaRav 396–399 · Aruch HaShulchan 398 · Chazon Ish
 OC 39 and 110. These control over a secondary English summary when the citations diverge.
+The complete English SA HaRav 398 text used to correct the three-villages construction is:
+<https://www.chabad.org/library/article_cdo/aid/4051111/jewish/Shulchan-Aruch-Chapter-398-The-Laws-Governing-How-the-2000-Cubits-of-the-Shabbos-Limits-are-Measured.htm>.
 
 ### B. Later specialist works for real-city geometry
 
@@ -902,6 +967,9 @@ OC 39 and 110. These control over a secondary English summary when the citations
 - Va'ad LeTchum Shabbos, *A Guide to T'chum Shabbos* (Feldheim, bilingual, 99 pp.) — useful
   surveying manual, but the publisher's description says that complete analysis is beyond
   its scope: <https://feldheim.com/guide-to-t-chum-shabbos>.
+- Va'ad Le'Tchum Shabbos, “Map for T'chum Shabbos — Woodbourne NY” (2023), the issuing
+  organization's exact published Chazon Ish output used by the benchmark fixture:
+  <https://www.catskillseruv.com/_files/ugd/4c904a_05320b7f909d46cb9994b70a9b2e1a57.pdf>.
 - “Modern Technology Meets Tehum Shabbat,” *The Lehrhaus* — GIS/aerial-imagery methodology
   and worked metropolitan discussion:
   <https://thelehrhaus.com/scholarship/modern-technology-meets-tehum-shabbat/>.

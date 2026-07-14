@@ -217,7 +217,41 @@ function rectSpan(corners) {
   // B has 8 houses (city), within 2000 amos of both, projected width ~ 64m
   const res = G.runPipeline(A.concat(C, B), S, { x: 0, y: 0 });
   assert('three villages merge', res.clusters.length === 1, `clusters=${res.clusters.length}`);
-  assert('three villages flagged for review', res.warnings.some((w) => w.type === 'three-villages'));
+  const threeAudit = res.warnings.find((w) => w.type === 'three-villages');
+  assert('three villages records its canonical lowering-axis audit',
+    threeAudit && threeAudit.axis && threeAudit.projectedPlacementM.leftGap <= T2 &&
+      threeAudit.projectedPlacementM.rightGap <= T2, JSON.stringify(threeAudit));
+
+  // The middle village is lowered perpendicular to the outer-center axis; it is not
+  // silently slid sideways. A same-width village whose projected interval is outside the
+  // outer gap therefore is not the canonical three-legged-jug construction.
+  const offsetMiddle = [];
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++)
+    offsetMiddle.push(squareHouse(210 + i * 18, 300 + j * 18));
+  const offset = G.runPipeline(A.concat(C, offsetMiddle), S, { x: 0, y: 0 });
+  assert('three villages does not slide an offset middle village sideways',
+    offset.clusters.length === 3 && !offset.warnings.some((w) => w.type === 'three-villages'),
+    `clusters=${offset.clusters.length}`);
+
+  // Exactly 2000 amos from each outer remains within the rule.
+  const equalA = grid6(0, 0), equalC = grid6(180, 0);
+  const projectedSideGap = 40;
+  const verticalEdgeGap = Math.sqrt(TECHUM * TECHUM - projectedSideGap * projectedSideGap);
+  const equalB = grid6(90, 30 + verticalEdgeGap);
+  const equality = G.runPipeline(equalA.concat(equalC, equalB), S, { x: 0, y: 0 });
+  assert('three villages includes equality at 2000 amos from both outers',
+    equality.clusters.length === 1 && equality.warnings.some((w) => w.type === 'three-villages'),
+    `clusters=${equality.clusters.length}`);
+
+  // SA HaRav 398:12 explicitly says that an outer span beyond 4000 amos is immaterial
+  // when a sufficiently wide middle village fits and is within 2000 of both.
+  const farA = grid6(0, 0), farC = grid6(2200, 0), wideB = [];
+  for (let x = 108; x <= 2148; x += 30) wideB.push(squareHouse(x, 500));
+  const far = G.runPipeline(farA.concat(farC, wideB), S, { x: 0, y: 0 });
+  const farAudit = far.warnings.find((w) => w.type === 'three-villages');
+  assert('three villages has no 4000-amah outer-span cap',
+    far.clusters.length === 1 && farAudit && farAudit.projectedPlacementM.outerDistance > 4000 * RCN,
+    JSON.stringify(farAudit && farAudit.projectedPlacementM));
 }
 
 // 9. Overlapping squares: all three sourced approaches ------------------------
@@ -295,15 +329,21 @@ function rectSpan(corners) {
   const ordinary = G.runPipeline(houses, S, { x: 0, y: 0 });
   assert('qualification audit exposes default count decision',
     ordinary.clusters.length === 2 && ordinary.clusters.every((c) =>
-      c.qualifiesAsCity === false && c.qualificationSource === 'footprint-count'));
+      c.qualifiesAsCity === false && c.qualificationSource === 'provisional-six-footprint-proxy' &&
+      c.qualificationProvisional));
   const reviewed = G.runPipeline(houses, {
     ...S,
-    cityQualificationOverrides: Object.fromEntries(ordinary.qualificationClusters.map((c) => [c.key, true])),
+    cityQualificationOverrides: Object.fromEntries(ordinary.qualificationClusters.map((c) => [c.key, {
+      decision: true, basis: 'three-courtyards', evidence: 'Three documented courtyard groups', memberIds: c.memberIds,
+    }])),
   }, { x: 0, y: 0 });
   assert('reviewer-qualified small settlements participate in 141-amah merge',
     reviewed.clusters.length === 1, `clusters=${reviewed.clusters.length}`);
   assert('merged audit preserves source cluster keys',
     ordinary.qualificationClusters.every((c) => reviewed.clusters[0].componentKeys.includes(c.key)));
+  assert('city qualification audit preserves its factual basis and evidence',
+    reviewed.qualificationClusters.every((c) => c.qualificationBasis === 'three-courtyards' &&
+      c.qualificationEvidence === 'Three documented courtyard groups' && !c.qualificationProvisional));
 }
 
 {

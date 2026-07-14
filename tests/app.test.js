@@ -15,6 +15,10 @@ test('classification table separates dwelling/non/review/unknown', () => {
   assert.equal(D.classify({ building: 'house' }).klass, 'dwelling');
   assert.equal(D.classify({ building: 'warehouse' }).klass, 'non');
   assert.equal(D.classify({ building: 'hotel' }).klass, 'review');
+  for (const building of ['office', 'industrial', 'commercial', 'factory']) {
+    assert.equal(D.classify({ building }).klass, 'review', `${building} needs factual beis-dirah review`);
+  }
+  assert.equal(D.classify({ building: 'retail' }).klass, 'non');
   assert.equal(D.classify({ building: '<img onerror=alert(1)>' }).klass, 'unknown');
 });
 
@@ -134,6 +138,13 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(main, /const qualificationClusters = res\.qualificationClusters/);
   assert.match(main, /visibleSettlements\.slice\(0, 40\)/);
   assert.match(main, /qualificationClusters\.forEach/);
+  assert.match(main, /Use provisional six-footprint proxy/);
+  assert.match(main, /Qualifies: 3 courtyards × 2 houses/);
+  assert.match(main, /Qualifies: at least 50 residents/);
+  assert.match(main, /qualification evidence/);
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  assert.match(html, /Six mapped footprints are only a provisional fallback/);
+  assert.doesNotMatch(html, /City threshold: 6 houses/);
 });
 
 test('settings profile and non-default analytics stay deterministic', () => {

@@ -122,6 +122,7 @@ label.check small { display: block; }
 .review-list button small { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cluster-review { max-height:310px; overflow:auto; margin-top:10px; padding:9px 3px 0 0; border-top:1px solid #dfe7e3; }.cluster-review > b { display:block; margin-bottom:5px; font-size:11.5px; }
 .cluster-review label { display:grid; grid-template-columns:1fr 145px; gap:7px; align-items:center; margin:6px 0; }.cluster-review label span,.cluster-review label small { display:block; }.cluster-review label small { color:var(--muted); font-size:10px; }.cluster-review select { min-height:30px; margin:0; font-size:11px; }
+.cluster-review label > input { grid-column:1 / -1; min-height:30px; margin:0; font-size:11px; }
 .pdf-sheet { position:absolute; z-index:5000; left:0; top:0; width:1050px; padding:30px; background:#fff; color:#17201d; font:14px/1.4 system-ui,sans-serif; }
 .pdf-heading { display:flex; justify-content:space-between; gap:25px; align-items:flex-start; margin-bottom:18px; border-bottom:2px solid #176b52; }
 .pdf-heading h1 { margin:0 0 4px; font-size:25px; }.pdf-heading p { margin:0 0 14px; color:#7a1f1f; font-weight:650; }.pdf-heading > b { max-width:390px; text-align:right; }

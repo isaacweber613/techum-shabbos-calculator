@@ -22,8 +22,8 @@
   ]);
   const NON_DWELLING_TAGS = new Set([
     'garage', 'garages', 'shed', 'roof', 'carport', 'greenhouse', 'barn', 'stable',
-    'cowshed', 'sty', 'farm_auxiliary', 'warehouse', 'industrial', 'commercial',
-    'retail', 'office', 'kiosk', 'supermarket', 'church', 'chapel', 'cathedral',
+    'cowshed', 'sty', 'farm_auxiliary', 'warehouse',
+    'retail', 'kiosk', 'supermarket', 'church', 'chapel', 'cathedral',
     'mosque', 'temple', 'shrine', 'civic', 'public', 'government', 'fire_station',
     'train_station', 'transportation', 'parking', 'service', 'transformer_tower',
     'water_tower', 'storage_tank', 'silo', 'bunker', 'construction', 'grandstand',
@@ -34,6 +34,7 @@
     'synagogue',   // extends the city ONLY with an attendant's dirah (SA HaRav 398:8)
     'school', 'kindergarten', 'college', 'university',
     'hotel', 'hospital',            // people sleep there — spec open question Q5
+    'office', 'industrial', 'commercial', 'factory', // some poskim count offices/lunch facilities
     'ruins',                        // counts if walls+roof remain habitable
     'guardhouse',                   // burgan/watchman hut — counts if attended
     'religious', 'monastery',
@@ -213,7 +214,7 @@ out geom;`;
       } else if (el.type === 'relation' && el.members) {
         // Multipolygon: each outer member becomes its own pseudo-building carrying the
         // relation's tags. Touching members re-join in clustering; the slight house-count
-        // inflation only affects the 6-house city minimum and is flagged in the spec.
+        // inflation can affect the provisional six-footprint city proxy and is flagged in the spec.
         let part = 0;
         for (const m of el.members) {
           if (m.role !== 'outer' || !m.geometry || m.geometry.length < 3) continue;

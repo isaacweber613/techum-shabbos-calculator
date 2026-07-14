@@ -1,6 +1,6 @@
 # Rav review packet — Techum Shabbos Calculator
 
-Prepared 2026-07-14 for spec rev. 13. This is a decision sheet, not a psak. The detailed reasoning,
+Prepared 2026-07-14 for spec rev. 14. This is a decision sheet, not a psak. The detailed reasoning,
 citations, revision history, and alternatives are in `TECHUM-SPEC.md`; implementation
 evidence and known gaps are in `HALACHA-AUDIT.md`.
 
@@ -13,7 +13,7 @@ current software behavior may remain; it does not certify a particular city's in
 | Priority | Question | Current documented default | What changes if rejected |
 |---|---|---|---|
 | 1 | Which modern structures are a *beis dirah*: hotels, hospitals, schools, offices/factories, seasonal homes, trailers, airport buildings? | Tag-based inclusion with unknowns visibly flagged and manually overridable | Classification table and every affected city edge |
-| 2 | May six mapped footprints approximate 3 *chatzeros* × 2 houses for independent-city status? How should apartments/shared entrances count? | Six-footprint approximation, warned; it affects 141⅓ merges, not ordinary 70⅔ chaining | Cluster qualification and potentially kilometer-scale merges |
+| 2 | Which independent-city basis is factually present: 3 *chatzeros* × 2 permanent houses, at least 50 residents, another attested basis, or none? How should apartments/shared entrances count? | Six roof footprints are only a provisional proxy; the UI records the reviewed basis and evidence | Cluster qualification and potentially kilometer-scale merges |
 | 3 | In the MB/Ashkenazi profile, is one 70⅔-amah karpef added after the final permitted ribua/overlap regions? | Yes; one post-ribua karpef, with no recursive karpef-generated merger | Tens of meters at each outer edge; possibly topology |
 | 4 | Does standing in a filled corner of the city's *ribua* make the person a city resident? | Yes; a physically containing dwelling takes priority, then the final profile-governed starting region; unrelated no-join candidates use their common permission | City mode versus point mode and the selected home city |
 | 5 | What establishes *ribua* orientation for existing rectangles, trapezoids, irregular cities, or a natural straight edge? | Preserve a high-confidence rectangle; extend an exact trapezoid on its parallel pair; otherwise true world directions; reviewer angle allowed | Rectangle orientation and corner reach |
@@ -31,7 +31,10 @@ can then be tested on a city where they are concrete rather than in the abstract
 
 - 70⅔-amah single-link dwelling chain, measured footprint edge to edge.
 - 141⅓-amah merge only between qualifying settlements; a lone dwelling gets only 70⅔.
-- Three-villages rule, including the 2,000/4,000-amah conditions.
+- Three-villages rule: the actual middle is ≤2,000 amos from each outer, fits when lowered
+  onto their line with both residual gaps ≤141⅓, and the outer span has no separate
+  4,000-amah cap. The audited outer-center axis still needs factual confirmation when an
+  irregular outline makes the chosen line material.
 - Shape-aware rectangle/trapezoid/world-direction *ribua* and square-cornered 2,000-amah techum.
 - Rotatable 4,000 × 4,000-amah point-mode square outside a city.
 - Overlapping squared rectangles do not automatically merge in the public default. The
