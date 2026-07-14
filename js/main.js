@@ -67,6 +67,14 @@
     mechaber: '<b>Mechaber / Sefardi:</b> 18.90-inch amah here, no extra single-city karpef, shape-aware SA squaring, and no automatic overlapping-rectangle merge.',
     custom: '<b>Custom:</b> one or more choices differ from the selected profile. Review every changed shita with a rav.',
   };
+  const MAP_PALETTE = {
+    pink: '#F0A1B7',
+    pinkStroke: '#A94364',
+    green: '#C8DF97',
+    greenStroke: '#4F713D',
+    greenSoft: '#E5EFC8',
+    cream: '#FFF8E8',
+  };
 
   function addSettingHelp() {
     Object.entries(SETTING_HELP).forEach(([id, explanation]) => {
@@ -907,12 +915,17 @@
       const p = L.polygon(cornersToLatLngs(corners), style).addTo(group || layerGroups.rects);
       if (label) p.bindTooltip(label, { sticky: true });
     };
-    if (document.getElementById('layer-city').checked)
-      addRect(res.cityCorners, { color: '#00c916', weight: 4, fill: false, casing: true }, res.mode === 'city' ? 'CITY rectangle (ribua ha’ir)' : '4-amos shevisa');
-    if (res.karpefCorners && document.getElementById('layer-karpef').checked)
-      addRect(res.karpefCorners, { color: '#00c2c2', weight: 2, dashArray: '6 5', fill: false }, 'Karpef (+70⅔ amos — Rema/MB 398:36)');
     if (document.getElementById('layer-techum').checked)
-      addRect(res.techumCorners, { color: '#ff2222', weight: 3.5, fill: true, fillOpacity: 0.03 }, 'TECHUM — 2000 amos (' + settings.amahCm + ' cm amah)');
+      addRect(res.techumCorners, { color: MAP_PALETTE.pinkStroke, weight: 3.5, fill: true,
+        fillColor: MAP_PALETTE.pink, fillOpacity: 0.38, casing: true },
+      'PINK TECHUM AREA — 2000 amos (' + settings.amahCm + ' cm amah)');
+    if (res.karpefCorners && document.getElementById('layer-karpef').checked)
+      addRect(res.karpefCorners, { color: MAP_PALETTE.greenStroke, weight: 2, dashArray: '6 5',
+        fill: true, fillColor: MAP_PALETTE.greenSoft, fillOpacity: 0.2 }, 'Karpef (+70⅔ amos — Rema/MB 398:36)');
+    if (document.getElementById('layer-city').checked)
+      addRect(res.cityCorners, { color: MAP_PALETTE.greenStroke, weight: 4, fill: true,
+        fillColor: MAP_PALETTE.green, fillOpacity: 0.62, casing: true },
+      res.mode === 'city' ? 'GREEN STARTING CITY (ribua ha’ir)' : 'GREEN 4-AMOS SHEVISA');
     if (settings.show12mil)
       addRect(res.mil12Corners, { color: '#666', weight: 1.5, dashArray: '2 6', fill: false }, '12 mil (d’oraisa shita)');
     for (const region of res.concavityRegions || [])
@@ -1451,7 +1464,7 @@
     if (!window.html2canvas) throw new Error('Image exporter did not load. Check the internet connection and reload.');
     map.invalidateSize();
     return window.html2canvas(document.getElementById('map'), {
-      useCORS: true, allowTaint: false, backgroundColor: '#eef1ef',
+      useCORS: true, allowTaint: false, backgroundColor: MAP_PALETTE.cream,
       scale: Math.min(1.5, window.devicePixelRatio || 1.25), logging: false, imageTimeout: 5000,
     });
   }
@@ -1480,16 +1493,28 @@
       const pdf = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter', compress: true });
       const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight();
       const margin = 10, usableW = pageW - 2 * margin;
-      pdf.setTextColor(23, 32, 29); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(18);
+      const paintPdfPage = () => {
+        pdf.setFillColor(255, 248, 232); pdf.rect(0, 0, pageW, pageH, 'F');
+        pdf.setFillColor(240, 161, 183); pdf.rect(0, 0, pageW, 3, 'F');
+        pdf.setFillColor(200, 223, 151); pdf.rect(0, pageH - 2, pageW, 2, 'F');
+      };
+      paintPdfPage();
+      pdf.setTextColor(54, 95, 70); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(18);
       pdf.text('Techum Shabbos review map', margin, 13);
-      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor(122, 31, 31);
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor(151, 60, 88);
       pdf.text('DRAFT decision-support only - not a psak. Review with a rav/mumcheh.', margin, 19);
       pdf.setTextColor(70, 80, 76); pdf.text(String(state.lastLabel || 'Selected map point'), margin, 24, { maxWidth: usableW });
+      pdf.setFillColor(240, 161, 183); pdf.setDrawColor(169, 67, 100); pdf.rect(margin, 26, 7, 4, 'FD');
+      pdf.setTextColor(70, 80, 76); pdf.setFontSize(7.5); pdf.text('Techum area', margin + 9, 29);
+      pdf.setFillColor(200, 223, 151); pdf.setDrawColor(79, 113, 61); pdf.rect(margin + 38, 26, 7, 4, 'FD');
+      pdf.text('Starting city', margin + 47, 29);
       const imageData = canvas.toDataURL('image/jpeg', 0.94);
-      const maxH = pageH - 38, ratio = canvas.width / canvas.height;
+      const maxH = pageH - 45, ratio = canvas.width / canvas.height;
       let imageW = usableW, imageH = imageW / ratio;
       if (imageH > maxH) { imageH = maxH; imageW = imageH * ratio; }
-      pdf.addImage(imageData, 'JPEG', margin + (usableW - imageW) / 2, 29, imageW, imageH, undefined, 'FAST');
+      const imageX = margin + (usableW - imageW) / 2;
+      pdf.addImage(imageData, 'JPEG', imageX, 33, imageW, imageH, undefined, 'FAST');
+      pdf.setDrawColor(79, 113, 61); pdf.setLineWidth(0.6); pdf.rect(imageX - 0.4, 32.6, imageW + 0.8, imageH + 0.8);
 
       const confidence = D.computeDataConfidence(state.buildings);
       const report = 'CALCULATION SUMMARY\n' + document.getElementById('results').innerText +
@@ -1502,15 +1527,19 @@
         .normalize('NFKD').replace(/[^\x20-\x7E\n]/g, '');
       const lines = pdfSafeReport.split('\n').flatMap((line) =>
         line ? pdf.splitTextToSize(line, usableW - 40) : ['']);
-      pdf.addPage('letter', 'landscape'); pdf.setTextColor(23, 32, 29); pdf.setFont('courier', 'normal'); pdf.setFontSize(8.5);
+      pdf.addPage('letter', 'landscape'); paintPdfPage();
+      pdf.setTextColor(54, 95, 70); pdf.setFont('courier', 'normal'); pdf.setFontSize(8.5);
       let y = 12;
       for (const line of lines) {
-        if (y > pageH - 10) { pdf.addPage('letter', 'landscape'); y = 12; }
+        if (y > pageH - 10) {
+          pdf.addPage('letter', 'landscape'); paintPdfPage();
+          pdf.setTextColor(54, 95, 70); pdf.setFont('courier', 'normal'); pdf.setFontSize(8.5); y = 12;
+        }
         pdf.text(line, margin, y); y += 4;
       }
       const pages = pdf.getNumberOfPages();
       for (let i = 1; i <= pages; i++) {
-        pdf.setPage(i); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(100);
+        pdf.setPage(i); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(79, 113, 61);
         pdf.text(`Page ${i} of ${pages} - generated ${new Date().toISOString()}`, pageW - margin, pageH - 4, { align: 'right' });
       }
       pdf.save('techum-review.pdf'); track('export', { format: 'pdf' });

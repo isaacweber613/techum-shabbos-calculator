@@ -30,14 +30,14 @@
   </script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/style.css?v=20260713-3" />
   <script>
     (() => {
       const design = new URLSearchParams(location.search).get('design');
       if (/^(?:[1-9]|10)$/.test(design || '')) document.documentElement.dataset.design = design;
     })();
   </script>
-  <link rel="stylesheet" href="css/design-experience.css?v=20260713-2" />
+  <link rel="stylesheet" href="css/design-experience.css?v=20260713-3" />
 </head>
 <body>
   <div id="banner">
@@ -207,9 +207,9 @@
 
       <div class="legend" aria-label="Map key">
         <b>What you’re looking at</b>
-        <div><span class="ln techum"></span><strong>Red:</strong> your 2,000-amah techum boundary.</div>
+        <div><span class="ln techum"></span><strong>Pink:</strong> your 2,000-amah techum boundary.</div>
         <div><span class="ln city"></span><strong>Green:</strong> the halachic city rectangle used as the starting point—not the town border.</div>
-        <div><span class="ln karpef"></span><strong>Teal dashed:</strong> the extra karpef before measuring 2,000 amos.</div>
+        <div><span class="ln karpef"></span><strong>Pale green dashed:</strong> the extra karpef before measuring 2,000 amos.</div>
         <div><span class="ln verified"></span><strong>Amber dashed:</strong> a second scenario using only clearly tagged dwellings; it can be larger or smaller.</div>
         <div class="building-key"><span class="sw dw"></span> Green buildings: identified dwelling <span class="sw un"></span> Orange: use unknown</div>
         <div class="building-key"><span class="sw rv"></span> Purple: needs review <span class="sw no"></span> Gray: excluded non-dwelling</div>
@@ -230,7 +230,7 @@
   <script src="js/data.js?v=20260713-2"></script>
   <script src="js/settings.js"></script>
   <script src="js/kml.js"></script>
-  <script src="js/main.js?v=20260713-2"></script>
-  <script src="js/design-experience.js?v=20260713-2"></script>
+  <script src="js/main.js?v=20260713-3"></script>
+  <script src="js/design-experience.js?v=20260713-3"></script>
 </body>
 </html>

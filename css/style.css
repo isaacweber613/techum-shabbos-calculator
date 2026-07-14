@@ -96,8 +96,8 @@ label.check small { display: block; }
 .sw.dw { background: #2ecc40; } .sw.un { background: #ff9f1a; }
 .sw.rv { background: #b45cff; } .sw.no { background: #9aa0a6; }
 .ln { display: inline-block; width: 22px; height: 0; vertical-align: 3px; margin-right: 3px; border-top: 3px solid; }
-.ln.techum { border-color: #ff2222; } .ln.city { border-color: #00e64d; }
-.ln.karpef { border-color: #00c2c2; border-top-style: dashed; border-top-width: 2px; }
+.ln.techum { border-color: #a94364; } .ln.city { border-color: #4f713d; }
+.ln.karpef { border-color: #4f713d; border-top-style: dashed; border-top-width: 2px; }
 .ln.verified { border-color: #ffb300; border-top-style: dashed; border-top-width: 2px; }
 .muted { color: #999; display: block; margin-top: 4px; line-height: 1.4; }
 .hint { color: #888; font-style: italic; }

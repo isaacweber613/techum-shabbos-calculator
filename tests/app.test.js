@@ -76,6 +76,27 @@ test('simplified design directions calculate automatically and keep advanced con
   assert.match(experience, /mapKey\.id = 'simple-map-key'/);
   assert.match(experience, /simple-review-notes/);
   assert.match(experience, /Calculation details/);
+  assert.match(experience, /document\.body\.append\(drawer\)/);
+});
+
+test('reference pink and green palette is shared by map, UI, PNG, and PDF exports', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const experience = fs.readFileSync(path.join(__dirname, '..', 'js', 'design-experience.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const baseCss = fs.readFileSync(path.join(__dirname, '..', 'css', 'style.css'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'css', 'design-experience.css'), 'utf8');
+  assert.match(main, /pink: '#F0A1B7'/);
+  assert.match(main, /green: '#C8DF97'/);
+  assert.match(main, /fillColor: MAP_PALETTE\.pink/);
+  assert.match(main, /fillColor: MAP_PALETTE\.green/);
+  assert.match(main, /pdf\.setFillColor\(240, 161, 183\)/);
+  assert.match(main, /pdf\.setFillColor\(200, 223, 151\)/);
+  assert.match(experience, /Pink area = your techum/);
+  assert.match(html, /<strong>Pink:<\/strong>/);
+  assert.match(html, /<strong>Pale green dashed:<\/strong>/);
+  assert.match(baseCss, /\.ln\.techum \{ border-color: #a94364/);
+  assert.match(css, /--dx-pink:#f0a1b7/);
+  assert.match(css, /--dx-green:#c8df97/);
 });
 
 test('reverse geocoding is proxied and validated by the Worker', () => {

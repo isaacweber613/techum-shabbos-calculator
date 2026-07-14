@@ -283,17 +283,20 @@ html[data-design="8"] .method-callout { font-family:Inter,ui-sans-serif,system-u
 
 /* 9 + 10 — product directions, not skins. Both are automatic, map-readable, and progressive. */
 html[data-design="9"],html[data-design="10"] {
-  --dx-accent:#176b4c;
-  --dx-ink:#18231e;
-  --dx-muted:#66736d;
-  --dx-panel:#fff;
-  --dx-soft:#eef4f0;
-  --dx-line:rgba(24,35,30,.12);
+  --dx-accent:#365f46;
+  --dx-pink:#f0a1b7;
+  --dx-pink-dark:#a94364;
+  --dx-green:#c8df97;
+  --dx-ink:#253328;
+  --dx-muted:#687367;
+  --dx-panel:#fffaf0;
+  --dx-soft:#eef4dc;
+  --dx-line:rgba(54,95,70,.16);
   color-scheme:light;
 }
-html[data-design="9"] body,html[data-design="10"] body { background:#dfe8e1; }
+html[data-design="9"] body,html[data-design="10"] body { background:#f2ced9; }
 html[data-design="9"] #banner,html[data-design="10"] #banner {
-  min-height:34px; padding:7px 48px 7px 14px; background:#173128; color:#dfe9e3; font-size:11px;
+  min-height:34px; padding:7px 48px 7px 14px; background:#365f46; color:#fff8e8; font-size:11px;
 }
 html[data-design="9"] #app,html[data-design="10"] #app { height:calc(100dvh - 34px); padding:0; gap:0; }
 html[data-design="9"] .method-callout,html[data-design="10"] .method-callout,
@@ -309,9 +312,10 @@ html[data-design="9"] .intro h2,html[data-design="10"] .intro h2 {
 }
 html[data-design="9"] .intro p,html[data-design="10"] .intro p { max-width:440px; font-size:13px; line-height:1.45; }
 html[data-design="9"] #address,html[data-design="10"] #address {
-  height:58px; padding-left:47px; border-radius:18px; background:#fff; font-size:16px;
-  box-shadow:0 12px 34px rgba(25,55,40,.1);
+  height:58px; padding-left:47px; border:1px solid rgba(169,67,100,.22); border-radius:18px; background:#fffaf0; font-size:16px;
+  box-shadow:0 12px 34px rgba(169,67,100,.1);
 }
+html[data-design="9"] #address:focus,html[data-design="10"] #address:focus { border-color:var(--dx-pink-dark); box-shadow:0 0 0 3px rgba(240,161,183,.3); }
 html[data-design="9"] .search-icon,html[data-design="10"] .search-icon { left:17px; font-size:22px; }
 html[data-design="9"] .location-button,html[data-design="10"] .location-button { margin-top:7px; padding:5px 2px; }
 html[data-design="9"] #status,html[data-design="10"] #status {
@@ -325,7 +329,7 @@ html[data-design="9"] .calc-progress,html[data-design="10"] .calc-progress { mar
 html[data-design="9"] .calc-progress span,html[data-design="10"] .calc-progress span { padding:7px 3px; font-size:9px; }
 
 html[data-design="9"] #simple-quick-settings,html[data-design="10"] #simple-quick-settings {
-  display:block; margin:7px 0 10px; border:1px solid var(--dx-line); border-radius:14px; background:rgba(255,255,255,.72);
+  display:block; margin:7px 0 10px; border:1px solid rgba(79,113,61,.24); border-radius:14px; background:rgba(229,239,200,.72);
 }
 html[data-design="9"] #simple-quick-settings > summary,html[data-design="10"] #simple-quick-settings > summary {
   display:flex; align-items:center; justify-content:space-between; min-height:43px; padding:7px 11px; border:0; list-style:none;
@@ -356,8 +360,8 @@ html[data-design="9"] #simple-more-settings,html[data-design="10"] #simple-more-
 
 html[data-design="9"] #results,html[data-design="10"] #results { margin:7px 0 0; padding:0; font-size:12px; }
 html[data-design="9"] .simple-result-card,html[data-design="10"] .simple-result-card {
-  margin:0 0 8px; padding:17px; border:1px solid rgba(23,107,76,.16); border-radius:18px; background:#fff;
-  box-shadow:0 14px 35px rgba(23,55,41,.09);
+  margin:0 0 8px; padding:17px; border:1px solid rgba(169,67,100,.26); border-radius:18px; background:#fffaf0;
+  box-shadow:0 14px 35px rgba(169,67,100,.1);
 }
 html[data-design="9"] .simple-result-card h3,html[data-design="10"] .simple-result-card h3 {
   margin:0 0 7px; color:var(--dx-ink); font-size:20px; line-height:1.12; letter-spacing:-.025em;
@@ -389,15 +393,15 @@ html[data-design="9"] .simple-technical-details .note,html[data-design="10"] .si
 html[data-design="9"] #simple-map-key,html[data-design="10"] #simple-map-key {
   position:absolute; z-index:900; left:50%; bottom:20px; display:flex; align-items:center; gap:12px;
   transform:translateX(-50%); padding:10px 13px; border:1px solid rgba(24,35,30,.12); border-radius:14px;
-  background:rgba(255,255,255,.94); box-shadow:0 12px 35px rgba(20,45,33,.14); backdrop-filter:blur(14px);
+  background:rgba(255,250,240,.95); box-shadow:0 12px 35px rgba(54,95,70,.14); backdrop-filter:blur(14px);
   color:#405049; font-size:10px; pointer-events:auto;
 }
 html[data-design="9"] #simple-map-key b,html[data-design="10"] #simple-map-key b { color:#18231e; }
 html[data-design="9"] #simple-map-key span,html[data-design="10"] #simple-map-key span { display:flex; align-items:center; gap:4px; white-space:nowrap; }
-html[data-design="9"] .key-line,html[data-design="10"] .key-line { display:inline-block; width:24px; height:0; border-top:3px solid; }
-html[data-design="9"] .key-line.techum,html[data-design="10"] .key-line.techum { border-color:#ff2222; }
-html[data-design="9"] .key-line.city,html[data-design="10"] .key-line.city { border-color:#00a913; }
-html[data-design="9"] .key-line.karpef,html[data-design="10"] .key-line.karpef { border-color:#00a9a9; border-top-style:dashed; }
+html[data-design="9"] .key-line,html[data-design="10"] .key-line { display:inline-block; width:24px; height:10px; border:2px solid; border-radius:3px; }
+html[data-design="9"] .key-line.techum,html[data-design="10"] .key-line.techum { border-color:#a94364; background:#f0a1b7; }
+html[data-design="9"] .key-line.city,html[data-design="10"] .key-line.city { border-color:#4f713d; background:#c8df97; }
+html[data-design="9"] .key-line.karpef,html[data-design="10"] .key-line.karpef { border:2px dashed #4f713d; background:#e5efc8; }
 html[data-design="9"] .key-line.alternate,html[data-design="10"] .key-line.alternate { border-color:#e5a000; border-top-style:dashed; }
 html[data-design="9"] .leaflet-control-layers,html[data-design="10"] .leaflet-control-layers {
   border:1px solid rgba(24,35,30,.12); border-radius:12px; box-shadow:0 8px 25px rgba(20,45,33,.12); font:700 10px/1.35 Inter,system-ui,sans-serif;
@@ -411,19 +415,19 @@ html[data-design="9"] #app { display:block; position:relative; }
 html[data-design="9"] #map { position:absolute; inset:0; width:100%; height:100%; border:0; border-radius:0; box-shadow:none; }
 html[data-design="9"] #sidebar {
   position:relative; z-index:1000; width:410px; min-width:410px; height:calc(100% - 28px); margin:14px; padding:18px 20px;
-  border:1px solid rgba(24,35,30,.1); border-radius:24px; background:rgba(252,254,252,.94); overflow:auto;
-  box-shadow:0 24px 70px rgba(18,50,34,.16); backdrop-filter:blur(20px);
+  border:1px solid rgba(169,67,100,.16); border-radius:24px; background:rgba(255,250,240,.95); overflow:auto;
+  box-shadow:0 24px 70px rgba(169,67,100,.15); backdrop-filter:blur(20px);
 }
 html[data-design="9"] #design-experience-nav { background:transparent; }
 
 /* Direction 10: a calm answer rail beside a generous map. */
 html[data-design="10"] #app { display:grid; grid-template-columns:minmax(360px,410px) 1fr; }
 html[data-design="10"] #sidebar {
-  width:auto; min-width:0; height:100%; padding:18px 22px; border:0; border-radius:0; background:#fbfdfb; overflow:auto;
+  width:auto; min-width:0; height:100%; padding:18px 22px; border:0; border-radius:0; background:#fffaf0; overflow:auto;
   box-shadow:12px 0 44px rgba(18,50,34,.1);
 }
 html[data-design="10"] #map { width:100%; height:100%; border:0; border-radius:0; box-shadow:none; }
-html[data-design="10"] .simple-result-card { padding:20px; border-radius:8px; border-left:4px solid var(--dx-accent); }
+html[data-design="10"] .simple-result-card { padding:20px; border-radius:8px; border-left:4px solid var(--dx-pink-dark); }
 html[data-design="10"] #address { border-radius:8px; }
 html[data-design="10"] #simple-quick-settings { border-radius:8px; }
 
@@ -437,7 +441,7 @@ html[data-design="10"] #simple-quick-settings { border-radius:8px; }
   }
   html[data-design="9"] #sidebar,html[data-design="10"] #sidebar {
     position:relative; order:2; z-index:1000; width:calc(100% - 20px); min-width:0; height:auto; margin:-26px 10px 10px;
-    padding:20px 18px 34px; overflow:visible; border:0; border-radius:25px; background:#fbfdfb;
+    padding:20px 18px 34px; overflow:visible; border:0; border-radius:25px; background:#fffaf0;
     box-shadow:0 -15px 42px rgba(18,50,34,.14);
   }
   html[data-design="9"] #simple-map-key,html[data-design="10"] #simple-map-key {
