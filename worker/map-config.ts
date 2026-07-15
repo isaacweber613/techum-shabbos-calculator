@@ -6,6 +6,10 @@ export interface GoogleMapConfigEnv {
 
 export const DEFAULT_GOOGLE_MAPS_DAILY_CAP = 300;
 
+export function normalizeGoogleMapsBrowserKey(value?: string): string {
+  return value?.trim() || '';
+}
+
 export function parseGoogleMapsDailyCap(value?: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return DEFAULT_GOOGLE_MAPS_DAILY_CAP;
@@ -25,7 +29,8 @@ export async function issueGoogleMapConfig(request: Request, env: GoogleMapConfi
   if (!isTrustedMapConfigRequest(request)) {
     return Response.json({ error: 'same-site request required' }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
   }
-  if (!env.GOOGLE_MAPS_BROWSER_KEY) {
+  const browserKey = normalizeGoogleMapsBrowserKey(env.GOOGLE_MAPS_BROWSER_KEY);
+  if (!browserKey) {
     return Response.json({ error: 'Google Maps is not configured' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
   }
 
@@ -44,7 +49,7 @@ export async function issueGoogleMapConfig(request: Request, env: GoogleMapConfi
     });
   }
 
-  return Response.json({ provider: 'google', key: env.GOOGLE_MAPS_BROWSER_KEY }, {
+  return Response.json({ provider: 'google', key: browserKey }, {
     headers: { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow, noarchive' },
   });
 }
