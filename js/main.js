@@ -1667,10 +1667,26 @@
     if (!window.html2canvas) throw new Error('Image exporter did not load. Check the internet connection and reload.');
     if (mapExportInProgress) throw new Error('Another map export is already being prepared. Wait for it to finish.');
     mapExportInProgress = true;
-    const exportLock = lockMapExportState();
+    const originalBaseLayer = activeBaseLayer;
+    const interactionLock = lockMapExportInteraction();
+    let exportLock = lockMapExportState();
     let googleExport = null;
+    let fallbackBasemap = null;
     try {
-      if (activeBaseLayer === googleBaseLayer) googleExport = await prepareGoogleExportUnderlay();
+      if (activeBaseLayer === googleBaseLayer) {
+        try {
+          googleExport = await prepareGoogleExportUnderlay();
+        } catch (error) {
+          exportLock.remove();
+          const fallbackReady = waitForBaseLayerReady(originalMapLayer);
+          fallbackBasemap = 'original satellite map';
+          switchBaseLayer(originalMapLayer);
+          await fallbackReady;
+          console.info('Google export unavailable; using the original satellite map for this export.',
+            error instanceof Error ? error.message : String(error));
+          exportLock = lockMapExportState();
+        }
+      }
       exportLock.assertStable();
       const canvas = await window.html2canvas(document.getElementById('map'), {
         useCORS: true, allowTaint: false, backgroundColor: MAP_PALETTE.cream,
@@ -1678,12 +1694,49 @@
         onclone: normalizeLeafletExportSvg,
       });
       exportLock.assertStable();
-      return canvas;
+      return { canvas, fallbackBasemap };
     } finally {
       if (googleExport) googleExport.remove();
       exportLock.remove();
+      if (fallbackBasemap && originalBaseLayer === googleBaseLayer && googleBaseLayer) switchBaseLayer(googleBaseLayer);
+      interactionLock.remove();
       mapExportInProgress = false;
     }
+  }
+
+  function waitForBaseLayerReady(layer, timeoutMs = 6000) {
+    const layers = layer && typeof layer.getLayers === 'function' ? layer.getLayers() : [layer];
+    return new Promise((resolve) => {
+      let remaining = layers.length;
+      let settled = false;
+      let timeout;
+      const listeners = [];
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        listeners.forEach(([candidate, listener]) => candidate.off('load', listener));
+        window.setTimeout(resolve, 50);
+      };
+      const markReady = () => { remaining -= 1; if (remaining <= 0) finish(); };
+      if (!remaining) { finish(); return; }
+      layers.forEach((candidate) => {
+        if (!candidate || typeof candidate.once !== 'function') { markReady(); return; }
+        let ready = false;
+        const listener = () => {
+          if (ready) return;
+          ready = true;
+          candidate.off('load', listener);
+          markReady();
+        };
+        listeners.push([candidate, listener]);
+        candidate.once('load', listener);
+        queueMicrotask(() => {
+          if (typeof candidate.isLoading === 'function' && !candidate.isLoading()) listener();
+        });
+      });
+      timeout = window.setTimeout(finish, timeoutMs);
+    });
   }
 
   function normalizeLeafletExportSvg(clonedDocument) {
@@ -1700,25 +1753,38 @@
     });
   }
 
-  function lockMapExportState() {
+  function lockMapExportInteraction() {
     const app = document.getElementById('app');
-    const center = map.getCenter();
-    const size = map.getSize();
     const original = {
-      lat: center.lat, lng: center.lng, zoom: map.getZoom(), width: size.x, height: size.y,
-      result: state.result, pin: state.pin, baseLayer: activeBaseLayer,
       inert: app.inert, ariaBusy: app.getAttribute('aria-busy'),
     };
-    let invalidated = false;
-    const invalidate = () => { invalidated = true; };
-    const events = 'movestart zoomstart resize baselayerchange layeradd layerremove';
-    map.on(events, invalidate);
     app.inert = true;
     app.setAttribute('aria-busy', 'true');
     const handlers = ['dragging', 'touchZoom', 'doubleClickZoom', 'scrollWheelZoom', 'boxZoom', 'keyboard']
       .map((name) => map[name]).filter(Boolean);
     const enabledHandlers = handlers.filter((handler) => handler.enabled());
     enabledHandlers.forEach((handler) => handler.disable());
+    return {
+      remove: () => {
+        enabledHandlers.forEach((handler) => handler.enable());
+        app.inert = original.inert;
+        if (original.ariaBusy === null) app.removeAttribute('aria-busy');
+        else app.setAttribute('aria-busy', original.ariaBusy);
+      },
+    };
+  }
+
+  function lockMapExportState() {
+    const center = map.getCenter();
+    const size = map.getSize();
+    const original = {
+      lat: center.lat, lng: center.lng, zoom: map.getZoom(), width: size.x, height: size.y,
+      result: state.result, pin: state.pin, baseLayer: activeBaseLayer,
+    };
+    let invalidated = false;
+    const invalidate = () => { invalidated = true; };
+    const events = 'movestart zoomstart resize baselayerchange layeradd layerremove';
+    map.on(events, invalidate);
     return {
       assertStable: () => {
         const currentCenter = map.getCenter();
@@ -1729,13 +1795,7 @@
           throw new Error('The map or calculation changed during export. Try exporting again after it settles.');
         }
       },
-      remove: () => {
-        map.off(events, invalidate);
-        enabledHandlers.forEach((handler) => handler.enable());
-        app.inert = original.inert;
-        if (original.ariaBusy === null) app.removeAttribute('aria-busy');
-        else app.setAttribute('aria-busy', original.ariaBusy);
-      },
+      remove: () => map.off(events, invalidate),
     };
   }
 
@@ -1807,11 +1867,13 @@
   async function exportPNG() {
     setStatus('Rendering the visible map as a PNG image…');
     try {
-      const canvas = await captureMapCanvas();
+      const { canvas, fallbackBasemap } = await captureMapCanvas();
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
       if (!blob) throw new Error('Browser could not encode the map image.');
-      downloadBlob('techum-review-map.png', blob); track('export', { format: 'png' });
-      setStatus('PNG exported — it shows the current map view and visible audit layers.');
+      downloadBlob('techum-review-map.png', blob); track('export', { format: 'png', fallbackBasemap });
+      setStatus(fallbackBasemap
+        ? 'PNG exported with the original satellite map because Google export was unavailable. The calculated boundaries are unchanged.'
+        : 'PNG exported — it shows the current map view and visible audit layers.');
     } catch (e) { setStatus('PNG export failed: ' + e.message); }
   }
 
@@ -1819,7 +1881,7 @@
     if (!window.jspdf || !window.jspdf.jsPDF) { setStatus('PDF exporter did not load. Check the internet connection and reload.'); return; }
     setStatus('Rendering a print-ready PDF review sheet…');
     try {
-      const canvas = await captureMapCanvas();
+      const { canvas, fallbackBasemap } = await captureMapCanvas();
       const pdf = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter', compress: true });
       const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight();
       const margin = 10, usableW = pageW - 2 * margin;
@@ -1872,8 +1934,10 @@
         pdf.setPage(i); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(79, 113, 61);
         pdf.text(`Page ${i} of ${pages} - generated ${new Date().toISOString()}`, pageW - margin, pageH - 4, { align: 'right' });
       }
-      pdf.save('techum-review.pdf'); track('export', { format: 'pdf' });
-      setStatus('PDF exported — it includes the map, warnings, confidence limits, and active configuration.');
+      pdf.save('techum-review.pdf'); track('export', { format: 'pdf', fallbackBasemap });
+      setStatus(fallbackBasemap
+        ? 'PDF exported with the original satellite map because Google export was unavailable. The calculated boundaries are unchanged.'
+        : 'PDF exported — it includes the map, warnings, confidence limits, and active configuration.');
     } catch (e) {
       setStatus('PDF export failed: ' + e.message);
     }
