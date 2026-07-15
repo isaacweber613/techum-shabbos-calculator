@@ -1,6 +1,7 @@
 (() => {
-  const design = new URLSearchParams(location.search).get('design');
-  if (!/^(?:[1-9]|10)$/.test(design || '')) return;
+  const requestedDesign = new URLSearchParams(location.search).get('design');
+  const isDesignPreview = /^(?:[1-9]|10)$/.test(requestedDesign || '');
+  const design = isDesignPreview ? requestedDesign : '10';
 
   const concepts = {
     1: { name: 'Quiet Search', title: 'Confirm the place', copy: 'Make sure the pin is on the building where you will be for Shabbos.' },
@@ -31,7 +32,12 @@
     const brand = document.querySelector('.brand');
     const nav = document.createElement('div');
     nav.id = 'design-experience-nav';
-    nav.innerHTML = `<a href="/designtest/${design}/" aria-label="Back to ${concept.name}">←</a><span><b>Concept ${design}</b>${concept.name}</span><button id="design-settings-button" type="button" aria-expanded="false" aria-controls="design-drawer">Review tools</button>`;
+    if (isDesignPreview) {
+      nav.innerHTML = `<a href="/designtest/${design}/" aria-label="Back to ${concept.name}">←</a><span><b>Concept ${design}</b>${concept.name}</span><button id="design-settings-button" type="button" aria-expanded="false" aria-controls="design-drawer">Review tools</button>`;
+    } else {
+      nav.classList.add('production-review-nav');
+      nav.innerHTML = '<span><b>Calculation settings</b>Profiles, layers, and review tools</span><button id="design-settings-button" type="button" aria-expanded="false" aria-controls="design-drawer">All settings</button>';
+    }
     brand?.after(nav);
 
     const isSimpleDirection = design === '9' || design === '10';
@@ -221,7 +227,8 @@
       };
       const title = drawerTitles[design] || 'Review tools';
       const introText = drawerIntros[design] || 'Profiles, map layers, building review, audit geometry, and exports. Most people can leave these untouched.';
-      drawer.innerHTML = `<header><div><small>Concept ${design}</small><h2>${title}</h2></div><button id="design-drawer-close" type="button" aria-label="Close review tools">×</button></header><p class="design-drawer-intro">${introText}</p>`;
+      const drawerEyebrow = isDesignPreview ? `Concept ${design}` : 'Review controls';
+      drawer.innerHTML = `<header><div><small>${drawerEyebrow}</small><h2>${title}</h2></div><button id="design-drawer-close" type="button" aria-label="Close review tools">×</button></header><p class="design-drawer-intro">${introText}</p>`;
       const movable = [];
       let node = advancedHeading;
       while (node) { movable.push(node); node = node.nextSibling; }

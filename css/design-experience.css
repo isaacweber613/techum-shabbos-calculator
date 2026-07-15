@@ -18,6 +18,7 @@ html[data-design] #design-experience-nav > a { width:30px; height:30px; display:
 html[data-design] #design-experience-nav span { color:var(--dx-muted); font-size:10px; line-height:1.25; }
 html[data-design] #design-experience-nav span b { display:block; color:var(--dx-ink); font-size:11px; }
 html[data-design] #design-experience-nav button { min-height:34px; padding:0 12px; border-color:var(--dx-line); background:var(--dx-soft); color:var(--dx-ink); font-size:11px; }
+html[data-design] #design-experience-nav.production-review-nav { grid-template-columns:1fr auto; }
 html[data-design] #address { height:52px; border-color:var(--dx-line); border-radius:14px; background:rgba(255,255,255,.9); }
 html[data-design] #address:focus { border-color:var(--dx-accent); box-shadow:0 0 0 4px color-mix(in srgb,var(--dx-accent) 12%,transparent); }
 html[data-design] .location-button { color:var(--dx-muted); }
