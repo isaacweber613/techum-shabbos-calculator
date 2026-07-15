@@ -10,7 +10,8 @@
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
-  let map, pinMarker, buildingRenderer;
+  let map, pinMarker, buildingRenderer, baseLayerControl;
+  let googleMap, googleUnderlay, googleBaseLayer, originalMapLayer;
   let state = {
     pin: null,            // {lat, lon}
     proj: null,
@@ -111,8 +112,90 @@
   }
 
   // ---------------- map ----------------
+  function setGoogleMapVisible(visible) {
+    document.getElementById('map').classList.toggle('google-map-active', visible);
+    if (googleUnderlay) googleUnderlay.setAttribute('aria-hidden', String(!visible));
+  }
+
+  function syncGoogleMap() {
+    if (!googleMap || !googleBaseLayer || !map.hasLayer(googleBaseLayer)) return;
+    const center = map.getCenter();
+    googleMap.setCenter({ lat: center.lat, lng: center.lng });
+    googleMap.setZoom(map.getZoom());
+  }
+
+  function disableGoogleMap(reason) {
+    setGoogleMapVisible(false);
+    if (googleBaseLayer && map.hasLayer(googleBaseLayer)) map.removeLayer(googleBaseLayer);
+    if (baseLayerControl && googleBaseLayer) baseLayerControl.removeLayer(googleBaseLayer);
+    if (originalMapLayer && !map.hasLayer(originalMapLayer)) originalMapLayer.addTo(map);
+    console.info('Google Maps unavailable; using the original map.', reason || 'fallback');
+  }
+
+  function loadGoogleMaps(key) {
+    if (window.google && window.google.maps && window.google.maps.Map) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const callback = '__techumGoogleMapsReady';
+      let settled = false;
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        if (error) reject(error); else resolve();
+      };
+      window[callback] = () => finish();
+      window.gm_authFailure = () => {
+        disableGoogleMap('authentication failure');
+        finish(new Error('Google Maps authentication failed'));
+      };
+      const script = document.createElement('script');
+      script.id = 'google-maps-script';
+      script.async = true;
+      script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key)
+        + '&loading=async&callback=' + callback + '&v=weekly';
+      script.onerror = () => finish(new Error('Google Maps script failed to load'));
+      document.head.appendChild(script);
+      const timeout = window.setTimeout(() => finish(new Error('Google Maps timed out')), 10000);
+    });
+  }
+
+  async function preferGoogleMap() {
+    try {
+      const response = await fetch('/api/map-config', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      if (!response.ok) throw new Error('map configuration returned ' + response.status);
+      const config = await response.json();
+      if (!config || config.provider !== 'google' || typeof config.key !== 'string') throw new Error('invalid map configuration');
+      await loadGoogleMaps(config.key);
+
+      googleBaseLayer = L.layerGroup();
+      baseLayerControl.addBaseLayer(googleBaseLayer, 'Google Maps');
+      if (map.hasLayer(originalMapLayer)) map.removeLayer(originalMapLayer);
+      googleBaseLayer.addTo(map);
+      setGoogleMapVisible(true);
+
+      const center = map.getCenter();
+      googleMap = new window.google.maps.Map(googleUnderlay, {
+        center: { lat: center.lat, lng: center.lng },
+        zoom: map.getZoom(),
+        mapTypeId: 'roadmap',
+        disableDefaultUI: true,
+        gestureHandling: 'none',
+        keyboardShortcuts: false,
+        clickableIcons: false,
+      });
+      syncGoogleMap();
+      console.info('Google Maps enabled; the original map remains available as fallback.');
+    } catch (error) {
+      disableGoogleMap(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   function initMap() {
     map = L.map('map', { zoomControl: true }).setView([41.1, -74.05], 13);
+    googleUnderlay = document.createElement('div');
+    googleUnderlay.className = 'google-map-underlay';
+    googleUnderlay.setAttribute('aria-hidden', 'true');
+    document.getElementById('map').prepend(googleUnderlay);
     // Thousands of footprint paths are substantially cheaper on one canvas than as
     // thousands of live SVG nodes; boundary lines remain SVG for crisp interaction.
     buildingRenderer = L.canvas({ padding: 0.35 });
@@ -124,20 +207,28 @@
     const imageryLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
       maxZoom: 20, opacity: 0.9, crossOrigin: true, attribution: '© CARTO',
     });
-    if (isSimplifiedDirection) {
-      const illustrated = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        maxZoom: 20, crossOrigin: true,
-        attribution: '© OpenStreetMap contributors © CARTO',
-      });
-      const realistic = L.layerGroup([imagery, imageryLabels]);
-      realistic.addTo(map);
-      L.control.layers({ 'Satellite imagery': realistic, 'Illustrated map (basemap colors)': illustrated }, null, {
-        collapsed: false, position: 'topright',
-      }).addTo(map);
-    } else {
-      imagery.addTo(map);
-      imageryLabels.addTo(map);
-    }
+    const illustrated = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20, crossOrigin: true,
+      attribution: '© OpenStreetMap contributors © CARTO',
+    });
+    const realistic = L.layerGroup([imagery, imageryLabels]);
+    originalMapLayer = realistic;
+    realistic.addTo(map);
+    baseLayerControl = L.control.layers({
+      'Original satellite map': realistic,
+      'Original illustrated map': illustrated,
+    }, null, { collapsed: !isSimplifiedDirection, position: 'topright' }).addTo(map);
+    map.on('baselayerchange', (event) => {
+      const googleActive = event.layer === googleBaseLayer;
+      setGoogleMapVisible(googleActive);
+      if (googleActive) syncGoogleMap();
+    });
+    map.on('move zoomend', syncGoogleMap);
+    map.on('resize', () => {
+      if (googleMap && window.google && window.google.maps) window.google.maps.event.trigger(googleMap, 'resize');
+      syncGoogleMap();
+    });
+    void preferGoogleMap();
     layerGroups.buildings = L.layerGroup().addTo(map);
     layerGroups.rects = L.layerGroup().addTo(map);
     layerGroups.second = L.layerGroup().addTo(map);

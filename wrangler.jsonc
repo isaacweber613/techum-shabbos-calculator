@@ -50,7 +50,8 @@
   "vars": {
     "REQUIRE_ACCESS": "true",
     "RAW_RETENTION_DAYS": "365",
-    "GEOCODER_CONTACT": "https://tchumshabbos.com/about"
+    "GEOCODER_CONTACT": "https://tchumshabbos.com/about",
+    "GOOGLE_MAPS_DAILY_CAP": "300"
   },
   "triggers": { "crons": ["17 4 * * *"] },
   "observability": {

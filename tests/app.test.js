@@ -76,7 +76,8 @@ test('simplified design directions calculate automatically and keep advanced con
   assert.match(main, /scheduleAutomaticCalculation\(\)/);
   assert.match(main, /params\.has\('draftLat'\) && params\.has\('draftLon'\)/);
   assert.match(main, /realistic\.addTo\(map\)/);
-  assert.match(main, /'Satellite imagery': realistic, 'Illustrated map \(basemap colors\)': illustrated/);
+  assert.match(main, /'Original satellite map': realistic/);
+  assert.match(main, /'Original illustrated map': illustrated/);
   assert.match(experience, /quickSettings\.id = 'simple-quick-settings'/);
   assert.match(experience, /simple-settings-summary/);
   assert.match(experience, /mapKey\.id = 'simple-map-key'/);
@@ -150,8 +151,22 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260714-2'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260714-(?:2|3)'));
   }
+});
+
+test('Google Maps is preferred with a metered same-site config and original-map fallback', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const worker = fs.readFileSync(path.join(__dirname, '..', 'worker', 'index.ts'), 'utf8');
+  const config = fs.readFileSync(path.join(__dirname, '..', 'worker', 'map-config.ts'), 'utf8');
+  assert.match(main, /fetch\('\/api\/map-config'/);
+  assert.match(main, /maps\.googleapis\.com\/maps\/api\/js/);
+  assert.match(main, /gm_authFailure/);
+  assert.match(main, /disableGoogleMap/);
+  assert.match(main, /originalMapLayer\.addTo\(map\)/);
+  assert.match(worker, /issueGoogleMapConfig/);
+  assert.match(config, /DEFAULT_GOOGLE_MAPS_DAILY_CAP = 300/);
+  assert.match(config, /ON CONFLICT\(usage_date\) DO UPDATE/);
 });
 
 test('settings profile and non-default analytics stay deterministic', () => {
