@@ -33,11 +33,13 @@
   <link rel="stylesheet" href="css/style.css?v=20260714-2" />
   <script>
     (() => {
-      const design = new URLSearchParams(location.search).get('design');
-      if (/^(?:[1-9]|10)$/.test(design || '')) document.documentElement.dataset.design = design;
+      const requestedDesign = new URLSearchParams(location.search).get('design');
+      document.documentElement.dataset.design = /^(?:[1-9]|10)$/.test(requestedDesign || '')
+        ? requestedDesign
+        : '10';
     })();
   </script>
-  <link rel="stylesheet" href="css/design-experience.css?v=20260713-3" />
+  <link rel="stylesheet" href="css/design-experience.css?v=20260714-1" />
 </head>
 <body>
   <div id="banner">
@@ -257,6 +259,6 @@
   <script src="js/settings.js?v=20260714-2"></script>
   <script src="js/kml.js?v=20260714-1"></script>
   <script src="js/main.js?v=20260714-2"></script>
-  <script src="js/design-experience.js?v=20260713-3"></script>
+  <script src="js/design-experience.js?v=20260714-1"></script>
 </body>
 </html>

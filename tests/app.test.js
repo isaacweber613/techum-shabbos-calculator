@@ -71,6 +71,7 @@ test('simplified design directions calculate automatically and keep advanced con
   const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
   const experience = fs.readFileSync(path.join(__dirname, '..', 'js', 'design-experience.js'), 'utf8');
   assert.match(html, /\(\?:\[1-9\]\|10\)/);
+  assert.match(html, /: '10';/);
   assert.match(main, /const isSimplifiedDirection = \/\^\(9\|10\)\$\//);
   assert.match(main, /scheduleAutomaticCalculation\(\)/);
   assert.match(main, /params\.has\('draftLat'\) && params\.has\('draftLon'\)/);
@@ -83,6 +84,9 @@ test('simplified design directions calculate automatically and keep advanced con
   assert.match(experience, /simple-review-notes/);
   assert.match(experience, /Calculation details/);
   assert.match(experience, /document\.body\.append\(drawer\)/);
+  assert.match(experience, /const design = isDesignPreview \? requestedDesign : '10'/);
+  assert.match(experience, /nav\.classList\.add\('production-review-nav'\)/);
+  assert.match(experience, /Review controls/);
 });
 
 test('reference pink and green palette is shared by map, UI, PNG, and PDF exports', () => {
