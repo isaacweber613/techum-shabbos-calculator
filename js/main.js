@@ -1670,7 +1670,6 @@
     const exportLock = lockMapExportState();
     let googleExport = null;
     try {
-      map.invalidateSize();
       if (activeBaseLayer === googleBaseLayer) googleExport = await prepareGoogleExportUnderlay();
       exportLock.assertStable();
       const canvas = await window.html2canvas(document.getElementById('map'), {
