@@ -12,6 +12,7 @@
   let settings = S.load();
   let map, pinMarker, buildingRenderer, baseLayerControl;
   let googleMap, googleUnderlay, googleBaseLayer, originalMapLayer, illustratedMapLayer, activeBaseLayer;
+  let googleMapsBrowserKey = '';
   let userSelectedBaseLayer = false;
   let state = {
     pin: null,            // {lat, lon}
@@ -41,6 +42,7 @@
   let latestAnalysisId = 0;
   let activeCalculationId = 0;
   let automaticCalculationTimer = null;
+  let mapExportInProgress = false;
   const analysisPending = new Map();
   function track(type, data) { if (window.TechumTrack) window.TechumTrack.send(type, data); }
 
@@ -192,6 +194,7 @@
       if (!response.ok) throw new Error('map configuration returned ' + response.status);
       const config = await response.json();
       if (!config || config.provider !== 'google' || typeof config.key !== 'string') throw new Error('invalid map configuration');
+      googleMapsBrowserKey = config.key;
       await loadGoogleMaps(config.key);
 
       googleBaseLayer = L.layerGroup();
@@ -1662,19 +1665,123 @@
   async function captureMapCanvas() {
     if (!state.result) throw new Error('Calculate a techum first.');
     if (!window.html2canvas) throw new Error('Image exporter did not load. Check the internet connection and reload.');
-    const restoreLayer = activeBaseLayer;
-    if (restoreLayer === googleBaseLayer) {
-      switchBaseLayer(originalMapLayer);
-      await new Promise((resolve) => window.setTimeout(resolve, 900));
-    }
+    if (mapExportInProgress) throw new Error('Another map export is already being prepared. Wait for it to finish.');
+    mapExportInProgress = true;
+    const exportLock = lockMapExportState();
+    let googleExport = null;
     try {
       map.invalidateSize();
-      return await window.html2canvas(document.getElementById('map'), {
+      if (activeBaseLayer === googleBaseLayer) googleExport = await prepareGoogleExportUnderlay();
+      exportLock.assertStable();
+      const canvas = await window.html2canvas(document.getElementById('map'), {
         useCORS: true, allowTaint: false, backgroundColor: MAP_PALETTE.cream,
         scale: Math.min(1.5, window.devicePixelRatio || 1.25), logging: false, imageTimeout: 5000,
       });
+      exportLock.assertStable();
+      return canvas;
     } finally {
-      if (restoreLayer === googleBaseLayer && googleBaseLayer) switchBaseLayer(googleBaseLayer);
+      if (googleExport) googleExport.remove();
+      exportLock.remove();
+      mapExportInProgress = false;
+    }
+  }
+
+  function lockMapExportState() {
+    const app = document.getElementById('app');
+    const center = map.getCenter();
+    const size = map.getSize();
+    const original = {
+      lat: center.lat, lng: center.lng, zoom: map.getZoom(), width: size.x, height: size.y,
+      result: state.result, pin: state.pin, baseLayer: activeBaseLayer,
+      inert: app.inert, ariaBusy: app.getAttribute('aria-busy'),
+    };
+    let invalidated = false;
+    const invalidate = () => { invalidated = true; };
+    const events = 'movestart zoomstart resize baselayerchange layeradd layerremove';
+    map.on(events, invalidate);
+    app.inert = true;
+    app.setAttribute('aria-busy', 'true');
+    const handlers = ['dragging', 'touchZoom', 'doubleClickZoom', 'scrollWheelZoom', 'boxZoom', 'keyboard']
+      .map((name) => map[name]).filter(Boolean);
+    const enabledHandlers = handlers.filter((handler) => handler.enabled());
+    enabledHandlers.forEach((handler) => handler.disable());
+    return {
+      assertStable: () => {
+        const currentCenter = map.getCenter();
+        const currentSize = map.getSize();
+        if (invalidated || map.getZoom() !== original.zoom || currentSize.x !== original.width || currentSize.y !== original.height
+          || Math.abs(currentCenter.lat - original.lat) > 1e-10 || Math.abs(currentCenter.lng - original.lng) > 1e-10
+          || state.result !== original.result || state.pin !== original.pin || activeBaseLayer !== original.baseLayer) {
+          throw new Error('The map or calculation changed during export. Try exporting again after it settles.');
+        }
+      },
+      remove: () => {
+        map.off(events, invalidate);
+        enabledHandlers.forEach((handler) => handler.enable());
+        app.inert = original.inert;
+        if (original.ariaBusy === null) app.removeAttribute('aria-busy');
+        else app.setAttribute('aria-busy', original.ariaBusy);
+      },
+    };
+  }
+
+  async function prepareGoogleExportUnderlay() {
+    if (!window.TechumMapExport) throw new Error('Google map export support did not load. Reload and try again.');
+    if (!googleMapsBrowserKey) throw new Error('Google map export is not configured. Reload and try again.');
+    const mapElement = document.getElementById('map');
+    const size = map.getSize();
+    const center = map.getCenter();
+    const zoom = map.getZoom();
+    const plan = window.TechumMapExport.staticMapPlan({ zoom, width: size.x, height: size.y });
+    if (!plan) throw new Error('This zoom level is too low to export the complete Google map view. Zoom in and try again.');
+    const container = document.createElement('div');
+    container.className = 'google-static-export-underlay';
+    container.setAttribute('aria-hidden', 'true');
+    const attributionOverlay = document.createElement('div');
+    attributionOverlay.className = 'google-static-attribution-overlay';
+    attributionOverlay.setAttribute('aria-hidden', 'true');
+    attributionOverlay.style.setProperty('--google-attribution-height', `${plan.attributionHeight}px`);
+    try {
+      const image = document.createElement('img');
+      image.alt = '';
+      image.crossOrigin = 'anonymous';
+      image.referrerPolicy = 'strict-origin-when-cross-origin';
+      Object.assign(image.style, {
+        left: `${plan.left}px`, top: `${plan.top}px`, width: `${plan.cssWidth}px`, height: `${plan.cssHeight}px`,
+      });
+      const params = new URLSearchParams({
+        center: `${center.lat.toFixed(7)},${center.lng.toFixed(7)}`, zoom: String(plan.requestZoom),
+        size: `${plan.requestWidth}x${plan.requestHeight}`, scale: String(plan.scale),
+        maptype: 'roadmap', format: 'png32', key: googleMapsBrowserKey,
+      });
+      const loaded = new Promise((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error('Google map export timed out. Try again shortly.')), 10000);
+        image.onload = () => { window.clearTimeout(timeout); resolve(); };
+        image.onerror = () => { window.clearTimeout(timeout); reject(new Error('Google could not render this map view for export. Try again shortly.')); };
+      });
+      image.src = 'https://maps.googleapis.com/maps/api/staticmap?' + params.toString();
+      container.appendChild(image);
+      await loaded;
+      // Repaint Google's baked-in bottom attribution above Leaflet's boundary panes.
+      // The source image remains direct from Google and the strip is not cropped.
+      const attributionImage = image.cloneNode(false);
+      attributionImage.alt = '';
+      attributionImage.style.top = `${plan.top - (size.y - plan.attributionHeight)}px`;
+      attributionOverlay.appendChild(attributionImage);
+      mapElement.prepend(container);
+      mapElement.appendChild(attributionOverlay);
+      mapElement.classList.add('google-map-exporting');
+      return {
+        remove: () => {
+          mapElement.classList.remove('google-map-exporting');
+          container.remove();
+          attributionOverlay.remove();
+        },
+      };
+    } catch (error) {
+      container.remove();
+      attributionOverlay.remove();
+      throw error;
     }
   }
 
