@@ -174,6 +174,7 @@ test('Google Maps is preferred with a metered same-site config and original-map 
   assert.match(main, /app\.inert = true/);
   assert.match(main, /activeBaseLayer !== original\.baseLayer/);
   assert.match(main, /state\.result !== original\.result/);
+  assert.doesNotMatch(main, /exportLock = lockMapExportState\(\);[\s\S]{0,120}map\.invalidateSize\(\)/);
   assert.doesNotMatch(main, /\/api\/map-export-tile/);
   assert.match(worker, /issueGoogleMapConfig/);
   assert.match(config, /DEFAULT_GOOGLE_MAPS_DAILY_CAP = 300/);
