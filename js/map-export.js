@@ -31,5 +31,15 @@
     };
   }
 
-  return { MAX_STATIC_MAP_SIZE, staticMapPlan };
+  function normalizedLeafletSvgViewBox(viewBox) {
+    const values = String(viewBox || '').trim().split(/[\s,]+/).map(Number);
+    if (values.length !== 4 || values.some((value) => !Number.isFinite(value))
+      || values[2] <= 0 || values[3] <= 0) return null;
+    // Leaflet gives its renderer equal-and-opposite CSS and viewBox offsets.
+    // Browsers cancel them, but html2canvas applies the SVG transform repeatedly.
+    // Baking that cancellation into the viewBox preserves the visible coordinates.
+    return `0 0 ${values[2]} ${values[3]}`;
+  }
+
+  return { MAX_STATIC_MAP_SIZE, staticMapPlan, normalizedLeafletSvgViewBox };
 }));

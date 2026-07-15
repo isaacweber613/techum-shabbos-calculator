@@ -1,6 +1,11 @@
 const assert = require('node:assert/strict');
 const M = require('../js/map-export.js');
 
+assert.equal(M.normalizedLeafletSvgViewBox('-151 -82 1812 985'), '0 0 1812 985');
+assert.equal(M.normalizedLeafletSvgViewBox('0, 0, 1030, 866'), '0 0 1030 866');
+assert.equal(M.normalizedLeafletSvgViewBox('invalid'), null);
+assert.equal(M.normalizedLeafletSvgViewBox('0 0 -10 100'), null);
+
 assert.deepEqual(M.staticMapPlan({ zoom: 13, width: 1100, height: 800 }), {
   requestWidth: 550, requestHeight: 400, requestZoom: 12, scale: 2,
   cssWidth: 1100, cssHeight: 800, left: 0, top: 0, attributionHeight: 36,
