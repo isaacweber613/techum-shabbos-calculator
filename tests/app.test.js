@@ -150,8 +150,8 @@ test('audit map and city-status controls use the correct merge stage', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
-  for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=202607(?:14-(?:2|3)|15-[123])'));
+  for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=202607(?:14-(?:2|3)|15-[1-4])'));
   }
 });
 
@@ -175,8 +175,9 @@ test('Google Maps is preferred with a metered same-site config and original-map 
   assert.match(main, /activeBaseLayer !== original\.baseLayer/);
   assert.match(main, /state\.result !== original\.result/);
   assert.doesNotMatch(main, /exportLock = lockMapExportState\(\);[\s\S]{0,120}map\.invalidateSize\(\)/);
-  assert.match(main, /flattenLeafletExportTransforms/);
-  assert.match(main, /onclone: flattenLeafletTransforms/);
+  assert.match(main, /normalizeLeafletExportSvg/);
+  assert.match(main, /onclone: normalizeLeafletExportSvg/);
+  assert.match(main, /leaflet-overlay-pane > svg\.leaflet-zoom-animated/);
   assert.doesNotMatch(main, /\/api\/map-export-tile/);
   assert.match(worker, /issueGoogleMapConfig/);
   assert.match(config, /DEFAULT_GOOGLE_MAPS_DAILY_CAP = 300/);
