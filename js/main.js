@@ -11,7 +11,8 @@
 
   let settings = S.load();
   let map, pinMarker, buildingRenderer, baseLayerControl;
-  let googleMap, googleUnderlay, googleBaseLayer, originalMapLayer;
+  let googleMap, googleUnderlay, googleBaseLayer, originalMapLayer, illustratedMapLayer, activeBaseLayer;
+  let userSelectedBaseLayer = false;
   let state = {
     pin: null,            // {lat, lon}
     proj: null,
@@ -85,6 +86,10 @@
       const input = document.getElementById(id);
       const label = input && input.closest('label');
       if (!label) return;
+      const accessibleName = [...label.childNodes]
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent.trim()).filter(Boolean).join(' ');
+      if (accessibleName && !input.hasAttribute('aria-label')) input.setAttribute('aria-label', accessibleName);
       const help = document.createElement('button');
       help.type = 'button';
       help.className = 'setting-help';
@@ -124,11 +129,33 @@
     googleMap.setZoom(map.getZoom());
   }
 
+  function ensureGoogleMap() {
+    if (googleMap || !window.google?.maps?.Map) return;
+    const center = map.getCenter();
+    googleMap = new window.google.maps.Map(googleUnderlay, {
+      center: { lat: center.lat, lng: center.lng }, zoom: map.getZoom(), mapTypeId: 'roadmap',
+      disableDefaultUI: true, gestureHandling: 'none', keyboardShortcuts: false, clickableIcons: false,
+    });
+  }
+
+  function switchBaseLayer(layer) {
+    [originalMapLayer, illustratedMapLayer, googleBaseLayer].filter(Boolean).forEach((candidate) => {
+      if (candidate !== layer && map.hasLayer(candidate)) map.removeLayer(candidate);
+    });
+    if (layer && !map.hasLayer(layer)) layer.addTo(map);
+    activeBaseLayer = layer;
+    const googleActive = layer === googleBaseLayer;
+    setGoogleMapVisible(googleActive);
+    if (googleActive) { ensureGoogleMap(); syncGoogleMap(); }
+  }
+
   function disableGoogleMap(reason) {
+    const wasGoogleActive = activeBaseLayer === googleBaseLayer;
     setGoogleMapVisible(false);
     if (googleBaseLayer && map.hasLayer(googleBaseLayer)) map.removeLayer(googleBaseLayer);
     if (baseLayerControl && googleBaseLayer) baseLayerControl.removeLayer(googleBaseLayer);
-    if (originalMapLayer && !map.hasLayer(originalMapLayer)) originalMapLayer.addTo(map);
+    if (wasGoogleActive || !activeBaseLayer) switchBaseLayer(originalMapLayer);
+    googleBaseLayer = null;
     console.info('Google Maps unavailable; using the original map.', reason || 'fallback');
   }
 
@@ -169,21 +196,7 @@
 
       googleBaseLayer = L.layerGroup();
       baseLayerControl.addBaseLayer(googleBaseLayer, 'Google Maps');
-      if (map.hasLayer(originalMapLayer)) map.removeLayer(originalMapLayer);
-      googleBaseLayer.addTo(map);
-      setGoogleMapVisible(true);
-
-      const center = map.getCenter();
-      googleMap = new window.google.maps.Map(googleUnderlay, {
-        center: { lat: center.lat, lng: center.lng },
-        zoom: map.getZoom(),
-        mapTypeId: 'roadmap',
-        disableDefaultUI: true,
-        gestureHandling: 'none',
-        keyboardShortcuts: false,
-        clickableIcons: false,
-      });
-      syncGoogleMap();
+      if (!userSelectedBaseLayer) switchBaseLayer(googleBaseLayer);
       console.info('Google Maps enabled; the original map remains available as fallback.');
     } catch (error) {
       disableGoogleMap(error instanceof Error ? error.message : String(error));
@@ -213,15 +226,19 @@
     });
     const realistic = L.layerGroup([imagery, imageryLabels]);
     originalMapLayer = realistic;
+    illustratedMapLayer = illustrated;
+    activeBaseLayer = realistic;
     realistic.addTo(map);
     baseLayerControl = L.control.layers({
       'Original satellite map': realistic,
       'Original illustrated map': illustrated,
     }, null, { collapsed: !isSimplifiedDirection, position: 'topright' }).addTo(map);
+    baseLayerControl.getContainer().addEventListener('change', () => { userSelectedBaseLayer = true; });
     map.on('baselayerchange', (event) => {
+      activeBaseLayer = event.layer;
       const googleActive = event.layer === googleBaseLayer;
       setGoogleMapVisible(googleActive);
-      if (googleActive) syncGoogleMap();
+      if (googleActive) { ensureGoogleMap(); syncGoogleMap(); }
     });
     map.on('move zoomend', syncGoogleMap);
     map.on('resize', () => {
@@ -1645,11 +1662,20 @@
   async function captureMapCanvas() {
     if (!state.result) throw new Error('Calculate a techum first.');
     if (!window.html2canvas) throw new Error('Image exporter did not load. Check the internet connection and reload.');
-    map.invalidateSize();
-    return window.html2canvas(document.getElementById('map'), {
-      useCORS: true, allowTaint: false, backgroundColor: MAP_PALETTE.cream,
-      scale: Math.min(1.5, window.devicePixelRatio || 1.25), logging: false, imageTimeout: 5000,
-    });
+    const restoreLayer = activeBaseLayer;
+    if (restoreLayer === googleBaseLayer) {
+      switchBaseLayer(originalMapLayer);
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
+    }
+    try {
+      map.invalidateSize();
+      return await window.html2canvas(document.getElementById('map'), {
+        useCORS: true, allowTaint: false, backgroundColor: MAP_PALETTE.cream,
+        scale: Math.min(1.5, window.devicePixelRatio || 1.25), logging: false, imageTimeout: 5000,
+      });
+    } finally {
+      if (restoreLayer === googleBaseLayer && googleBaseLayer) switchBaseLayer(googleBaseLayer);
+    }
   }
 
   function downloadBlob(filename, blob) {

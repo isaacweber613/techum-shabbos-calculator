@@ -237,10 +237,9 @@
       // context cannot put the full-screen backdrop in front of its controls.
       document.body.append(drawer);
 
-      const backdrop = document.createElement('button');
+      const backdrop = document.createElement('div');
       backdrop.id = 'design-drawer-backdrop';
-      backdrop.type = 'button';
-      backdrop.setAttribute('aria-label', 'Close review tools');
+      backdrop.setAttribute('aria-hidden', 'true');
       document.body.append(backdrop);
 
       const btnLabel = design === '7' ? 'Inspector' : design === '8' ? 'For your rav' : design === '6' ? 'Quiet tools' : isSimpleDirection ? 'All settings' : 'Review tools';

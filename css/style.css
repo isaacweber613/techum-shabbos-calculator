@@ -16,6 +16,8 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 #map { flex: 1; min-width: 0; position: relative; }
 #map > .google-map-underlay { position:absolute; inset:0; z-index:0; display:none; pointer-events:none; }
 #map.google-map-active > .google-map-underlay { display:block; }
+#map.google-map-active > .google-map-underlay .gm-style-cc a,
+#map.google-map-active > .google-map-underlay a[href] { pointer-events:auto; }
 #map.google-map-active { background:transparent; }
 
 h1 { font-size: 22px; margin: 0 0 10px; line-height: 1.1; }
