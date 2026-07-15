@@ -1,5 +1,6 @@
 import { handleBuildings } from './buildings';
 import { submitBuildingCorrection } from './corrections';
+import { issueGoogleMapConfig } from './map-config';
 import { sha256Hex, validateRegistrySubmission } from './registry';
 
 interface Env {
@@ -14,6 +15,8 @@ interface Env {
   RAW_RETENTION_DAYS: string;
   GEOCODER_CONTACT: string;
   REGISTRY_WRITES?: string;
+  GOOGLE_MAPS_BROWSER_KEY?: string;
+  GOOGLE_MAPS_DAILY_CAP?: string;
 }
 
 function accessEmail(request: Request): string | null {
@@ -429,6 +432,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/geocode' && request.method === 'GET') return geocode(request, env);
   if (url.pathname === '/api/reverse-geocode' && request.method === 'GET') return reverseGeocode(request, env);
   if (url.pathname === '/api/autocomplete' && request.method === 'GET') return autocomplete(request, env);
+  if (url.pathname === '/api/map-config' && request.method === 'GET') return issueGoogleMapConfig(request, env);
   if (url.pathname === '/api/buildings' && request.method === 'GET') return handleBuildings(request, env);
   if (url.pathname === '/api/building-corrections' && request.method === 'POST') {
     const network = await hmacHex(env.IP_HASH_SECRET || 'local-development-only',
@@ -473,6 +477,8 @@ export default {
       env.DB.prepare('DELETE FROM events WHERE t < ?1').bind(cutoff),
       env.DB.prepare('DELETE FROM geocode_slots WHERE second < ?1').bind(Math.floor(Date.now() / 1000) - 120),
       env.DB.prepare('DELETE FROM building_fill_slots WHERE second < ?1').bind(Math.floor(Date.now() / 1000) - 120),
+      env.DB.prepare('DELETE FROM google_map_daily_usage WHERE usage_date < ?1')
+        .bind(new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)),
     ]);
     console.log(JSON.stringify({ message: 'retention cleanup complete', cutoff, days }));
   },
