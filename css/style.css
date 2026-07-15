@@ -19,6 +19,14 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 #map.google-map-active > .google-map-underlay .gm-style-cc a,
 #map.google-map-active > .google-map-underlay a[href] { pointer-events:auto; }
 #map.google-map-active { background:transparent; }
+#map > .google-static-export-underlay { position:absolute; inset:0; z-index:0; display:none; overflow:hidden; pointer-events:none; }
+#map > .google-static-attribution-overlay { position:absolute; left:0; right:0; bottom:0; height:var(--google-attribution-height, 36px); z-index:1100; display:none; overflow:hidden; pointer-events:none; }
+#map.google-map-exporting > .google-map-underlay { display:none; }
+#map.google-map-exporting > .google-static-export-underlay,
+#map.google-map-exporting > .google-static-attribution-overlay { display:block; }
+#map.google-map-exporting .leaflet-control-attribution { display:none; }
+#map > .google-static-export-underlay img,
+#map > .google-static-attribution-overlay img { position:absolute; display:block; max-width:none; }
 
 h1 { font-size: 22px; margin: 0 0 10px; line-height: 1.1; }
 h1 span { font-size: 13px; font-weight: 400; color: #666; }
