@@ -1716,7 +1716,9 @@
         settled = true;
         window.clearTimeout(timeout);
         listeners.forEach(([candidate, listener]) => candidate.off('load', listener));
-        window.setTimeout(resolve, 50);
+        // Leaflet's fade animation continues briefly after the layer's load event.
+        // Wait for full tile opacity so the fallback does not look washed out.
+        window.setTimeout(resolve, 450);
       };
       const markReady = () => { remaining -= 1; if (remaining <= 0) finish(); };
       if (!remaining) { finish(); return; }
@@ -1743,6 +1745,7 @@
     const clonedMap = clonedDocument.getElementById('map');
     if (!clonedMap) return;
     clonedMap.querySelectorAll('.leaflet-proxy').forEach((element) => { element.style.display = 'none'; });
+    clonedMap.querySelectorAll('.leaflet-tile-loaded').forEach((tile) => { tile.style.opacity = '1'; });
     clonedMap.querySelectorAll('.leaflet-overlay-pane > svg.leaflet-zoom-animated').forEach((svg) => {
       const viewBox = window.TechumMapExport?.normalizedLeafletSvgViewBox(svg.getAttribute('viewBox'));
       if (!viewBox) return;

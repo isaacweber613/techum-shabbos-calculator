@@ -151,7 +151,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=202607(?:14-(?:2|3)|15-[1-5])'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=202607(?:14-(?:2|3)|15-[1-6])'));
   }
 });
 
@@ -174,6 +174,7 @@ test('Google Maps is preferred with a metered same-site config and original-map 
   assert.match(main, /waitForBaseLayerReady\(originalMapLayer\)/);
   assert.match(main, /fallbackBasemap = 'original satellite map'/);
   assert.match(main, /calculated boundaries are unchanged/);
+  assert.match(main, /leaflet-tile-loaded/);
   assert.match(main, /originalBaseLayer === googleBaseLayer/);
   assert.match(main, /app\.inert = true/);
   assert.match(main, /activeBaseLayer !== original\.baseLayer/);
