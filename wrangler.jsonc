@@ -45,6 +45,11 @@
       "name": "BUILDINGS_RATE_LIMITER",
       "namespace_id": "71003",
       "simple": { "limit": 30, "period": 60 }
+    },
+    {
+      "name": "MAP_CONFIG_RATE_LIMITER",
+      "namespace_id": "71004",
+      "simple": { "limit": 10, "period": 60 }
     }
   ],
   "vars": {

@@ -10,6 +10,7 @@ interface Env {
   EVENT_RATE_LIMITER: RateLimit;
   GEOCODE_RATE_LIMITER: RateLimit;
   BUILDINGS_RATE_LIMITER: RateLimit;
+  MAP_CONFIG_RATE_LIMITER: RateLimit;
   IP_HASH_SECRET: string;
   REQUIRE_ACCESS: string;
   RAW_RETENTION_DAYS: string;

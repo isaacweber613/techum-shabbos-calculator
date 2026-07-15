@@ -151,7 +151,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260714-(?:2|3)'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=202607(?:14-(?:2|3)|15-1)'));
   }
 });
 
@@ -163,10 +163,13 @@ test('Google Maps is preferred with a metered same-site config and original-map 
   assert.match(main, /maps\.googleapis\.com\/maps\/api\/js/);
   assert.match(main, /gm_authFailure/);
   assert.match(main, /disableGoogleMap/);
-  assert.match(main, /originalMapLayer\.addTo\(map\)/);
+  assert.match(main, /switchBaseLayer\(originalMapLayer\)/);
+  assert.match(main, /if \(!userSelectedBaseLayer\) switchBaseLayer\(googleBaseLayer\)/);
+  assert.match(main, /restoreLayer === googleBaseLayer/);
   assert.match(worker, /issueGoogleMapConfig/);
   assert.match(config, /DEFAULT_GOOGLE_MAPS_DAILY_CAP = 300/);
   assert.match(config, /ON CONFLICT\(usage_date\) DO UPDATE/);
+  assert.match(config, /MAP_CONFIG_RATE_LIMITER\.limit/);
 });
 
 test('settings profile and non-default analytics stay deterministic', () => {
