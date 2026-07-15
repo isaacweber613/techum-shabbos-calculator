@@ -1672,9 +1672,11 @@
     try {
       if (activeBaseLayer === googleBaseLayer) googleExport = await prepareGoogleExportUnderlay();
       exportLock.assertStable();
+      const flattenLeafletTransforms = activeBaseLayer === googleBaseLayer;
       const canvas = await window.html2canvas(document.getElementById('map'), {
         useCORS: true, allowTaint: false, backgroundColor: MAP_PALETTE.cream,
         scale: Math.min(1.5, window.devicePixelRatio || 1.25), logging: false, imageTimeout: 5000,
+        onclone: flattenLeafletTransforms ? flattenLeafletExportTransforms : undefined,
       });
       exportLock.assertStable();
       return canvas;
@@ -1683,6 +1685,22 @@
       exportLock.remove();
       mapExportInProgress = false;
     }
+  }
+
+  function flattenLeafletExportTransforms(clonedDocument) {
+    const clonedMap = clonedDocument.getElementById('map');
+    if (!clonedMap) return;
+    // html2canvas can scale Leaflet's translate3d positions twice. Equivalent
+    // absolute left/top values preserve the browser-rendered overlay positions.
+    clonedMap.querySelectorAll('.leaflet-zoom-animated').forEach((element) => {
+      if (element.classList.contains('leaflet-proxy')) { element.style.display = 'none'; return; }
+      const transform = element.style.transform || '';
+      const match = transform.match(/^translate3d\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px,\s*0px\s*\)$/);
+      if (!match) return;
+      element.style.transform = 'none';
+      element.style.left = `${Number(match[1])}px`;
+      element.style.top = `${Number(match[2])}px`;
+    });
   }
 
   function lockMapExportState() {
