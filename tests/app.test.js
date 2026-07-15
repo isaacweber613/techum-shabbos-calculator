@@ -151,7 +151,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=202607(?:14-(?:2|3)|15-[12])'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=202607(?:14-(?:2|3)|15-[123])'));
   }
 });
 
