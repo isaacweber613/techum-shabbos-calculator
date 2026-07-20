@@ -93,11 +93,19 @@
       mapKey.id = 'simple-map-key';
       mapKey.setAttribute('aria-label', 'Map line key');
       mapKey.innerHTML = `
+        <button type="button" class="map-key-toggle" aria-expanded="false">Map key</button>
         <b>Map lines</b>
-        <span><i class="key-line techum"></i><strong>Pink</strong> Your techum area</span>
-        <span><i class="key-line city"></i><strong>Green</strong> Starting place (city, building, or 4 amos)</span>
-        <span><i class="key-line karpef"></i><strong>Pale green</strong> Extra city space</span>
-        <span><i class="key-line alternate"></i><strong>Amber</strong> Alternate, when shown</span>`;
+        <div class="map-key-items">
+          <span><i class="key-line techum"></i><strong>Pink</strong> Your techum area</span>
+          <span><i class="key-line city"></i><strong>Green</strong> Starting place (city, building, or 4 amos)</span>
+          <span><i class="key-line karpef"></i><strong>Pale green</strong> Extra city space</span>
+          <span><i class="key-line alternate"></i><strong>Amber</strong> Alternate, when shown</span>
+        </div>`;
+      const mapKeyToggle = mapKey.querySelector('.map-key-toggle');
+      mapKeyToggle.addEventListener('click', () => {
+        const open = mapKey.classList.toggle('open');
+        mapKeyToggle.setAttribute('aria-expanded', String(open));
+      });
       document.getElementById('map')?.append(mapKey);
 
       const results = document.getElementById('results');
@@ -108,12 +116,14 @@
           const modeStat = original.find((node) => node.classList.contains('stat') && node.textContent.includes('Mode:'));
           const isCity = modeStat?.textContent.includes('city (') || false;
           const isBuilding = modeStat?.textContent.includes('building shevisa') || false;
+          const pinConfirmation = original.find((node) => node.classList.contains('pin-confirmation'));
+          const accuracyNotes = original.filter((node) => node.classList.contains('accuracy-status'));
           const confidence = document.getElementById('confidence')?.textContent.trim() || '';
           const card = document.createElement('section');
           card.className = 'simple-result-card';
           card.innerHTML = `
-            <h3>Your techum is ready</h3>
-            <p><b>Pink area = your techum.</b> The green area is ${isCity ? 'the starting city' : isBuilding ? 'the mapped building used as your starting place' : 'your 4-amah starting square'}. Drag the pin to update automatically.</p>
+            <h3>${pinConfirmation ? 'Confirm your starting place' : 'Your draft techum is ready'}</h3>
+            <p><b>Pink area = the current draft.</b> The green area is ${isCity ? 'the starting city' : isBuilding ? 'the mapped building used as your starting place' : 'your 4-amah starting square'}.</p>
             <details class="simple-result-explainer">
               <summary>How was this calculated? <span aria-hidden="true">i</span></summary>
               <p>${isCity
@@ -124,9 +134,13 @@
             </details>`;
           results.prepend(card);
 
+          if (pinConfirmation) card.append(pinConfirmation);
+          accuracyNotes.forEach((node) => card.append(node));
+
           const reviewNotes = original.filter((node) =>
-            (node.classList.contains('warn') && /data limit|incomplete|review|concav|overlap|outside|missing|uncertain/i.test(node.textContent)) ||
-            (node.classList.contains('note') && /point|data limit|incomplete/i.test(node.textContent)));
+            node !== pinConfirmation && !accuracyNotes.includes(node) &&
+            ((node.classList.contains('warn') && /data limit|incomplete|review|concav|overlap|outside|missing|uncertain/i.test(node.textContent)) ||
+            (node.classList.contains('note') && /point|data limit|incomplete/i.test(node.textContent))));
           if (reviewNotes.length) {
             const review = document.createElement('details');
             review.className = 'simple-review-notes';
@@ -134,7 +148,7 @@
             reviewNotes.forEach((node) => review.append(node));
             card.append(review);
           }
-          const technical = original.filter((node) => !reviewNotes.includes(node));
+          const technical = original.filter((node) => node !== pinConfirmation && !accuracyNotes.includes(node) && !reviewNotes.includes(node));
           if (technical.length) {
             const details = document.createElement('details');
             details.className = 'simple-technical-details';

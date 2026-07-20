@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.5.0 (2026-07-14)';
+  const ENGINE_VERSION = '1.5.1 (2026-07-20)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -27,6 +27,8 @@
     dataRelease: null,
     correctionsApplied: 0,
     snapInfo: null,
+    pinReview: null,
+    pinPlacementConfirmed: false,
     overtureReport: null,
     validatedPerimeter: null,
     validatedJoinPerimeters: [], // rav-confirmed residential yards/perimeters; geometry-only, house count = 0
@@ -260,7 +262,7 @@
       if (drawing) { addDrawingVertex(e.latlng); return; }
       if (bowCapture) { addBowEndpoint(e.latlng); return; }
       const invalidatesResult = !!state.rawBuildings.length;
-      setPin(e.latlng.lat, e.latlng.lng, { invalidateResult: invalidatesResult });
+      setPin(e.latlng.lat, e.latlng.lng, { invalidateResult: invalidatesResult, confirmed: true });
       if (isSimplifiedDirection) {
         setStatus('Pin moved — updating your techum automatically…');
         scheduleAutomaticCalculation();
@@ -275,6 +277,9 @@
 
   function setPin(lat, lon, options) {
     state.pin = { lat, lon };
+    state.pinReview = null;
+    state.snapInfo = null;
+    state.pinPlacementConfirmed = !!(options && options.confirmed);
     document.body.classList.add('has-pin');
     if (!pinMarker) {
       pinMarker = L.marker([lat, lon], { draggable: true }).addTo(map);
@@ -282,6 +287,9 @@
       pinMarker.on('dragend', () => {
         const p = pinMarker.getLatLng();
         state.pin = { lat: p.lat, lon: p.lng };
+        state.pinReview = null;
+        state.snapInfo = { keptExact: true, reason: 'You positioned the pin manually.' };
+        state.pinPlacementConfirmed = true;
         if (state.rawBuildings.length) invalidateCalculationForMovedPin();
         if (isSimplifiedDirection) scheduleAutomaticCalculation();
       });
@@ -502,9 +510,9 @@
       state.fetchBBox = bbox;
       const prepStarted = performance.now();
       prepareBuildings();
-      // Snap before the expensive pipeline so its result already uses the actual
-      // footprint. Snapping at the end forced a second metro-scale engine run.
-      snapPinToFootprint();
+      // Never move the shevisa point automatically. A nearby mapped footprint is
+      // offered as an explicit choice after the exact pin has been calculated.
+      reviewPinPlacementCandidate();
       const prepMs = performance.now() - prepStarted;
       setCalculationStage('analyze', `Building the city from ${state.rawBuildings.length.toLocaleString()} footprints…`);
       await nextPaint();
@@ -1140,8 +1148,9 @@
     return { point: best, distanceM: bestD };
   }
 
-  function snapPinToFootprint() {
+  function reviewPinPlacementCandidate() {
     if (!state.pin || !state.buildings.length) return;
+    if (state.pinPlacementConfirmed) return;
     const original = { ...state.pin };
     const p = state.proj.toXY(original.lat, original.lon);
     let best = null;
@@ -1152,16 +1161,49 @@
       if (!best || near.distanceM < best.distanceM) best = { ...near, building: b };
     });
     if (!best || best.distanceM > 75) {
-      state.snapInfo = { snapped: false, reason: 'No plausible footprint within 75 m', distanceM: best ? best.distanceM : null };
+      state.pinReview = null;
+      state.pinPlacementConfirmed = true;
+      state.snapInfo = { keptExact: true, reason: 'No plausible mapped footprint was found within 75 m.',
+        distanceM: best ? best.distanceM : null };
       return;
     }
-    if (best.distanceM > 0.5) {
-      const ll = state.proj.toLatLon(best.point.x, best.point.y);
-      state.pin = { lat: ll.lat, lon: ll.lon };
-      pinMarker.setLatLng([ll.lat, ll.lon]);
+    if (best.distanceM <= 0.5) {
+      state.pinReview = null;
+      state.pinPlacementConfirmed = true;
+      state.snapInfo = { alreadyInside: true, distanceM: best.distanceM, buildingId: best.building.id,
+        klass: best.building.klass, reason: best.building.reason, original };
+      return;
     }
-    state.snapInfo = { snapped: best.distanceM > 0.5, distanceM: best.distanceM, buildingId: best.building.id,
-      klass: best.building.klass, reason: best.building.reason, original };
+    const ll = state.proj.toLatLon(best.point.x, best.point.y);
+    state.pinReview = { distanceM: best.distanceM, buildingId: best.building.id,
+      klass: best.building.klass, reason: best.building.reason, original,
+      candidate: { lat: ll.lat, lon: ll.lon } };
+    state.snapInfo = { requiresConfirmation: true, ...state.pinReview };
+  }
+
+  async function useMappedPinCandidate() {
+    const review = state.pinReview;
+    if (!review) return;
+    state.pin = { ...review.candidate };
+    state.pinReview = null;
+    state.pinPlacementConfirmed = true;
+    state.snapInfo = { confirmedMapped: true, ...review };
+    pinMarker.setLatLng([state.pin.lat, state.pin.lon]);
+    state.proj = G.makeProjection(state.pin.lat, state.pin.lon);
+    prepareBuildings();
+    await recompute();
+    setStatus('Mapped starting footprint confirmed; the calculation now uses its walls.');
+  }
+
+  function keepExactPin() {
+    if (!state.pinReview) return;
+    const review = state.pinReview;
+    state.pinReview = null;
+    state.pinPlacementConfirmed = true;
+    state.snapInfo = { keptExact: true, distanceM: review.distanceM,
+      reason: 'You kept the exact address or map pin instead of the nearby footprint.' };
+    render();
+    setStatus('Exact pin confirmed; the nearby mapped footprint was not substituted.');
   }
 
   function renderAuditGuide() {
@@ -1194,9 +1236,11 @@
 
       const center = cluster.corners.reduce((p, c) => ({ x: p.x + c.x / 4, y: p.y + c.y / 4 }), { x: 0, y: 0 });
       const ll = state.proj.toLatLon(center.x, center.y);
-      L.marker([ll.lat, ll.lon], {
+      // Rectangles remain hoverable, but persistent labels are limited to the
+      // selected home settlement so the audit map remains readable.
+      if (isHome) L.marker([ll.lat, ll.lon], {
         interactive: false,
-        icon: L.divIcon({ className: 'cluster-label', html: `<span>${isHome ? 'HOME · ' : ''}#${index + 1} · ${houses} footprints</span>` }),
+        icon: L.divIcon({ className: 'cluster-label', html: `<span>HOME · #${index + 1} · ${houses} footprints</span>` }),
       }).addTo(layerGroups.settlements);
     });
     const home = res.homeCluster >= 0 ? res.clusters[res.homeCluster] : null;
@@ -1314,13 +1358,28 @@
     const homeSize = res.homeCluster >= 0 && res.clusters[res.homeCluster]
       ? (res.clusters[res.homeCluster].houseCount == null ? res.clusters[res.homeCluster].members.length : res.clusters[res.homeCluster].houseCount) : 0;
     const amahM = settings.amahCm / 100;
+    const uncertainCount = counts.unknown + counts.review;
+    const uncertainRatio = state.buildings.length ? uncertainCount / state.buildings.length : 0;
+    const home = res.homeCluster >= 0 ? res.clusters[res.homeCluster] : null;
+    const homeComponentKeys = new Set(home && home.componentKeys ? home.componentKeys : home ? [home.key] : []);
+    const provisionalHome = (res.qualificationClusters || []).filter((cluster) =>
+      cluster.qualificationProvisional && cluster.qualifiesAsCity && homeComponentKeys.has(cluster.key));
     const lines = [];
     if (res.calculationStatus === 'provisional-no-fill') {
       lines.push('<div class="warn"><b>Provisional smaller boundary:</b> a material bow/L pocket has not yet received reviewer-confirmed endpoints. The app has not filled that pocket.</div>');
     }
-    if (state.snapInfo) {
-      if (state.snapInfo.snapped) lines.push(`<div class="note"><b>Pin snapped to mapped footprint</b> — moved ${state.snapInfo.distanceM.toFixed(1)} m to ${escapeHtml(state.snapInfo.klass)} (${escapeHtml(state.snapInfo.reason)}). Confirm the marker against the imagery; drag it to correct.</div>`);
-      else lines.push(`<div class="note"><b>Pin check:</b> ${escapeHtml(state.snapInfo.reason || 'Already on a mapped footprint')}. Confirm against imagery.</div>`);
+    if (state.pinReview) {
+      lines.push(`<div class="warn pin-confirmation"><b>Confirm your starting place</b><span>The address pin is ${state.pinReview.distanceM.toFixed(1)} m from a mapped ${escapeHtml(state.pinReview.klass)} footprint (${escapeHtml(state.pinReview.reason)}). The calculator has <b>not moved it</b>.</span><span class="pin-confirm-actions"><button type="button" id="btn-use-mapped-pin">Use mapped building</button><button type="button" id="btn-keep-exact-pin">Keep exact pin</button></span></div>`);
+    } else if (state.snapInfo) {
+      if (state.snapInfo.confirmedMapped) lines.push(`<div class="note"><b>Starting building confirmed</b> — you moved the pin ${state.snapInfo.distanceM.toFixed(1)} m to the mapped ${escapeHtml(state.snapInfo.klass)} footprint.</div>`);
+      else if (state.snapInfo.alreadyInside) lines.push(`<div class="note"><b>Pin check:</b> the pin is inside a mapped ${escapeHtml(state.snapInfo.klass)} footprint (${escapeHtml(state.snapInfo.reason)}).</div>`);
+      else lines.push(`<div class="note"><b>Exact pin kept:</b> ${escapeHtml(state.snapInfo.reason || 'No mapped building was substituted.')}</div>`);
+    }
+    if (provisionalHome.length) {
+      lines.push(`<div class="warn accuracy-status"><b>City status needs rav review</b><span>${provisionalHome.length} component${provisionalHome.length === 1 ? '' : 's'} contributing to the home city ${provisionalHome.length === 1 ? 'uses' : 'use'} the provisional six-footprint proxy. Confirm the actual courtyard/resident basis before relying on this boundary.</span></div>`);
+    }
+    if (uncertainCount && (uncertainRatio >= 0.25 || uncertainCount >= 100)) {
+      lines.push(`<div class="warn accuracy-status"><b>Building classification can move this boundary</b><span>${uncertainCount.toLocaleString()} of ${state.buildings.length.toLocaleString()} footprints (${Math.round(uncertainRatio * 100)}%) have unknown or ambiguous use and are included automatically. Review the prioritized boundary and home-city structures first.</span></div>`);
     }
     const modeLabel = res.mode === 'city'
       ? 'city (whole city = 4 amos)'
@@ -1373,6 +1432,10 @@
       lines.push(`<div class="${cls}">${informational ? 'ℹ' : '⚠'} ${escapeHtml(text)}${count > 1 ? ` <b>(×${count})</b>` : ''}</div>`);
     }
     el.innerHTML = lines.join('');
+    const useMapped = document.getElementById('btn-use-mapped-pin');
+    const keepExact = document.getElementById('btn-keep-exact-pin');
+    if (useMapped) useMapped.addEventListener('click', () => void useMappedPinCandidate());
+    if (keepExact) keepExact.addEventListener('click', keepExactPin);
     renderConfidence(counts);
   }
 
@@ -1380,31 +1443,58 @@
     const el = document.getElementById('confidence');
     const report = D.computeDataConfidence(state.buildings);
     const uncertain = report.needsReview;
-    const level = state.dataCapHit ? 'poor' : 'good';
-    const label = state.dataCapHit ? 'Building fetch incomplete' : 'Automatic building map ready';
+    const ratio = report.total ? uncertain / report.total : 0;
+    const home = state.result && state.result.homeCluster >= 0 ? state.result.clusters[state.result.homeCluster] : null;
+    const homeKeys = new Set(home && home.componentKeys ? home.componentKeys : home ? [home.key] : []);
+    const provisional = state.result ? (state.result.qualificationClusters || []).filter((cluster) =>
+      cluster.qualificationProvisional && cluster.qualifiesAsCity && homeKeys.has(cluster.key)).length : 0;
+    const level = state.dataCapHit ? 'poor' : (provisional || ratio >= 0.25 || uncertain >= 100) ? 'mixed' : 'good';
+    const label = state.dataCapHit ? 'Building fetch incomplete'
+      : level === 'mixed' ? 'Review required before relying' : 'Automatic building map ready';
     el.className = `confidence ${level}`;
     el.innerHTML = `<b>${label}</b><span>${state.buildings.length.toLocaleString()} Overture footprints loaded. ` +
-      `${uncertain.toLocaleString()} structures have unknown or ambiguous use and are included automatically; review is optional.${state.dataCapHit ? ' Fetch boundary is incomplete.' : ''}</span>`;
+      `${uncertain.toLocaleString()} structures have unknown or ambiguous use and are included automatically.` +
+      `${provisional ? ` ${provisional} home-city status decision${provisional === 1 ? '' : 's'} remain provisional.` : ''}` +
+      `${state.dataCapHit ? ' Fetch boundary is incomplete.' : ''}</span>`;
     el.hidden = false;
   }
 
   function renderReviewQueue() {
     const el = document.getElementById('review-queue');
     if (!settings.showAuditRings) { el.hidden = true; el.replaceChildren(); return; }
-    const items = state.buildings.filter((b) => b.klass === 'unknown' || b.klass === 'review');
+    const res = state.result;
+    const homeMembers = res && res.homeCluster >= 0 && res.clusters[res.homeCluster]
+      ? new Set(res.clusters[res.homeCluster].members) : new Set();
+    if (res && res.mode === 'building' && res.homeBuilding >= 0) homeMembers.add(res.homeBuilding);
+    const homeBoxes = [...homeMembers].map((index) => state.buildings[index] && state.buildings[index].bbox).filter(Boolean);
+    const extent = homeBoxes.length ? homeBoxes.reduce((box, bbox) => ({
+      minX: Math.min(box.minX, bbox.minX), minY: Math.min(box.minY, bbox.minY),
+      maxX: Math.max(box.maxX, bbox.maxX), maxY: Math.max(box.maxY, bbox.maxY),
+    }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }) : null;
+    const items = state.buildings.map((building, index) => ({ building, index })).filter(({ building }) =>
+      building.klass === 'unknown' || building.klass === 'review').map((item) => {
+      const inHome = homeMembers.has(item.index);
+      const b = item.building;
+      const outerEdge = inHome && extent && (Math.abs(b.bbox.minX - extent.minX) < 2 ||
+        Math.abs(b.bbox.maxX - extent.maxX) < 2 || Math.abs(b.bbox.minY - extent.minY) < 2 ||
+        Math.abs(b.bbox.maxY - extent.maxY) < 2);
+      const starting = (res && res.homeBuilding === item.index) || (state.pinReview && state.pinReview.buildingId === b.id);
+      const score = (starting ? 1000 : 0) + (outerEdge ? 500 : 0) + (inHome ? 250 : 0) + (b.klass === 'review' ? 50 : 0);
+      return { ...item, score, impact: starting ? 'starting place' : outerEdge ? 'outer edge' : inHome ? 'home city' : 'nearby' };
+    }).sort((a, b) => b.score - a.score || String(a.building.id).localeCompare(String(b.building.id)));
     const bows = (state.result && state.result.concavityAudit) || [];
     if (!items.length && !bows.length) { el.hidden = true; el.replaceChildren(); return; }
     const head = document.createElement('div'); head.className = 'review-title';
-    head.innerHTML = `<b>Review queue</b><span>${items.length} ambiguous or untagged structures · select one to inspect</span>`;
+    head.innerHTML = `<b>Priority review</b><span>${items.length} ambiguous or untagged structures · highest boundary impact first</span>`;
     const list = document.createElement('div'); list.className = 'review-list';
     bows.forEach((audit) => {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'bow-review';
       button.innerHTML = `<span>⌁</span><b>${audit.shapeKind === 'hole' ? 'Large enclosed hole' : 'Bow / L-shaped pocket'}</b><small>${audit.reviewerEndpoints ? `Endpoints applied · ${escapeHtml(audit.reviewStatus)}` : audit.shapeKind === 'hole' ? escapeHtml(audit.reviewStatus) : 'Select two endpoints; provisional no-fill is active'}</small>`;
       button.addEventListener('click', () => recordConcavityEndpoints(audit.reviewKey)); list.appendChild(button);
     });
-    items.slice(0, 100).forEach((b) => {
+    items.slice(0, 20).forEach(({ building: b, impact }) => {
       const button = document.createElement('button'); button.type = 'button';
-      button.innerHTML = `<span class="sw ${b.klass === 'unknown' ? 'un' : 'rv'}"></span><b>${escapeHtml(b.klass)}</b><small>${escapeHtml(b.reason)}</small>`;
+      button.innerHTML = `<span class="sw ${b.klass === 'unknown' ? 'un' : 'rv'}"></span><b>${escapeHtml(impact)}</b><small>${escapeHtml(b.klass)} · ${escapeHtml(b.reason)}</small>`;
       button.addEventListener('click', () => {
         const sw = state.proj.toLatLon(b.bbox.minX, b.bbox.minY), ne = state.proj.toLatLon(b.bbox.maxX, b.bbox.maxY);
         map.fitBounds([[sw.lat, sw.lon], [ne.lat, ne.lon]], { maxZoom: 20, padding: [40, 40] });
@@ -1412,9 +1502,9 @@
       });
       list.appendChild(button);
     });
-    if (items.length > 100) {
+    if (items.length > 20) {
       const more = document.createElement('small'); more.className = 'muted';
-      more.textContent = `Showing the first 100 of ${items.length}; use the map to inspect the rest.`; list.appendChild(more);
+      more.textContent = `Showing the 20 highest-impact structures of ${items.length}; use the map to inspect the rest.`; list.appendChild(more);
     }
     el.replaceChildren(head, list); el.hidden = false;
   }
@@ -1559,7 +1649,7 @@
     state.validatedPerimeter = snap.validatedPerimeter || null;
     state.validatedJoinPerimeters = snap.validatedJoinPerimeters || [];
     settings = { ...S.DEFAULTS, ...snap.settings }; S.save(settings);
-    state.proj = G.makeProjection(state.pin.lat, state.pin.lon); setPin(state.pin.lat, state.pin.lon);
+    state.proj = G.makeProjection(state.pin.lat, state.pin.lon); setPin(state.pin.lat, state.pin.lon, { confirmed: true });
     map.setView([state.pin.lat, state.pin.lon], 15); prepareBuildings(); recompute();
     const review = registryEntry && registryEntry.review;
     setStatus(registryEntry
