@@ -95,6 +95,9 @@ label.check small { display: block; }
   background: #fff3cd; border: 1px solid #ffe08a; border-radius: 6px;
   padding: 7px 9px; margin: 6px 0; font-size: 12.5px;
 }
+.pin-confirmation > span,.accuracy-status > span { display:block; margin-top:4px; }
+.pin-confirm-actions { display:flex!important; flex-wrap:wrap; gap:7px; margin-top:8px!important; }
+.pin-confirm-actions button { min-height:38px; padding:6px 10px; border:1px solid #c9a957; border-radius:8px; background:#fff; color:#4d3b0e; font-weight:700; }
 .note {
   background: #e7f1ff; border: 1px solid #b8d4ff; border-radius: 6px;
   padding: 7px 9px; margin: 6px 0; font-size: 12.5px;

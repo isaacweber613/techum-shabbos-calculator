@@ -144,9 +144,25 @@
     return parts.join(', ');
   }
 
+  function dedupeAutocompleteResults(results, limit = 5) {
+    const seen = new Set();
+    const unique = [];
+    for (const result of results || []) {
+      if (!result || !Number.isFinite(result.lat) || !Number.isFinite(result.lon) || !result.label) continue;
+      const key = String(result.label).trim().replace(/\s+/g, ' ').toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(result);
+      if (unique.length >= limit) break;
+    }
+    return unique;
+  }
+
   async function autocomplete(query, bias) {
     const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    const params = new URLSearchParams({ q: query, limit: '5' });
+    // Ask for a few extras because Photon can return the same display label for
+    // multiple feature types. The UI still receives at most five unique choices.
+    const params = new URLSearchParams({ q: query, limit: '8' });
     if (bias && Number.isFinite(bias.lat) && Number.isFinite(bias.lon)) {
       params.set('lat', String(Math.round(bias.lat * 100) / 100));
       params.set('lon', String(Math.round(bias.lon * 100) / 100));
@@ -157,11 +173,11 @@
     const res = await fetch(url, { headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error('Autocomplete failed: HTTP ' + res.status);
     const data = await res.json();
-    return (data.features || []).map((feature) => ({
+    return dedupeAutocompleteResults((data.features || []).map((feature) => ({
       lat: Number(feature.geometry.coordinates[1]),
       lon: Number(feature.geometry.coordinates[0]),
       label: photonLabel(feature.properties),
-    })).filter((result) => Number.isFinite(result.lat) && Number.isFinite(result.lon) && result.label);
+    })), 5);
   }
 
   // ---------- Overpass buildings fetch ----------
@@ -509,5 +525,5 @@ out count;`;
     _tables: { DWELLING_TAGS, NON_DWELLING_TAGS, REVIEW_TAGS },
     parseOvertureGeoJSON, compareBuildingSources,
     _internals: { parseOverpass, parseOvertureGeoJSON, compareBuildingSources,
-      ringsIntersect, bboxKey, photonLabel, isLocalHost } };
+      ringsIntersect, bboxKey, photonLabel, dedupeAutocompleteResults, isLocalHost } };
 })(typeof self !== 'undefined' ? self : this);

@@ -52,6 +52,14 @@ test('Photon autocomplete labels are readable and deduplicated', () => {
     housenumber: '10', street: 'Downing Street', city: 'London', state: 'London',
     postcode: 'SW1A 2AA', country: 'United Kingdom',
   }), '10 Downing Street, London, SW1A 2AA, United Kingdom');
+  assert.deepEqual(D._internals.dedupeAutocompleteResults([
+    { lat: 1, lon: 2, label: '437 State Highway 42, Woodbourne, New York' },
+    { lat: 1.0001, lon: 2.0001, label: '  437 State Highway 42,  Woodbourne, New York  ' },
+    { lat: 3, lon: 4, label: 'Woodbourne, New York' },
+  ]).map((result) => result.label), [
+    '437 State Highway 42, Woodbourne, New York',
+    'Woodbourne, New York',
+  ]);
 });
 
 test('address entry requires choosing an autocomplete suggestion and location fills the address', () => {
@@ -63,7 +71,35 @@ test('address entry requires choosing an autocomplete suggestion and location fi
   assert.match(main, /const result = await D\.reverseGeocode\(lat, lon\)/);
   assert.match(main, /document\.getElementById\('address'\)\.value = label/);
   assert.match(main, /scheduleAutomaticCalculation\(\)/);
+  assert.match(main, /function reviewPinPlacementCandidate\(\)/);
+  assert.doesNotMatch(main, /function snapPinToFootprint\(\)/);
+  assert.match(main, /The calculator has <b>not moved it<\/b>/);
+  assert.match(main, /id="btn-use-mapped-pin"/);
+  assert.match(main, /id="btn-keep-exact-pin"/);
   assert.equal(typeof D.reverseGeocode, 'function');
+});
+
+test('accuracy uncertainty is prominent and review work is impact-ranked', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const experience = fs.readFileSync(path.join(__dirname, '..', 'js', 'design-experience.js'), 'utf8');
+  assert.match(main, /City status needs rav review/);
+  assert.match(main, /Building classification can move this boundary/);
+  assert.match(main, /Review required before relying/);
+  assert.match(main, /highest boundary impact first/);
+  assert.match(main, /items\.slice\(0, 20\)/);
+  assert.match(main, /starting place.*outer edge.*home city.*nearby/);
+  assert.match(experience, /accuracyNotes\.forEach\(\(node\) => card\.append\(node\)\)/);
+  assert.match(experience, /Your draft techum is ready/);
+});
+
+test('calm map defaults keep only the home audit label and collapse the mobile key', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const experience = fs.readFileSync(path.join(__dirname, '..', 'js', 'design-experience.js'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'css', 'design-experience.css'), 'utf8');
+  assert.match(main, /if \(isHome\) L\.marker/);
+  assert.match(experience, /class="map-key-toggle"/);
+  assert.match(experience, /mapKey\.classList\.toggle\('open'\)/);
+  assert.match(css, /#simple-map-key\.open \.map-key-items/);
 });
 
 test('simplified design directions calculate automatically and keep advanced controls progressive', () => {
@@ -102,7 +138,7 @@ test('reference pink and green palette is shared by map, UI, PNG, and PDF export
   assert.match(main, /fillColor: MAP_PALETTE\.green/);
   assert.match(main, /pdf\.setFillColor\(240, 161, 183\)/);
   assert.match(main, /pdf\.setFillColor\(200, 223, 151\)/);
-  assert.match(experience, /Pink area = your techum/);
+  assert.match(experience, /Pink area = the current draft/);
   assert.match(html, /<strong>Pink:<\/strong>/);
   assert.match(html, /<strong>Pale green dashed:<\/strong>/);
   assert.match(baseCss, /\.ln\.techum \{ border-color: #a94364/);
@@ -151,7 +187,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=202607(?:14-(?:2|3)|15-[1-6])'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=202607(?:14-(?:2|3)|15-[1-6]|20-1)'));
   }
 });
 
