@@ -176,17 +176,23 @@
     dialog.querySelector('#feedback-description').focus();
   }
 
-  const button = document.getElementById('send-feedback-button');
-  if (!button) return;
-  button.addEventListener('click', async () => {
-    button.disabled = true;
-    const original = button.querySelector('span').textContent;
-    button.querySelector('span').textContent = 'Capturing…';
-    let screenshot = null;
-    let captureError = '';
-    try { screenshot = await captureViewport(); }
-    catch (error) { captureError = error instanceof Error ? error.message : 'Unknown screenshot error'; }
-    finally { button.disabled = false; button.querySelector('span').textContent = original; }
-    openFeedback(screenshot, captureError);
-  });
+  const buttons = [...document.querySelectorAll('[data-feedback-trigger]')];
+  if (!buttons.length) return;
+  for (const button of buttons) {
+    button.addEventListener('click', async () => {
+      const label = button.querySelector('[data-feedback-label]');
+      const original = label?.textContent || 'Send feedback';
+      button.disabled = true;
+      if (label) label.textContent = 'Capturing…';
+      let screenshot = null;
+      let captureError = '';
+      try { screenshot = await captureViewport(); }
+      catch (error) { captureError = error instanceof Error ? error.message : 'Unknown screenshot error'; }
+      finally {
+        button.disabled = false;
+        if (label) label.textContent = original;
+      }
+      openFeedback(screenshot, captureError);
+    });
+  }
 })();

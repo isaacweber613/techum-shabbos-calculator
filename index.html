@@ -40,11 +40,15 @@
     })();
   </script>
   <link rel="stylesheet" href="css/design-experience.css?v=20260720-1" />
-  <link rel="stylesheet" href="css/feedback.css?v=20260722-1" />
+  <link rel="stylesheet" href="css/feedback.css?v=20260722-2" />
 </head>
 <body>
   <div id="banner">
-    <span class="banner-mark">Draft</span> This map is decision support, not a psak. <b>Review with a rav before relying on it.</b>
+    <span class="banner-disclaimer"><span class="banner-mark">Draft</span> This map is decision support, not a psak. <b>Review with a rav before relying on it.</b></span>
+    <span class="banner-feedback-copy">Please send feedback with any issues or ways we can make this better. It would be very helpful and greatly appreciated.</span>
+    <button id="banner-feedback-button" class="banner-feedback-button" type="button" data-feedback-trigger aria-label="Send feedback">
+      <span data-feedback-label>Send feedback</span>
+    </button>
     <button id="btn-dismiss-banner" type="button" aria-label="Dismiss disclaimer">×</button>
   </div>
   <div id="app">
@@ -79,9 +83,9 @@
       <div id="confidence" class="confidence" hidden></div>
       <div id="results"></div>
       <div id="review-queue" class="review-queue" hidden></div>
-      <button id="send-feedback-button" type="button" aria-label="Send feedback">
+      <button id="send-feedback-button" type="button" data-feedback-trigger aria-label="Send feedback">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H8l-4 4V4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 9h8M8 12h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        <span>Send feedback</span>
+        <span data-feedback-label>Send feedback</span>
       </button>
       <div class="advanced-heading"><span>Review &amp; settings</span><small>Optional</small></div>
 
@@ -266,6 +270,6 @@
   <script src="js/map-export.js?v=20260715-2"></script>
   <script src="js/main.js?v=20260720-1"></script>
   <script src="js/design-experience.js?v=20260720-1"></script>
-  <script src="js/feedback.js?v=20260722-1"></script>
+  <script src="js/feedback.js?v=20260722-2"></script>
 </body>
 </html>
