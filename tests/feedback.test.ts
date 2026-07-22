@@ -55,7 +55,11 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const appHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const inboxHtml = fs.readFileSync(path.join(root, 'feedback.html'), 'utf8');
 const worker = fs.readFileSync(path.join(root, 'worker', 'index.ts'), 'utf8');
+const feedbackScript = fs.readFileSync(path.join(root, 'js', 'feedback.js'), 'utf8');
 assert.match(appHtml, /id="send-feedback-button"/);
+assert.match(appHtml, /id="banner-feedback-button"/);
+assert.match(appHtml, /greatly appreciated/i);
+assert.match(feedbackScript, /\[data-feedback-trigger\]/);
 assert.match(appHtml, /js\/feedback\.js/);
 assert.match(inboxHtml, /noindex,nofollow,noarchive/);
 assert.match(inboxHtml, /Copy for Codex/);
@@ -69,4 +73,4 @@ assert.equal(shouldRedirectToCanonical(new URL('http://lvh.me:8787/')), false);
 assert.equal(shouldRedirectToCanonical(new URL('http://tchumshabbos.com/')), true);
 assert.equal(shouldRedirectToCanonical(new URL('https://www.tchumshabbos.com/')), true);
 
-console.log('feedback validation, private inbox, Codex handoff, and local routing: 20 tests passed');
+console.log('feedback validation, disclaimer entry point, private inbox, Codex handoff, and local routing: 23 tests passed');
