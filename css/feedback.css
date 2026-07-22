@@ -5,9 +5,12 @@
   z-index: 1450;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 7px 13px;
+  justify-content: center;
+  gap: 0;
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
   border: 1px solid #e5c55e;
   border-radius: 999px;
   background: #fff1b9;
@@ -15,10 +18,28 @@
   box-shadow: 0 2px 10px rgba(53, 40, 0, .12);
   font: 700 11px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
+  transition: width .16s ease, padding .16s ease, gap .16s ease, transform .16s ease, background .16s ease;
 }
-#send-feedback-button:hover { background: #ffe99a; transform: translateY(-1px); }
+#send-feedback-button:is(:hover,:focus-visible) {
+  width: auto;
+  gap: 7px;
+  padding: 0 12px;
+  background: #ffe99a;
+  transform: translateY(-1px);
+}
 #send-feedback-button:disabled { cursor: wait; opacity: .75; transform: none; }
-#send-feedback-button svg { width: 15px; height: 15px; }
+#send-feedback-button svg { width: 17px; height: 17px; flex: 0 0 auto; }
+#send-feedback-button [data-feedback-label] {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition: max-width .16s ease, opacity .12s ease;
+}
+#send-feedback-button:is(:hover,:focus-visible) [data-feedback-label] {
+  max-width: 100px;
+  opacity: 1;
+}
 html.feedback-capturing [data-feedback-trigger] { visibility: hidden; }
 
 #banner {
@@ -98,7 +119,8 @@ html.feedback-capturing [data-feedback-trigger] { visibility: hidden; }
   .banner-disclaimer { white-space: normal; }
   .banner-feedback-copy { flex: 1 1 260px; }
   #banner .banner-feedback-button { min-height: 30px; padding-inline: 11px; font-size: 10.5px; }
-  #send-feedback-button { left: auto; right: 12px; bottom: 62px; min-height: 40px; font-size: 12px; }
+  #send-feedback-button { left: auto; right: 12px; bottom: 62px; width: 40px; height: 40px; min-height: 40px; font-size: 12px; }
+  #send-feedback-button:is(:hover,:focus-visible) { width: auto; }
   .feedback-body { grid-template-columns: 1fr; overflow: auto; }
   .feedback-preview { border-right: 0; border-bottom: 1px solid #dedfd9; overflow: visible; }
   .feedback-form { overflow: visible; }
@@ -107,5 +129,7 @@ html.feedback-capturing [data-feedback-trigger] { visibility: hidden; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #send-feedback-button:hover { transform: none; }
+  #send-feedback-button,
+  #send-feedback-button [data-feedback-label] { transition: none; }
+  #send-feedback-button:is(:hover,:focus-visible) { transform: none; }
 }
