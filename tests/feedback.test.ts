@@ -64,6 +64,8 @@ assert.match(feedbackScript, /\[data-feedback-trigger\]/);
 assert.match(feedbackCss, /#send-feedback-button \[data-feedback-label\][^{]*\{[^}]*max-width:\s*0/s);
 assert.match(feedbackCss, /#send-feedback-button:is\(:hover,:focus-visible\) \[data-feedback-label\]/);
 assert.match(feedbackCss, /#send-feedback-button[^{}]*\{[^}]*width:\s*38px/s);
+assert.match(feedbackCss, /#send-feedback-button \[data-feedback-label\][^{]*\{[^}]*position:\s*absolute/s);
+assert.doesNotMatch(feedbackCss, /#send-feedback-button:is\(:hover,:focus-visible\)[^{]*\{[^}]*width:\s*auto/s);
 assert.match(appHtml, /js\/feedback\.js/);
 assert.match(inboxHtml, /noindex,nofollow,noarchive/);
 assert.match(inboxHtml, /Copy for Codex/);
@@ -77,4 +79,4 @@ assert.equal(shouldRedirectToCanonical(new URL('http://lvh.me:8787/')), false);
 assert.equal(shouldRedirectToCanonical(new URL('http://tchumshabbos.com/')), true);
 assert.equal(shouldRedirectToCanonical(new URL('https://www.tchumshabbos.com/')), true);
 
-console.log('feedback validation, non-obstructive launcher, private inbox, Codex handoff, and local routing: 26 tests passed');
+console.log('feedback validation, stationary non-obstructive launcher, private inbox, Codex handoff, and local routing: 28 tests passed');
