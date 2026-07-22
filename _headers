@@ -8,6 +8,12 @@
 /analytics.html
   X-Robots-Tag: noindex, nofollow, noarchive
 
+/analytics-feedback
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/feedback
+  X-Robots-Tag: noindex, nofollow, noarchive
+
 /TECHUM-SPEC.md
   X-Robots-Tag: noindex, nofollow, nosnippet
 

@@ -26,6 +26,7 @@ for (const [file, canonical] of pages) {
 }
 
 assert.match(read('analytics.html'), /name="robots" content="noindex,nofollow,noarchive"/i);
+assert.match(read('feedback.html'), /name="robots" content="noindex,nofollow,noarchive"/i);
 assert.match(read('404.html'), /name="robots" content="noindex"/i);
 
 const robots = read('robots.txt');
@@ -40,6 +41,7 @@ const redirects = read('_redirects');
 assert.match(redirects, /^\/index\.html\s+\/\s+301$/m);
 assert.match(redirects, /^\/about\.html\s+\/about\s+301$/m);
 assert.match(read('_headers'), /\/TECHUM-SPEC\.md[\s\S]*X-Robots-Tag: noindex/i);
+assert.match(read('_headers'), /\/analytics-feedback[\s\S]*X-Robots-Tag: noindex/i);
 assert.match(read('scripts/build-static.mjs'), /'robots\.txt'.*'sitemap\.xml'.*'_headers'.*'_redirects'/s);
 assert.match(read('he/index.html'), /תחום שבת/);
 

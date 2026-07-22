@@ -8,6 +8,8 @@ dist/
 node_modules/
 worker-configuration.d.ts
 worker-startup.cpuprofile
+.codex-remote-attachments/
+tmp/
 
 # Scratch / agent notes — not product source
 grok review.md

@@ -2,6 +2,8 @@ import { handleBuildings } from './buildings';
 import { submitBuildingCorrection } from './corrections';
 import { issueGoogleMapConfig } from './map-config';
 import { sha256Hex, validateRegistrySubmission } from './registry';
+import { feedbackScreenshot, listFeedback, submitFeedback, updateFeedbackStatus } from './feedback';
+import { shouldRedirectToCanonical } from './routing';
 
 interface Env {
   DB: D1Database;
@@ -11,6 +13,7 @@ interface Env {
   GEOCODE_RATE_LIMITER: RateLimit;
   BUILDINGS_RATE_LIMITER: RateLimit;
   MAP_CONFIG_RATE_LIMITER: RateLimit;
+  FEEDBACK_RATE_LIMITER: RateLimit;
   IP_HASH_SECRET: string;
   REQUIRE_ACCESS: string;
   RAW_RETENTION_DAYS: string;
@@ -28,6 +31,11 @@ function accessEmail(request: Request): string | null {
 function requireRegistryAdmin(request: Request, env: Env): string | null {
   if (env.REGISTRY_WRITES !== 'true') return null;
   return accessEmail(request);
+}
+
+function privateAccessEmail(request: Request, env: Env): string | null {
+  const email = accessEmail(request);
+  return env.REQUIRE_ACCESS === 'true' ? email : (email || 'local-development');
 }
 
 type EventType = 'visit' | 'search' | 'calc' | 'export' | 'snapshot';
@@ -434,6 +442,28 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/reverse-geocode' && request.method === 'GET') return reverseGeocode(request, env);
   if (url.pathname === '/api/autocomplete' && request.method === 'GET') return autocomplete(request, env);
   if (url.pathname === '/api/map-config' && request.method === 'GET') return issueGoogleMapConfig(request, env);
+  if (url.pathname === '/api/feedback' && request.method === 'POST') {
+    const network = await hmacHex(env.IP_HASH_SECRET || 'local-development-only',
+      request.headers.get('CF-Connecting-IP') || 'unknown');
+    const limited = await env.FEEDBACK_RATE_LIMITER.limit({ key: `feedback:${network}` });
+    if (!limited.success) return json({ error: 'feedback rate limit exceeded' }, 429, { 'Retry-After': '60' });
+    return submitFeedback(request, env);
+  }
+  if (url.pathname === '/api/analytics-feedback' && request.method === 'GET') {
+    if (!privateAccessEmail(request, env)) return json({ error: 'Cloudflare Access authentication required' }, 403);
+    return listFeedback(env);
+  }
+  const feedbackScreenshotMatch = url.pathname.match(/^\/api\/analytics-feedback\/([0-9a-f-]+)\/screenshot$/);
+  if (feedbackScreenshotMatch && request.method === 'GET') {
+    if (!privateAccessEmail(request, env)) return json({ error: 'Cloudflare Access authentication required' }, 403);
+    return feedbackScreenshot(feedbackScreenshotMatch[1], env);
+  }
+  const feedbackMatch = url.pathname.match(/^\/api\/analytics-feedback\/([0-9a-f-]+)$/);
+  if (feedbackMatch && request.method === 'PATCH') {
+    const reviewer = privateAccessEmail(request, env);
+    if (!reviewer) return json({ error: 'Cloudflare Access authentication required' }, 403);
+    return updateFeedbackStatus(request, feedbackMatch[1], reviewer, env);
+  }
   if (url.pathname === '/api/buildings' && request.method === 'GET') return handleBuildings(request, env);
   if (url.pathname === '/api/building-corrections' && request.method === 'POST') {
     const network = await hmacHex(env.IP_HASH_SECRET || 'local-development-only',
@@ -450,6 +480,14 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const withdrawalMatch = url.pathname.match(/^\/api\/registry\/([a-z0-9-]+)\/withdraw$/);
   if (withdrawalMatch && request.method === 'POST') return withdrawRegistry(request, withdrawalMatch[1], env);
   if (url.pathname.startsWith('/api/')) return json({ error: 'not found' }, 404);
+  if (url.pathname === '/feedback' || url.pathname === '/feedback/') {
+    return Response.redirect(new URL('/analytics-feedback', url).toString(), 302);
+  }
+  if (url.pathname === '/analytics-feedback' || url.pathname === '/analytics-feedback/') {
+    const assetUrl = new URL(request.url);
+    assetUrl.pathname = '/feedback';
+    return env.ASSETS.fetch(new Request(assetUrl.toString(), request));
+  }
   return env.ASSETS.fetch(request);
 }
 
@@ -457,7 +495,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
       const url = new URL(request.url);
-      if (url.protocol === 'http:' || url.hostname === 'www.tchumshabbos.com') {
+      if (shouldRedirectToCanonical(url)) {
         url.protocol = 'https:';
         url.hostname = 'tchumshabbos.com';
         url.port = '';

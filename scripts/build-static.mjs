@@ -6,7 +6,7 @@ const dist = new URL('../dist/', import.meta.url);
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 
-for (const file of ['index.html', 'about.html', 'guide.html', 'analytics.html', 'robots.txt', 'sitemap.xml', '404.html', '_headers', '_redirects', 'TECHUM-SPEC.md', 'LICENSE']) {
+for (const file of ['index.html', 'about.html', 'guide.html', 'analytics.html', 'feedback.html', 'robots.txt', 'sitemap.xml', '404.html', '_headers', '_redirects', 'TECHUM-SPEC.md', 'LICENSE']) {
   await copyFile(new URL('../' + file, import.meta.url), new URL('../dist/' + file, import.meta.url));
 }
 for (const dir of ['css', 'js', 'he', 'designtest']) {

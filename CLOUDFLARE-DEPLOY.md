@@ -8,11 +8,14 @@ local-development server; it is not the production origin.
 
 - Live calculator: `https://tchumshabbos.com`
 - Worker: `techum-shabbos-calculator`; `workers.dev` disabled by the custom-domain deployment
-- D1: `techum-analytics` (`c08c94e0-e04d-4f06-be14-6fed2d47468b`); migrations 0001–0005 applied
+- D1: `techum-analytics` (`c08c94e0-e04d-4f06-be14-6fed2d47468b`); migrations 0001–0008 applied
 - R2: `techum-buildings` and `techum-buildings-preview`; the shared OSM tile binding and
   `/api/buildings` route are deployed
 - `IP_HASH_SECRET` configured; geocoder contact is `https://tchumshabbos.com/about`
 - Analytics collection is active and analytics reads are private (`REQUIRE_ACCESS=true`).
+- Feedback submissions use public `POST /api/feedback`; report reads, screenshots, and status
+  updates use `/api/analytics-feedback*` and the inbox is `/analytics-feedback`, so the existing
+  Cloudflare Access `analytics*` protections cover every private feedback surface.
 - Cloudflare Zero Trust Free is active. The `Techum analytics` Access application protects
   `tchumshabbos.com/analytics*` and `tchumshabbos.com/api/analytics*` with the reusable
   `Allow analytics owner` policy (owner email only, one-month policy session, the current
