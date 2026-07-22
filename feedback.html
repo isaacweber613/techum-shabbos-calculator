@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <title>Techum Calculator — Feedback</title>
+  <style>
+    :root { --page:#f6f7f3; --surface:#fff; --ink:#171916; --muted:#6f726b; --line:#dfe1da; --accent:#176b52; --warm:#fff1b9; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--page); color:var(--ink); font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 22px; border-bottom:1px solid var(--line); background:var(--surface); }
+    header h1 { margin:0; font-size:20px; } header nav { display:flex; gap:14px; font-size:12px; } a { color:var(--accent); }
+    button,select { min-height:34px; border:1px solid #cfd2ca; border-radius:8px; background:#fff; color:var(--ink); padding:6px 10px; font:inherit; cursor:pointer; }
+    button:hover { border-color:#8d9187; }
+    main { max-width:1380px; margin:0 auto; padding:18px 22px 40px; }
+    .toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .filters { display:flex; gap:6px; flex-wrap:wrap; } .filters button { border-radius:999px; font-size:12px; }
+    .filters button.active { border-color:var(--accent); background:#e7f3ed; color:#0c513d; font-weight:700; }
+    .badge { display:inline-grid; place-items:center; min-width:20px; height:20px; margin-left:5px; border-radius:999px; background:var(--warm); color:#574000; font-size:11px; }
+    .layout { display:grid; grid-template-columns:minmax(280px,370px) minmax(0,1fr); gap:14px; min-height:650px; }
+    .panel { border:1px solid var(--line); border-radius:12px; background:var(--surface); overflow:hidden; }
+    #report-list { max-height:calc(100vh - 155px); overflow:auto; }
+    .report-item { width:100%; min-height:0; padding:13px 14px; border:0; border-bottom:1px solid var(--line); border-radius:0; text-align:left; }
+    .report-item:hover,.report-item.selected { background:#f0f5f1; }
+    .report-item-top { display:flex; justify-content:space-between; gap:8px; margin-bottom:5px; }
+    .report-item strong { font-size:12px; text-transform:capitalize; }
+    .report-item p { margin:0 0 6px; display:-webkit-box; overflow:hidden; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+    .meta { color:var(--muted); font-size:11px; }
+    .status { padding:2px 7px; border-radius:999px; background:#eceee9; color:#555950; font-size:10px; text-transform:capitalize; }
+    .status.new { background:var(--warm); color:#5d4500; }
+    #report-detail { padding:18px; } .empty { display:grid; place-items:center; min-height:300px; color:var(--muted); text-align:center; padding:20px; }
+    .detail-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
+    .detail-head h2 { margin:0 0 4px; font-size:18px; } .detail-actions { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; }
+    .copy { border-color:var(--accent); background:var(--accent); color:#fff; font-weight:700; }
+    .description { padding:14px; border:1px solid var(--line); border-radius:10px; background:#fafbf8; white-space:pre-wrap; }
+    .facts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:12px 0; }
+    .fact { min-width:0; padding:9px 10px; border:1px solid var(--line); border-radius:8px; }
+    .fact b { display:block; margin-bottom:2px; color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.04em; }
+    .fact span,.fact a { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+    .screenshot { display:block; width:100%; max-height:590px; object-fit:contain; border:1px solid var(--line); border-radius:10px; background:#eceee9; }
+    details { margin-top:12px; border:1px solid var(--line); border-radius:8px; padding:10px 12px; } summary { cursor:pointer; font-weight:700; font-size:12px; }
+    pre { max-height:300px; overflow:auto; white-space:pre-wrap; word-break:break-word; font-size:11px; }
+    #error { display:none; margin-bottom:12px; padding:10px 12px; border:1px solid #edbd73; border-radius:8px; background:#fff4d8; color:#664700; }
+    @media (max-width:800px) { .layout { grid-template-columns:1fr; } #report-list { max-height:320px; } .facts { grid-template-columns:1fr; } .detail-head { display:block; } .detail-actions { margin-top:10px; justify-content:flex-start; } }
+  </style>
+</head>
+<body>
+  <header><h1>Techum Calculator — Feedback <span class="badge" id="new-count">0</span></h1>
+    <nav><a href="/">Calculator</a><a href="/analytics">Analytics</a><a href="#" id="refresh">Refresh</a></nav></header>
+  <main>
+    <div id="error"></div>
+    <div class="toolbar"><div class="filters" id="filters">
+      <button class="active" data-filter="all">All</button><button data-filter="new">New</button><button data-filter="planned">Planned</button><button data-filter="done">Done</button><button data-filter="archived">Archived</button>
+    </div><span class="meta" id="count"></span></div>
+    <div class="layout"><section class="panel" id="report-list"><div class="empty">Loading feedback…</div></section>
+      <section class="panel" id="report-detail"><div class="empty">Select a feedback report.</div></section></div>
+  </main>
+  <script>
+  (function () {
+    'use strict';
+    const state = { reports: [], filter: 'all', selectedId: null };
+    const $ = (id) => document.getElementById(id);
+    const esc = (value) => String(value == null ? '' : value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const shown = () => state.reports.filter((report) => state.filter === 'all' || report.status === state.filter);
+    async function load() {
+      try {
+        const result = await fetch('/api/analytics-feedback', { cache:'no-store' });
+        const payload = await result.json().catch(() => ({}));
+        if (!result.ok) throw new Error(payload.error || `HTTP ${result.status}`);
+        state.reports = payload.reports || []; $('error').style.display = 'none';
+        if (!state.reports.some((report) => report.id === state.selectedId)) state.selectedId = shown()[0]?.id || null;
+        render();
+      } catch (error) {
+        $('error').style.display = 'block'; $('error').textContent = `Could not load feedback: ${error.message} — in production, sign in through Cloudflare Access.`;
+        $('report-list').innerHTML = '<div class="empty">Feedback is unavailable.</div>';
+      }
+    }
+    function render() {
+      const reports = shown(); $('new-count').textContent = state.reports.filter((report) => report.status === 'new').length;
+      $('count').textContent = `${reports.length} report${reports.length === 1 ? '' : 's'}`;
+      $('report-list').innerHTML = reports.length ? reports.map((report) => `<button class="report-item ${report.id === state.selectedId ? 'selected' : ''}" data-id="${esc(report.id)}">
+        <div class="report-item-top"><strong>${esc(report.reporterEmail || 'Anonymous')}</strong><span class="status ${esc(report.status)}">${esc(report.status)}</span></div>
+        <p>${esc(report.description)}</p><div class="meta">${esc(new Date(report.createdAt).toLocaleString())}</div></button>`).join('') : '<div class="empty">No feedback in this view.</div>';
+      renderDetail(state.reports.find((item) => item.id === state.selectedId));
+    }
+    function renderDetail(report) {
+      if (!report) { $('report-detail').innerHTML = '<div class="empty">Select a feedback report.</div>'; return; }
+      $('report-detail').innerHTML = `<div class="detail-head"><div><h2>Feedback report</h2><div class="meta">${esc(report.id)}</div></div><div class="detail-actions"><select id="status-select" aria-label="Feedback status">
+        ${['new','planned','done','archived'].map((status) => `<option value="${status}" ${status === report.status ? 'selected' : ''}>${status[0].toUpperCase()+status.slice(1)}</option>`).join('')}</select><button class="copy" id="copy-codex">Copy for Codex</button></div></div>
+        <div class="description">${esc(report.description)}</div><div class="facts"><div class="fact"><b>Reporter</b><span>${esc(report.reporterEmail || 'Not provided')}</span></div><div class="fact"><b>Received</b><span>${esc(new Date(report.createdAt).toLocaleString())}</span></div><div class="fact"><b>Page</b><a href="${esc(report.pageUrl)}" target="_blank" rel="noopener">${esc(report.pageUrl)}</a></div></div>
+        ${report.hasScreenshot ? `<a href="/api/analytics-feedback/${encodeURIComponent(report.id)}/screenshot" target="_blank" rel="noopener"><img class="screenshot" src="/api/analytics-feedback/${encodeURIComponent(report.id)}/screenshot" alt="Annotated feedback screenshot" /></a>` : '<div class="empty">No screenshot was captured.</div>'}
+        <details><summary>Technical diagnostics</summary><pre>${esc(JSON.stringify(report.diagnostics || {}, null, 2))}</pre></details>`;
+      $('copy-codex').addEventListener('click', async () => { await navigator.clipboard.writeText(report.codexPrompt); $('copy-codex').textContent = 'Copied'; });
+      $('status-select').addEventListener('change', async (event) => {
+        event.target.disabled = true;
+        try {
+          const result = await fetch(`/api/analytics-feedback/${encodeURIComponent(report.id)}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:event.target.value}) });
+          const payload = await result.json().catch(() => ({})); if (!result.ok) throw new Error(payload.error || `HTTP ${result.status}`);
+          report.status = event.target.value; render();
+        } catch (error) { alert(`Could not update status: ${error.message}`); event.target.disabled = false; }
+      });
+    }
+    $('report-list').addEventListener('click', (event) => { const item = event.target.closest('[data-id]'); if (!item) return; state.selectedId = item.dataset.id; render(); });
+    $('filters').addEventListener('click', (event) => { const button = event.target.closest('[data-filter]'); if (!button) return; state.filter = button.dataset.filter; document.querySelectorAll('[data-filter]').forEach((item) => item.classList.toggle('active', item === button)); if (!shown().some((report) => report.id === state.selectedId)) state.selectedId = shown()[0]?.id || null; render(); });
+    $('refresh').addEventListener('click', (event) => { event.preventDefault(); load(); }); load();
+  })();
+  </script>
+</body>
+</html>
