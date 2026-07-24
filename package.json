@@ -3,8 +3,11 @@
   "version": "1.5.1",
   "private": true,
   "scripts": {
+    "agent:index": "node scripts/generate-agent-index.mjs",
+    "agent:index:check": "node scripts/generate-agent-index.mjs --check",
+    "prebuild": "npm run agent:index",
     "build": "node scripts/build-static.mjs",
-    "test": "node tests/geometry.test.js && node tests/app.test.js && node tests/seo.test.js && node tests/projection-performance.test.js && node tests/woodbourne-benchmark.test.js && node tests/registry.test.ts && node tests/feedback.test.ts && node tests/buildings-cache.test.ts && node tests/map-config.test.ts && node tests/map-export-layout.test.js",
+    "test": "npm run agent:index && node tests/agent-index.test.mjs && node tests/geometry.test.js && node tests/app.test.js && node tests/seo.test.js && node tests/projection-performance.test.js && node tests/woodbourne-benchmark.test.js && node tests/registry.test.ts && node tests/feedback.test.ts && node tests/buildings-cache.test.ts && node tests/map-config.test.ts && node tests/map-export-layout.test.js",
     "typecheck": "wrangler types worker-configuration.d.ts && tsc --noEmit",
     "cf:types": "wrangler types worker-configuration.d.ts",
     "cf:dev": "npm run build && wrangler dev --local",
