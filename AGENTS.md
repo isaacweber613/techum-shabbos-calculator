@@ -36,6 +36,13 @@ permanent draft banner, never present output as psak.
 | `js/main.js` | App flow, Leaflet render, auto-expanding fetch, per-building overrides, snapshots, auto staleness check |
 | `js/kml.js` | KML/GeoJSON export with embedded config + audit block |
 
+## Generated agent index
+
+Prefer structural code-discovery tools when available. For a compact text fallback, search
+(do not load wholesale) `docs/agent-index/` for pages, HTTP routes, D1 migration objects,
+modules, and components. The index regenerates automatically during `npm test` and every
+build/deploy; `npm run agent:index:check` is the non-mutating freshness check.
+
 ## Key decisions (details + sources in TECHUM-SPEC.md)
 
 - Default profile Mishna Berurah/Ashkenazi: R' Chaim Naeh 48 cm amah, karpef ON (Rema/MB
