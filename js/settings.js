@@ -68,6 +68,17 @@
 
   const KEY = 'techum-settings-v1';
 
+  function normalize(saved) {
+    const settings = { ...saved };
+    // Rev. 12 exposed a binary overlap switch. Preserve that explicit choice
+    // before defaults add the Rev. 13 policy, for both storage and snapshots.
+    if (!settings.overlapPolicy && typeof settings.overlapMerge === 'boolean') {
+      settings.overlapPolicy = settings.overlapMerge ? 'join-redraw' : 'no-join';
+    }
+    delete settings.overlapMerge;
+    return { ...DEFAULTS, ...settings };
+  }
+
   function load() {
     try {
       const raw = root.localStorage && localStorage.getItem(KEY);
@@ -80,13 +91,7 @@
           saved.showVerifiedOnly = false;
           saved.dataSourceVersion = 2;
         }
-        // Rev. 12 exposed only a binary overlap switch. Preserve the user's intent,
-        // but migrate it to the three actual mehalachim recorded in Rev. 13.
-        if (!saved.overlapPolicy && typeof saved.overlapMerge === 'boolean') {
-          saved.overlapPolicy = saved.overlapMerge ? 'join-redraw' : 'no-join';
-        }
-        delete saved.overlapMerge;
-        return { ...DEFAULTS, ...saved };
+        return normalize(saved);
       }
     } catch (e) { /* fresh defaults */ }
     return { ...DEFAULTS };
@@ -122,6 +127,6 @@
     return same ? s.profile : 'custom';
   }
 
-  root.TechumSettings = { PROFILES, DEFAULTS, AMOS_OPTIONS, load, save, applyProfile,
+  root.TechumSettings = { PROFILES, DEFAULTS, AMOS_OPTIONS, normalize, load, save, applyProfile,
     effectiveProfile, diffFromDefaults };
 })(typeof self !== 'undefined' ? self : this);
