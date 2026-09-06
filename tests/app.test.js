@@ -4,6 +4,7 @@ const S = require('../js/settings.js').TechumSettings;
 const K = require('../js/kml.js').TechumKML;
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 let passed = 0;
 function test(name, fn) {
@@ -233,6 +234,35 @@ test('settings profile and non-default analytics stay deterministic', () => {
   ci.karpef = false;
   assert.equal(S.effectiveProfile(ci), 'custom');
   assert.equal(S.diffFromDefaults(ci).karpef, false);
+});
+
+test('snapshot replay preserves legacy overlap choices and explicit modern policies', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const source = main.slice(main.indexOf('  function applySnapshot('), main.indexOf('  async function browseRegistry('));
+  for (const [saved, expected] of [
+    [{ overlapMerge: true }, 'join-redraw'],
+    [{ overlapMerge: false }, 'no-join'],
+    [{ overlapMerge: true, overlapPolicy: 'join-no-redraw' }, 'join-no-redraw'],
+  ]) {
+    let persisted;
+    let computed;
+    const context = {
+      state: {}, settings: {}, S: { ...S, save: (value) => { persisted = value; } },
+      G: { makeProjection: () => ({}) }, map: { setView() {} },
+      setPin() {}, prepareBuildings() {}, setStatus() {}, track() {},
+      recompute: () => { computed = context.settings; },
+    };
+    const apply = vm.runInNewContext(`(${source})`, context);
+    apply({ format: 'techum-snapshot', version: '1.1.0 (2026-07-10)',
+      pin: { lat: 41, lon: -74 }, rawBuildings: [],
+      settings: { ...saved, maxBuildings: 30000, showVerifiedOnly: true },
+    });
+    assert.equal(computed.overlapPolicy, expected);
+    assert.equal(persisted.overlapPolicy, expected);
+    assert.equal(Object.hasOwn(persisted, 'overlapMerge'), false);
+    assert.equal(persisted.maxBuildings, 30000, 'snapshot replay must retain unrelated settings');
+    assert.equal(persisted.showVerifiedOnly, true);
+  }
 });
 
 test('the public overlap default is one choice while rav mode preserves all three sourced approaches', () => {

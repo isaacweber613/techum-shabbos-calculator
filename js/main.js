@@ -1648,7 +1648,7 @@
     state.manualBuildings = snap.manualBuildings || []; state.overrides = new Map(snap.overrides || []);
     state.validatedPerimeter = snap.validatedPerimeter || null;
     state.validatedJoinPerimeters = snap.validatedJoinPerimeters || [];
-    settings = { ...S.DEFAULTS, ...snap.settings }; S.save(settings);
+    settings = S.normalize(snap.settings); S.save(settings);
     state.proj = G.makeProjection(state.pin.lat, state.pin.lon); setPin(state.pin.lat, state.pin.lon, { confirmed: true });
     map.setView([state.pin.lat, state.pin.lon], 15); prepareBuildings(); recompute();
     const review = registryEntry && registryEntry.review;
