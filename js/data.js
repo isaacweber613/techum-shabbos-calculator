@@ -24,8 +24,7 @@
   const NON_DWELLING_TAGS = new Set([
     'garage', 'garages', 'shed', 'roof', 'carport', 'greenhouse', 'barn', 'stable',
     'cowshed', 'sty', 'farm_auxiliary', 'warehouse',
-    'retail', 'kiosk', 'supermarket', 'church', 'chapel', 'cathedral',
-    'mosque', 'temple', 'shrine', 'civic', 'public', 'government', 'fire_station',
+    'retail', 'kiosk', 'supermarket', 'shrine', 'civic', 'public', 'government',
     'train_station', 'transportation', 'parking', 'service', 'transformer_tower',
     'water_tower', 'storage_tank', 'silo', 'bunker', 'construction', 'grandstand',
     'stadium', 'sports_hall', 'sports_centre', 'pavilion', 'toilets', 'hangar',
@@ -39,6 +38,10 @@
     'ruins',                        // counts if walls+roof remain habitable
     'guardhouse',                   // burgan/watchman hut — counts if attended
     'religious', 'monastery',
+    // A house of worship with clergy living quarters counts exactly like a shul with a
+    // chazan's dirah (SA OC 398:6), so it needs the same review.
+    'church', 'chapel', 'cathedral', 'mosque', 'temple',
+    'fire_station',                 // crews sleep there — attended like a guardhouse
   ]);
 
   // Overture footprints with no `class` carry only a broad `subtype`. Read it through the

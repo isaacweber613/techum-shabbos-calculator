@@ -508,5 +508,35 @@ function rectSpan(corners) {
     `houseCount=${result.clusters[0].houseCount}`);
 }
 
+// --- unfilled bow (SA 398:4): measured from the houses; houses inside the pocket stay city
+{
+  const uTown = (withArm) => {
+    const houses = [];
+    for (let x = 0; x <= 3000; x += 20) houses.push(squareHouse(x, 0));
+    for (let y = 20; y <= 3000; y += 20) { houses.push(squareHouse(0, y)); houses.push(squareHouse(3000, y)); }
+    if (withArm) for (let x = 2980; x >= 1800; x -= 20) houses.push(squareHouse(x, 1500));
+    return houses;
+  };
+  const pieceBoxes = (result) => result.cityRegions.map((ring) => G._internals.bboxOfRing(ring));
+  const insidePiece = (house, boxes) => boxes.some((p) => house.ring.every((q) =>
+    q.x >= p.minX - 1e-6 && q.x <= p.maxX + 1e-6 && q.y >= p.minY - 1e-6 && q.y <= p.maxY + 1e-6));
+
+  const plain = G.runPipeline(uTown(false), S, { x: 0, y: 0 });
+  const left = pieceBoxes(plain).find((p) => p.minX < 0);
+  assert('unfilled bow: starting city stops at the houses facing the pocket',
+    left && approx(left.maxX, 5, 1e-6), left && `left arm maxX=${left.maxX.toFixed(2)}`);
+
+  const houses = uTown(true);
+  const withArm = G.runPipeline(houses, S, { x: 0, y: 0 });
+  const missing = houses.filter((house) => !insidePiece(house, pieceBoxes(withArm)));
+  assert('unfilled bow: houses reaching into the pocket stay in the starting city', missing.length === 0,
+    `${missing.length} houses outside`);
+
+  const armPin = { x: 1800, y: 1500 };
+  const fromArm = G.runPipeline(houses, { ...S, karpef: true }, armPin);
+  assert('unfilled bow: a resident of a house in the pocket is inside his own techum',
+    fromArm.techumRegions.some((ring) => G._internals.pointInRing(armPin, ring)));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

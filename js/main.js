@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.5.1 (2026-07-20)';
+  const ENGINE_VERSION = '1.5.2 (2026-10-06)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();

@@ -20,6 +20,9 @@ test('classification table separates dwelling/non/review/unknown', () => {
     assert.equal(D.classify({ building }).klass, 'review', `${building} needs factual beis-dirah review`);
   }
   assert.equal(D.classify({ building: 'retail' }).klass, 'non');
+  for (const building of ['church', 'chapel', 'cathedral', 'mosque', 'temple', 'fire_station']) {
+    assert.equal(D.classify({ building }).klass, 'review', `${building} may have a resident dirah (SA 398:6)`);
+  }
   assert.equal(D.classify({ building: '<img onerror=alert(1)>' }).klass, 'unknown');
 });
 
@@ -189,7 +192,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-1)'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12])'));
   }
 });
 
