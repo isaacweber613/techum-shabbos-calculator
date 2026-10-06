@@ -20,7 +20,7 @@ static app, no build step, no API keys. v1 built + live-verified 2026-07-10.
 ## Source of truth
 
 **TECHUM-SPEC.md is the halachic source of truth.** Every psak default, every machlokes,
-every retraction is recorded there with dated rev notes (currently rev. 14). Isaac's
+every retraction is recorded there with dated rev notes (currently rev. 15). Isaac's
 standing rule: any change to a halachic default gets a dated note in the spec — append,
 don't overwrite. The tool is decision-support for a rav (MB 399:7 requires a mumcheh);
 permanent draft banner, never present output as psak.
