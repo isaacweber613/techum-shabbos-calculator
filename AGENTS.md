@@ -75,7 +75,7 @@ build/deploy; `npm run agent:index:check` is the non-mutating freshness check.
   benchmarks only, never scope. Users = laypeople (locked defaults, flags) AND rabbanim
   (full config). App auto-decides what it can; uncertain things get one-click review.
 - Defaults follow the widely-known psak; genuinely split machlokes → both options.
-- Automatic over buttons (e.g., staleness check runs itself after 30 days).
+- Automatic over buttons (e.g., use-unknown structures are included automatically).
 - Plain-text questions, no AskUserQuestion popups. No spawn_task chips.
 - Mehalich policy (2026-07-10): open questions that block functionality don't stay
   unimplemented — research the mehalachim, adopt the best-supported as documented
