@@ -728,6 +728,62 @@
     return warnings;
   }
 
+  // The area a no-fill pocket removes from the starting city. It is the union of the
+  // pocket's own empty cells (never their bounding box, which can swallow houses that
+  // reach into the pocket), merged into a few rectangles. Each rectangle then grows back
+  // toward the houses: the empty cells stop JOIN short of every building, but an unfilled
+  // bow is measured from its houses (SA 398:4). A side stops at the nearest building in its
+  // span, so the city edge follows the outermost houses there.
+  function pocketMask(cells, nx, cw, ch, rect, buildingBoxes, join) {
+    const rows = new Map();
+    for (const cell of cells) {
+      const cx = cell % nx, cy = (cell / nx) | 0;
+      if (!rows.has(cy)) rows.set(cy, []);
+      rows.get(cy).push(cx);
+    }
+    const rects = [];
+    let open = new Map();
+    for (const cy of [...rows.keys()].sort((a, b) => a - b)) {
+      const xs = rows.get(cy).sort((a, b) => a - b), runs = [];
+      for (const x of xs) {
+        const last = runs[runs.length - 1];
+        if (last && x === last[1] + 1) last[1] = x; else runs.push([x, x]);
+      }
+      const next = new Map();
+      for (const [x0, x1] of runs) {
+        const key = `${x0}:${x1}`, prev = open.get(key);
+        if (prev && prev.maxCY === cy - 1) { prev.maxCY = cy; next.set(key, prev); open.delete(key); }
+        else next.set(key, { x0, x1, minCY: cy, maxCY: cy });
+      }
+      for (const done of open.values()) rects.push(done);
+      open = next;
+    }
+    rects.push(...open.values());
+    const reach = join + Math.max(cw, ch);
+    const overlapsSpan = (aMin, aMax, bMin, bMax) => aMin < bMax && bMin < aMax;
+    return rects.map(({ x0, x1, minCY, maxCY }) => {
+      const r = {
+        minX: rect.minX + x0 * cw, maxX: rect.minX + (x1 + 1) * cw,
+        minY: rect.minY + minCY * ch, maxY: rect.minY + (maxCY + 1) * ch,
+      };
+      // Grow one side at a time, each band spanning the sides already grown, so a
+      // grown corner can never cover a building.
+      let edge = Math.max(rect.minX, r.minX - reach);
+      for (const b of buildingBoxes) if (b.maxX <= r.minX && overlapsSpan(b.minY, b.maxY, r.minY, r.maxY)) edge = Math.max(edge, b.maxX);
+      r.minX = edge;
+      edge = Math.min(rect.maxX, r.maxX + reach);
+      for (const b of buildingBoxes) if (b.minX >= r.maxX && overlapsSpan(b.minY, b.maxY, r.minY, r.maxY)) edge = Math.min(edge, b.minX);
+      r.maxX = edge;
+      edge = Math.max(rect.minY, r.minY - reach);
+      for (const b of buildingBoxes) if (b.maxY <= r.minY && overlapsSpan(b.minX, b.maxX, r.minX, r.maxX)) edge = Math.max(edge, b.maxY);
+      r.minY = edge;
+      edge = Math.min(rect.maxY, r.maxY + reach);
+      for (const b of buildingBoxes) if (b.minY >= r.maxY && overlapsSpan(b.minX, b.maxX, r.minX, r.maxX)) edge = Math.min(edge, b.minY);
+      r.maxY = edge;
+      return r;
+    });
+  }
+
   // ---------- Stage 4: bow / enclosed-hole review geometry ----------
   // Grid over the city rect; cells covered = within JOIN of a building bbox. Empty
   // connected regions touching the rect border whose span >= 4000 amos raise a warning
@@ -758,8 +814,10 @@
       const stack = [start];
       seen[start] = 1;
       let minCX = Infinity, maxCX = -Infinity, minCY = Infinity, maxCY = -Infinity, touchesBorder = false;
+      const cells = [];
       while (stack.length) {
         const cell = stack.pop();
+        cells.push(cell);
         const cx = cell % nx, cy = (cell / nx) | 0;
         if (cx === 0 || cy === 0 || cx === nx - 1 || cy === ny - 1) touchesBorder = true;
         if (cx < minCX) minCX = cx; if (cx > maxCX) maxCX = cx;
@@ -802,6 +860,7 @@
             ? 'A wholly enclosed empty area is at least 4000 amos in both governing axes. The default includes it (Beit Yitzchok / R’ Shulem Weiss); the strict exclusion setting follows Zichron Yosef / R’ Pesach Falk.'
             : 'A material bow/L pocket reaches 4000 amos. Until a reviewer confirms its endpoints, the app uses a provisional no-fill boundary instead of silently granting the pocket.',
           region,
+          maskRects: pocketMask(cells, nx, cw, ch, rect, cluster.members.map((i) => buildings[i].bbox), join),
         });
       }
     }
@@ -1003,8 +1062,12 @@
         warning.appliedToBoundary = exclude;
         warning.frameAngleRad = sourceAngle;
         concavity.push(warning);
-        if (exclude) pieces = pieces.flatMap((piece) => subtractRect(piece.rect, warning.region)
-          .map((rect) => ({ rect, angleRad: sourceAngle })));
+        if (exclude) {
+          for (const mask of warning.maskRects || [warning.region]) {
+            pieces = pieces.flatMap((piece) => subtractRect(piece.rect, mask)
+              .map((rect) => ({ rect, angleRad: sourceAngle })));
+          }
+        }
       }
       return pieces;
     };

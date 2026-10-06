@@ -57,17 +57,22 @@ Igros Moshe OC 1:136; Minchas Yitzchak 7:24, 8:33.
 The halachic edge is the line of the **outermost qualifying dwellings** (SA OC 398:6–10;
 SA HaRav 398:8–14) — never the civil boundary.
 
-**Beis-dirah predicate — a structure counts if it is roofed, ≥ 4×4 amos, and inhabited or
-attended** (SA HaRav 398:8, 10; under 4 amos wide is not a dwelling even if very long).
+**Beis-dirah predicate — a structure counts if it is ≥ 4×4 amos and inhabited or attended,
+with either a roof or three walls** (SA OC 398:6; SA HaRav 398:8, 10; under 4 amos wide is not
+a dwelling even if very long). Three walls count even without a roof; two walls count only
+under a roof.
 
-- **Counts (extends the city):** houses; a shul **with** an attendant's residence; a
+- **Counts (extends the city):** houses; a shul **with** an attendant's residence, and
+  likewise any house of worship with living quarters for its clergy (SA OC 398:6); a
   barn/stable **with** a resident watchman; a cemetery structure **with** a resident
   caretaker; a bridge or toll/customs house with a resident; a cave with a house at its
-  mouth (measured from the cave's far end); roofed structures with three or even two walls;
-  habitable ruins that retain walls **and a roof**.
-- **Does not count:** unroofed structures; cisterns, pits, dovecotes; a bare shul, warehouse,
-  or barn with no resident; open cemeteries; mobile/docked ships; a flimsy seasonal
-  watchman's hut in a theft/flood-prone area.
+  mouth (measured from the cave's far end); three walls ≥ 4×4 amos even without a roof; two
+  walls under a roof; a house built in the water; habitable ruins that retain walls
+  **and a roof**.
+- **Does not count:** two walls without a roof, even if people live between them; cisterns,
+  pits, dovecotes; a bare shul or other house of worship, warehouse, or barn with no
+  resident; open cemeteries; a dwelling on a ship; a flimsy seasonal watchman's hut in a
+  theft/flood-prone area.
 - **Modern commercial/industrial structures are disputed, not categorically excluded.**
   Chazon Ish OC 110:28 and Shevet HaLevi 1:59 are cited for counting at least some factories
   containing offices and a workers' lunch room; Kiryat Ariel ch. 4, Machazeh Eliyahu 79,
@@ -737,6 +742,30 @@ overwrite).
   and a per-building override still corrects any footprint (for example, an attended barn).
 - Only the non-dwelling mappings change a boundary. Review follows the same include/exclude
   setting as unknown and adds a flag.
+
+### Rev. 16 — 2026-10-06 (unfilled-bow boundary; houses of worship to review)
+
+- **An unfilled bow or L pocket is now measured from its houses.** SA OC 398:4 measures an
+  unfilled bow from the arc itself. The engine detects a pocket on a grid that keeps every
+  cell within 70⅔ amos of a building, and it used to remove the pocket's whole bounding
+  rectangle. That had two errors. The cut-out stopped about 70⅔ amos plus one grid cell
+  short of the houses, so the techum on that side started too far into the pocket (a
+  leniency the Mechaber profile does not grant, compounded by the Rema karpef). And on an
+  irregular pocket, the bounding rectangle also removed houses that reach into it, which
+  could leave a resident outside his own techum. The removed area is now the union of the
+  pocket's own empty cells, merged into rectangles, and each rectangle grows back to the
+  nearest building along its side. Houses inside the pocket stay in the starting city, and
+  the city edge facing the pocket follows the outermost houses. This applies to the
+  provisional no-fill result, to a reviewed no-fill bow, and to an excluded large hole.
+  Engine version 1.5.2.
+- **Houses of worship and fire stations moved from non-dwelling to review.** SA OC 398:6
+  counts a house of avodah zarah with living quarters for its priests exactly like a shul
+  with a chazan's dirah, so a church, chapel, cathedral, mosque, or temple can count and
+  needs the same review a shul gets. A fire station is staffed and slept in around the
+  clock, like an attended guardhouse. A small shrine stays non-dwelling. Review follows the
+  same include/exclude setting as unknown.
+- §1.3 corrected to the text of SA OC 398:6: three walls of at least 4×4 amos count even
+  without a roof, two walls count only under a roof, and a house built in the water counts.
 
 ---
 
