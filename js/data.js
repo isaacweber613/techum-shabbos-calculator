@@ -41,8 +41,38 @@
     'religious', 'monastery',
   ]);
 
+  // Overture footprints with no `class` carry only a broad `subtype`. Read it through the
+  // same tables as the equivalent class so, e.g., an unlabeled outbuilding is treated like
+  // a shed/garage rather than an unknown structure. Subtypes that can hold a dwelling
+  // (agricultural includes farmhouses; military includes barracks) go to review or stay
+  // unknown — never to non.
+  const OVERTURE_SUBTYPE_TAGS = {
+    residential: 'residential',
+    outbuilding: 'shed',
+    civic: 'civic',
+    service: 'service',
+    transportation: 'transportation',
+    agricultural: 'farm_unclassified',
+    industrial: 'industrial',
+    commercial: 'commercial',
+    religious: 'religious',
+    education: 'school',
+    medical: 'hospital',
+  };
+  const SUBTYPE_REVIEW_TAGS = new Set(['farm_unclassified']);
+
   function classify(tags) {
-    const b = (tags && tags.building) || 'yes';
+    let b = (tags && tags.building) || 'yes';
+    const subtype = tags && tags.overture_subtype;
+    if (b === 'yes' && typeof subtype === 'string' &&
+        Object.prototype.hasOwnProperty.call(OVERTURE_SUBTYPE_TAGS, subtype)) {
+      const mapped = OVERTURE_SUBTYPE_TAGS[subtype];
+      if (SUBTYPE_REVIEW_TAGS.has(mapped)) {
+        return { klass: 'review', reason: 'Overture subtype=' + subtype + ' (may be a farmhouse — ask a rav)' };
+      }
+      const cls = classify(Object.assign({}, tags, { building: mapped, overture_subtype: undefined }));
+      return { klass: cls.klass, reason: 'Overture subtype=' + subtype + ' → ' + cls.reason };
+    }
     if (DWELLING_TAGS.has(b)) return { klass: 'dwelling', reason: 'building=' + b };
     if (NON_DWELLING_TAGS.has(b)) return { klass: 'non', reason: 'building=' + b };
     if (REVIEW_TAGS.has(b)) return { klass: 'review', reason: 'building=' + b + ' (halachically ambiguous — ask a rav)' };

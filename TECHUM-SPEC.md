@@ -720,6 +720,24 @@ overwrite).
   a rav/mumcheh; none of these evidence fields or benchmark checks turns it into autonomous
   psak.
 
+### Rev. 15 — 2026-10-06 (unlabeled Overture subtypes; no psak default changes)
+
+- **Footprints with only a broad Overture subtype now use the existing classification
+  table.** Overture gives many footprints a `subtype` but no `class`. All of them were
+  treated as `building=yes` — unknown use, included by default — so an unlabeled shed or
+  garage could extend city chaining (§1.4) or count toward the provisional six-footprint
+  proxy. The beis-dirah predicate (§1.3; SA HaRav 398:8, 10) already excludes a bare barn,
+  storehouse, or warehouse with no resident, and the table already applied that to labeled
+  garages, sheds, and barns. The subtype now maps to its equivalent class: `outbuilding`
+  follows the shed rule (non-dwelling); `civic`, `service`, and `transportation` follow
+  their existing non-dwelling entries; `industrial`, `commercial`, `religious`,
+  `education`, and `medical` follow their existing review entries. `agricultural` goes to
+  review, not to non-dwelling, because it includes farmhouses. `military` and any other
+  subtype stay unknown, because barracks can be dwellings. An explicit class always wins,
+  and a per-building override still corrects any footprint (for example, an attended barn).
+- Only the non-dwelling mappings change a boundary. Review follows the same include/exclude
+  setting as unknown and adds a flag.
+
 ---
 
 ## Part 3 — Product spec

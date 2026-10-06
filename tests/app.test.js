@@ -23,6 +23,18 @@ test('classification table separates dwelling/non/review/unknown', () => {
   assert.equal(D.classify({ building: '<img onerror=alert(1)>' }).klass, 'unknown');
 });
 
+test('unlabeled Overture subtypes follow the equivalent class', () => {
+  const sub = (overture_subtype) => D.classify({ building: 'yes', overture_subtype }).klass;
+  assert.equal(sub('outbuilding'), 'non', 'sheds/garages are not a beis dirah');
+  assert.equal(sub('residential'), 'dwelling');
+  assert.equal(sub('agricultural'), 'review', 'may be a farmhouse');
+  assert.equal(sub('industrial'), 'review');
+  assert.equal(sub('military'), 'unknown', 'barracks can be dwellings');
+  assert.equal(sub('constructor'), 'unknown', 'unmapped/prototype keys stay unknown');
+  assert.equal(D.classify({ building: 'house', overture_subtype: 'outbuilding' }).klass, 'dwelling',
+    'an explicit class wins over the broad subtype');
+});
+
 test('data confidence is deterministic and does not claim map completeness', () => {
   const report = D.computeDataConfidence([
     { tags: { building: 'house' }, ringLatLon: [{}, {}, {}] },
@@ -177,7 +189,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|20261005-1)'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-1)'));
   }
 });
 
