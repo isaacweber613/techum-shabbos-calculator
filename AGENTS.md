@@ -12,7 +12,7 @@ ribua (true-north squared rectangle) → 2000-amos techum with square corners. C
 static app, no build step, no API keys. v1 built + live-verified 2026-07-10.
 
 - Run: `node serve.mjs` → http://localhost:4173 (or preview_start name `tchum-calculator`
-  — config in this project's `.Codex/launch.json`)
+  — config in this project's `.claude/launch.json`)
 - Tests: `node tests/geometry.test.js` — 22 golden tests from the Gemara's canonical
   shapes (circle, rotated square, chain gaps per amah, karpef, three villages, overlap
   machlokes, point mode). Keep them green; add a golden test for any new halachic rule.
@@ -54,10 +54,15 @@ build/deploy; `npm run agent:index:check` is the non-mutating freshness check.
 - Every disputed rule is a user-changeable setting; profiles are documented defaults.
 - Determinism: engine is pure — same data + settings = same output. Cache the INPUT
   (raw Overture release data, IndexedDB), always recompute boundaries (cheap, settings-dependent).
-- Overture releases are immutable and named in the audit output. Updating the configured
-  release bumps the shared tile-cache version; there is no user-facing staleness workflow.
+- Overture releases are immutable and named in the audit output (every footprint carries
+  `tags.overture_release`; a response spanning cached tiles from several releases names all
+  of them). `worker/overture.ts` pins a preferred release; Overture deletes old releases from
+  its public tile bucket after a few months, so when the pinned archive 404s, cold fills fall
+  back to the STAC catalog's `latest`. Bump `OVERTURE_RELEASE` (and `BUILDINGS_CACHE_VERSION`
+  if every cached tile should refill) when adopting a new release. There is no user-facing
+  staleness workflow.
 - Snapshots (JSON: buildings + pin + settings + overrides) = the reviewable/approvable
-  artifact; old snapshots auto-verify against today's map on load. v2 idea: shared
+  artifact; loading one replays it exactly (no automatic re-check against today's map). v2 idea: shared
   library of rav-approved snapshots ("database of cities" = psak registry, not a cache).
 - Amah comparison lines are "scenarios," NOT machmir/meikil — results don't nest across
   amos (the 4×4 minimum and join gaps scale too; topology can flip either way).
@@ -70,7 +75,7 @@ build/deploy; `npm run agent:index:check` is the non-mutating freshness check.
   benchmarks only, never scope. Users = laypeople (locked defaults, flags) AND rabbanim
   (full config). App auto-decides what it can; uncertain things get one-click review.
 - Defaults follow the widely-known psak; genuinely split machlokes → both options.
-- Automatic over buttons (e.g., staleness check runs itself after 30 days).
+- Automatic over buttons (e.g., use-unknown structures are included automatically).
 - Plain-text questions, no AskUserQuestion popups. No spawn_task chips.
 - Mehalich policy (2026-07-10): open questions that block functionality don't stay
   unimplemented — research the mehalachim, adopt the best-supported as documented

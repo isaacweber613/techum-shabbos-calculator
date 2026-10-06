@@ -88,7 +88,7 @@ export async function applyAcceptedCorrections(
   db: D1Database,
   bbox: BBox,
   buildings: Building[],
-): Promise<{ buildings: Building[]; applied: number }> {
+): Promise<{ buildings: Building[]; applied: number; ids: string[] }> {
   const result = await db.prepare(`SELECT id, source_id, decision, geometry_json, created_at
     FROM building_corrections
     WHERE status = 'accepted' AND south <= ?1 AND north >= ?2 AND west <= ?3 AND east >= ?4
@@ -111,5 +111,5 @@ export async function applyAcceptedCorrections(
     }
   }
   const kept = buildings.filter((building) => decisions.get(building.id) !== 'exclude');
-  return { buildings: kept.concat(additions), applied: rows.length };
+  return { buildings: kept.concat(additions), applied: rows.length, ids: rows.map((row) => row.id) };
 }

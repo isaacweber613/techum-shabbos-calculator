@@ -1,7 +1,8 @@
 /* Runs the pure halachic geometry engine away from the browser's UI thread. */
 'use strict';
 
-importScripts('geometry.js?v=20260714-1');
+// Same cache-busting query string as the page's geometry.js (main.js passes it through).
+importScripts('geometry.js' + self.location.search);
 
 self.onmessage = (event) => {
   const { id, buildings, settings, pin } = event.data || {};

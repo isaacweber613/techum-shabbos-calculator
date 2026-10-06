@@ -67,37 +67,6 @@ export function tilesForBBox(bbox: BBox): TileCoord[] {
   return out;
 }
 
-export function parseOverpass(json: { elements?: unknown[] }): Building[] {
-  const buildings: Building[] = [];
-  for (const el of json.elements || []) {
-    if (!el || typeof el !== 'object') continue;
-    const item = el as {
-      type?: string; id?: number; tags?: Record<string, string>;
-      geometry?: { lat: number; lon: number }[];
-      members?: { role?: string; geometry?: { lat: number; lon: number }[] }[];
-    };
-    const tags = item.tags || {};
-    if (item.type === 'way' && Array.isArray(item.geometry) && item.geometry.length >= 3) {
-      buildings.push({
-        id: 'w' + item.id,
-        tags,
-        ringLatLon: item.geometry.map((g) => ({ lat: g.lat, lon: g.lon })),
-      });
-    } else if (item.type === 'relation' && Array.isArray(item.members)) {
-      let part = 0;
-      for (const m of item.members) {
-        if (m.role !== 'outer' || !Array.isArray(m.geometry) || m.geometry.length < 3) continue;
-        buildings.push({
-          id: 'r' + item.id + '_' + part++,
-          tags,
-          ringLatLon: m.geometry.map((g) => ({ lat: g.lat, lon: g.lon })),
-        });
-      }
-    }
-  }
-  return buildings;
-}
-
 export function mergeBuildings(groups: Building[][]): Building[] {
   const byId = new Map<string, Building>();
   for (const group of groups) {
@@ -127,43 +96,18 @@ export function oldestIso(dates: string[]): string {
   return dates.reduce((a, b) => (a < b ? a : b));
 }
 
-const OVERPASS_ENDPOINTS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-];
-
-export async function fetchOverpassBuildings(
-  bbox: BBox,
-  contact: string,
-  timeoutSec = 90,
-): Promise<Building[]> {
-  const bb = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
-  const query = `[out:json][timeout:${timeoutSec}];
-(
-  way["building"](${bb});
-  relation["building"]["type"="multipolygon"](${bb});
-);
-out geom;`;
-  let lastErr: Error | undefined;
-  for (const ep of OVERPASS_ENDPOINTS) {
-    try {
-      const res = await fetch(ep, {
-        method: 'POST',
-        body: 'data=' + encodeURIComponent(query),
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': `TechumShabbosCalculator/1.0 (${contact})`,
-          Accept: 'application/json',
-        },
-      });
-      if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
-      const json = await res.json() as { elements?: unknown[] };
-      return parseOverpass(json);
-    } catch (e) {
-      lastErr = e instanceof Error ? e : new Error(String(e));
-    }
+/**
+ * Overture release(s) the returned footprints were actually decoded from. Tiles cached
+ * under an earlier release keep their own release tag, so a response can span releases;
+ * the audit must name every one rather than the currently configured release.
+ */
+export function releasesForBuildings(buildings: Building[], fallback: string[]): string[] {
+  const releases = new Set<string>();
+  for (const building of buildings) {
+    const release = building.tags && building.tags.overture_release;
+    if (release) releases.add(release);
   }
-  throw lastErr || new Error('Overpass failed');
+  return releases.size ? [...releases].sort() : [...new Set(fallback)].sort();
 }
 
 type TileMeta = {
@@ -180,7 +124,6 @@ export type BuildingsEnv = {
   BUILDINGS: R2Bucket;
   BUILDINGS_RATE_LIMITER: RateLimit;
   IP_HASH_SECRET?: string;
-  GEOCODER_CONTACT: string;
 };
 
 function json(data: unknown, status = 200, headers: HeadersInit = {}): Response {
@@ -229,7 +172,7 @@ async function storeTile(env: BuildingsEnv, coord: TileCoord, buildings: Buildin
 }
 
 async function reserveFillSlot(env: BuildingsEnv): Promise<void> {
-  // Global 1 fill / second so public Overpass is not hammered by concurrent cold users.
+  // Global 1 fill / second so the public Overture bucket is not hammered by concurrent cold users.
   const second = Math.floor(Date.now() / 1000);
   try {
     await env.DB.prepare('INSERT INTO building_fill_slots (second) VALUES (?1)').bind(second).run();
@@ -260,12 +203,12 @@ export function bboxForTiles(tiles: TileCoord[]): BBox {
 async function fillTiles(
   env: BuildingsEnv,
   tiles: TileCoord[],
-): Promise<Map<string, { buildings: Building[]; fetchedAt: string }>> {
+): Promise<{ release: string; tiles: Map<string, { buildings: Building[]; fetchedAt: string }> }> {
   await reserveFillSlot(env);
 
   // Fetch the cold area once, then partition the response into cache tiles. The public
   // Overture PMTiles archive serves byte ranges, so only intersecting vector tiles move.
-  const allBuildings = await fetchOvertureBuildings(bboxForTiles(tiles));
+  const { buildings: allBuildings, release } = await fetchOvertureBuildings(bboxForTiles(tiles));
   const nowIso = new Date().toISOString();
   const filled = new Map<string, { buildings: Building[]; fetchedAt: string }>();
   for (const tile of tiles) {
@@ -273,7 +216,7 @@ async function fillTiles(
     await storeTile(env, tile, buildings, nowIso);
     filled.set(tile.key, { buildings, fetchedAt: nowIso });
   }
-  return filled;
+  return { release, tiles: filled };
 }
 
 export function parseBBoxParams(params: URLSearchParams): BBox | null {
@@ -321,6 +264,7 @@ export async function handleBuildings(request: Request, env: BuildingsEnv): Prom
   let hits = 0;
   let misses = 0;
   const coldTiles: TileCoord[] = [];
+  const fillReleases: string[] = [];
 
   for (const tile of tiles) {
     if (!force) {
@@ -338,7 +282,8 @@ export async function handleBuildings(request: Request, env: BuildingsEnv): Prom
 
   if (coldTiles.length) {
     try {
-      const filledTiles = await fillTiles(env, coldTiles);
+      const { release, tiles: filledTiles } = await fillTiles(env, coldTiles);
+      fillReleases.push(release);
       for (const tile of coldTiles) {
         const filled = filledTiles.get(tile.key);
         if (!filled) throw new Error(`tile fill missing ${tile.key}`);
@@ -358,14 +303,17 @@ export async function handleBuildings(request: Request, env: BuildingsEnv): Prom
   const corrected = await applyAcceptedCorrections(env.DB, bbox, baseBuildings);
   const buildings = filterBuildingsToBBox(corrected.buildings, bbox);
   const fromCache = misses === 0 && hits > 0;
+  const releases = releasesForBuildings(baseBuildings, fillReleases.length ? fillReleases : [OVERTURE_RELEASE]);
   return json({
     buildings,
     fetchedAt: oldestIso(fetchedAts),
     checkedAt: oldestIso(checkedAts),
     fromCache,
     source: 'overture-tiles',
-    release: OVERTURE_RELEASE,
+    release: releases.join(' + '),
+    releases,
     correctionsApplied: corrected.applied,
+    correctionIds: corrected.ids,
     tiles: { hit: hits, miss: misses, count: tiles.length, keys: tiles.map((t) => t.key) },
     tileDeg: TILE_DEG,
   }, 200, {

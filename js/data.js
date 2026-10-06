@@ -8,7 +8,8 @@
 
   // ---------- Dwelling classification (auditable table) ----------
   // Halachic basis: beis dirah = roofed, >=4x4 amos, inhabited/attended (SA HaRav 398:8-14).
-  // OSM can't tell us "attended", so:
+  // Map data (Overture building class/subtype, carried as tags.building) can't tell us
+  // "attended", so:
   //   dwelling  = clearly residential tags
   //   non       = clearly not a dwelling (unroofed / storage / no one lives there)
   //   review    = halachically ambiguous categories (hotel, hospital, shul, school, ruins,
@@ -51,8 +52,8 @@
     return { klass: 'unknown', reason: 'building=' + b + ' (structure use is not identified)' };
   }
 
-  // Describes how much of the fetched footprint set can be classified from OSM tags.
-  // This is deliberately NOT called map completeness: Overpass cannot reveal buildings
+  // Describes how much of the fetched footprint set can be classified from its use tags.
+  // This is deliberately NOT called map completeness: no map source can reveal buildings
   // that have never been mapped. Consumers must retain the caveat in `limitations`.
   function computeDataConfidence(buildings) {
     const counts = { dwelling: 0, non: 0, review: 0, unknown: 0, invalidGeometry: 0 };
@@ -79,8 +80,8 @@
     return {
       total, counts, taggedRate, decidedRate, needsReview, grade,
       limitations: [
-        'Measures classification of fetched OSM footprints, not whether every real building is mapped.',
-        'OSM tags do not establish halachic beis-dirah status; ambiguous and untagged footprints require review.',
+        'Measures classification of fetched Overture footprints, not whether every real building is mapped.',
+        'Map use tags do not establish halachic beis-dirah status; ambiguous and untagged footprints require review.',
       ],
     };
   }
@@ -180,192 +181,6 @@
     })), 5);
   }
 
-  // ---------- Overpass buildings fetch ----------
-  const OVERPASS_ENDPOINTS = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-  ];
-
-  // bbox: {south, west, north, east} in degrees.
-  async function fetchBuildings(bbox, timeoutSec) {
-    const clientTimeoutSec = Math.min(timeoutSec || 45, 90);
-    const bb = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
-    const query = `[out:json][timeout:${timeoutSec || 90}];
-(
-  way["building"](${bb});
-  relation["building"]["type"="multipolygon"](${bb});
-);
-out geom;`;
-    let lastErr;
-    for (const ep of OVERPASS_ENDPOINTS) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), clientTimeoutSec * 1000);
-      try {
-        const res = await fetch(ep, {
-          method: 'POST',
-          body: 'data=' + encodeURIComponent(query),
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          signal: controller.signal,
-        });
-        if (!res.ok) throw new Error('Overpass HTTP ' + res.status);
-        const json = await res.json();
-        return parseOverpass(json);
-      } catch (e) {
-        lastErr = e && e.name === 'AbortError'
-          ? new Error(`Map-data server timed out after ${clientTimeoutSec}s`) : e;
-      } finally { clearTimeout(timer); }
-    }
-    throw lastErr;
-  }
-
-  function parseOverpass(json) {
-    const buildings = [];
-    for (const el of json.elements || []) {
-      const tags = el.tags || {};
-      if (el.type === 'way' && el.geometry && el.geometry.length >= 3) {
-        buildings.push({
-          id: 'w' + el.id, tags,
-          ringLatLon: el.geometry.map((g) => ({ lat: g.lat, lon: g.lon })),
-        });
-      } else if (el.type === 'relation' && el.members) {
-        // Multipolygon: each outer member becomes its own pseudo-building carrying the
-        // relation's tags. Touching members re-join in clustering; the slight house-count
-        // inflation can affect the provisional six-footprint city proxy and is flagged in the spec.
-        let part = 0;
-        for (const m of el.members) {
-          if (m.role !== 'outer' || !m.geometry || m.geometry.length < 3) continue;
-          buildings.push({
-            id: 'r' + el.id + '_' + part++, tags,
-            ringLatLon: m.geometry.map((g) => ({ lat: g.lat, lon: g.lon })),
-          });
-        }
-      }
-    }
-    return buildings;
-  }
-
-  // ---------- Optional Overture comparison input ----------
-  // OSM remains the calculator's authoritative input. Overture's official distribution
-  // is bulk GeoParquet rather than a browser-ready bbox API, so this parser accepts an
-  // explicitly downloaded GeoJSON extract for an auditable second-source comparison.
-  // Overture properties are deliberately NOT translated into dwelling status: a second
-  // map source cannot resolve the halachic beis-dirah question.
-  function parseOvertureGeoJSON(geojson) {
-    const features = geojson && geojson.type === 'FeatureCollection'
-      ? geojson.features : geojson && geojson.type === 'Feature' ? [geojson] : [];
-    const buildings = [];
-    for (const feature of features || []) {
-      const geometry = feature && feature.geometry;
-      if (!geometry || !['Polygon', 'MultiPolygon'].includes(geometry.type)) continue;
-      const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
-      let part = 0;
-      for (const polygon of polygons || []) {
-        const outer = polygon && polygon[0];
-        if (!Array.isArray(outer) || outer.length < 4) continue;
-        const ringLatLon = outer.map((point) => ({ lat: Number(point[1]), lon: Number(point[0]) }))
-          .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
-        if (ringLatLon.length < 4) continue;
-        const rawId = feature.id || (feature.properties && feature.properties.id) || `anonymous-${buildings.length}`;
-        buildings.push({
-          id: `ovt:${rawId}${polygons.length > 1 ? ':' + part : ''}`,
-          source: 'overture',
-          sourceId: String(rawId),
-          sourceProperties: feature.properties || {},
-          tags: {},
-          klass: 'unknown',
-          classificationReason: 'Overture comparison footprint; dwelling status not inferred',
-          ringLatLon,
-        });
-        part++;
-      }
-    }
-    return buildings;
-  }
-
-  function ringBBox(ring) {
-    const box = { west: Infinity, south: Infinity, east: -Infinity, north: -Infinity };
-    for (const point of ring || []) {
-      box.west = Math.min(box.west, point.lon); box.east = Math.max(box.east, point.lon);
-      box.south = Math.min(box.south, point.lat); box.north = Math.max(box.north, point.lat);
-    }
-    return box;
-  }
-
-  function boxesIntersect(a, b) {
-    return a.west <= b.east && a.east >= b.west && a.south <= b.north && a.north >= b.south;
-  }
-
-  function orient(a, b, c) {
-    return (b.lon - a.lon) * (c.lat - a.lat) - (b.lat - a.lat) * (c.lon - a.lon);
-  }
-
-  function segmentsIntersect(a, b, c, d) {
-    const e = 1e-12;
-    const o1 = orient(a, b, c), o2 = orient(a, b, d), o3 = orient(c, d, a), o4 = orient(c, d, b);
-    const onSegment = (p, q, r) => Math.abs(orient(p, q, r)) <= e &&
-      r.lon >= Math.min(p.lon, q.lon) - e && r.lon <= Math.max(p.lon, q.lon) + e &&
-      r.lat >= Math.min(p.lat, q.lat) - e && r.lat <= Math.max(p.lat, q.lat) + e;
-    if (onSegment(a, b, c) || onSegment(a, b, d) || onSegment(c, d, a) || onSegment(c, d, b)) return true;
-    return ((o1 > e && o2 < -e) || (o1 < -e && o2 > e)) &&
-      ((o3 > e && o4 < -e) || (o3 < -e && o4 > e));
-  }
-
-  function pointInRing(point, ring) {
-    let inside = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const a = ring[i], b = ring[j];
-      if (((a.lat > point.lat) !== (b.lat > point.lat)) &&
-          point.lon < (b.lon - a.lon) * (point.lat - a.lat) / (b.lat - a.lat) + a.lon) inside = !inside;
-    }
-    return inside;
-  }
-
-  function ringsIntersect(a, b) {
-    if (!a.length || !b.length || !boxesIntersect(ringBBox(a), ringBBox(b))) return false;
-    if (pointInRing(a[0], b) || pointInRing(b[0], a)) return true;
-    for (let i = 0; i < a.length; i++) {
-      const a2 = a[(i + 1) % a.length];
-      for (let j = 0; j < b.length; j++) {
-        if (segmentsIntersect(a[i], a2, b[j], b[(j + 1) % b.length])) return true;
-      }
-    }
-    return false;
-  }
-
-  // Returns review candidates, never buildings to silently add to the halachic engine.
-  // "Unmatched" means polygon non-intersection, not proof that OSM is missing a building:
-  // datasets can differ in capture date, geometry, subdivision, and demolition status.
-  function compareBuildingSources(osmBuildings, overtureBuildings) {
-    const osm = (osmBuildings || []).filter((b) => Array.isArray(b.ringLatLon) && b.ringLatLon.length >= 3);
-    const overture = (overtureBuildings || []).filter((b) => Array.isArray(b.ringLatLon) && b.ringLatLon.length >= 3);
-    const osmBoxes = osm.map((building) => ringBBox(building.ringLatLon));
-    const unmatchedOverture = [];
-    let matchedOverture = 0;
-    for (const candidate of overture) {
-      const candidateBox = ringBBox(candidate.ringLatLon);
-      let match = false;
-      for (let i = 0; i < osm.length; i++) {
-        if (boxesIntersect(candidateBox, osmBoxes[i]) && ringsIntersect(candidate.ringLatLon, osm[i].ringLatLon)) {
-          match = true; break;
-        }
-      }
-      if (match) matchedOverture++;
-      else unmatchedOverture.push(candidate);
-    }
-    return {
-      source: 'Overture Maps comparison extract',
-      osmCount: osm.length,
-      overtureCount: overture.length,
-      matchedOverture,
-      unmatchedOverture,
-      limitations: [
-        'An unmatched footprint is a review candidate, not proof that OSM is missing a current building.',
-        'Differences can result from capture dates, geometry, building subdivision, construction, or demolition.',
-        'No Overture footprint is included in the halachic calculation until a reviewer confirms it.',
-      ],
-    };
-  }
-
   // ---------- Local cache of Overture responses (IndexedDB) ----------
   // The fetch is the slow, settings-INDEPENDENT part — the same buildings serve every
   // shita, so we cache raw data per area and always recompute boundaries (cheap, pure).
@@ -376,11 +191,6 @@ out geom;`;
   //   L2 Worker R2 tiles — shared across users for the same ~2 km grid cells
   //   L3 Overture public PMTiles — cold fill via the Worker
   const DB_NAME = 'techum-cache-v2', STORE = 'overture';
-  function isLocalHost() {
-    try {
-      return location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    } catch { return true; }
-  }
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);
@@ -414,6 +224,72 @@ out geom;`;
     return `${r(bbox.south)},${r(bbox.west)},${r(bbox.north)},${r(bbox.east)}`;
   }
 
+  // ---------- Server request sizing ----------
+  // Mirrors worker/buildings.ts: 0.02° cache tiles, at most 36 tiles (6×6) per request.
+  // A large city's auto-expansion can need a wider area than one request may cover, so the
+  // area is split along an absolute 5×5-tile grid (0.1° blocks). Interior blocks keep the
+  // same key between expansion passes, so the browser cache reuses them.
+  const SERVER_TILE_DEG = 0.02;
+  const SERVER_MAX_TILES = 36;
+  const SERVER_MAX_SPAN_DEG = SERVER_TILE_DEG * Math.sqrt(SERVER_MAX_TILES);
+  const BLOCK_TILES = 5;
+  const tileIndex = (deg) => Math.floor(deg / SERVER_TILE_DEG + 1e-12);
+
+  function splitServerBBox(bbox) {
+    const i0 = tileIndex(bbox.south), i1 = tileIndex(bbox.north - 1e-12);
+    const j0 = tileIndex(bbox.west), j1 = tileIndex(bbox.east - 1e-12);
+    if ((i1 - i0 + 1) * (j1 - j0 + 1) <= SERVER_MAX_TILES &&
+        bbox.north - bbox.south <= SERVER_MAX_SPAN_DEG && bbox.east - bbox.west <= SERVER_MAX_SPAN_DEG) {
+      return [bbox];
+    }
+    const blockDeg = BLOCK_TILES * SERVER_TILE_DEG;
+    const parts = [];
+    for (let bi = Math.floor(i0 / BLOCK_TILES); bi <= Math.floor(i1 / BLOCK_TILES); bi++) {
+      const south = Math.max(bbox.south, bi * blockDeg), north = Math.min(bbox.north, (bi + 1) * blockDeg);
+      if (!(north > south)) continue;
+      for (let bj = Math.floor(j0 / BLOCK_TILES); bj <= Math.floor(j1 / BLOCK_TILES); bj++) {
+        const west = Math.max(bbox.west, bj * blockDeg), east = Math.min(bbox.east, (bj + 1) * blockDeg);
+        if (east > west) parts.push({ south, west, north, east });
+      }
+    }
+    return parts;
+  }
+
+  function mergeServerResponses(parts) {
+    if (parts.length === 1) return parts[0];
+    const byId = new Map();
+    for (const part of parts) for (const b of part.buildings) if (b && b.id && !byId.has(b.id)) byId.set(b.id, b);
+    const oldest = (values) => values.filter(Boolean).reduce((a, b) => (a < b ? a : b), new Date().toISOString());
+    const releases = new Set();
+    for (const part of parts) {
+      for (const release of String(part.release || '').split(' + ')) if (release) releases.add(release);
+    }
+    const allIds = parts.every((part) => Array.isArray(part.correctionIds));
+    const correctionIds = allIds ? [...new Set(parts.flatMap((part) => part.correctionIds))] : null;
+    const remote = parts.find((part) => part.source !== 'local-overture');
+    return {
+      buildings: [...byId.values()],
+      fetchedAt: oldest(parts.map((part) => part.fetchedAt)),
+      checkedAt: oldest(parts.map((part) => part.checkedAt)),
+      fromCache: parts.every((part) => part.fromCache),
+      source: remote ? remote.source : 'local-overture',
+      release: releases.size ? [...releases].sort().join(' + ') : null,
+      correctionsApplied: correctionIds ? correctionIds.length
+        : parts.reduce((sum, part) => sum + (part.correctionsApplied || 0), 0),
+      correctionIds,
+      requests: parts.length,
+    };
+  }
+
+  // Brief server contention (the Worker's one-fill-per-second slot) is retried; a
+  // longer rate-limit window is surfaced to the user instead of hanging the calculation.
+  function retryDelayMs(status, retryAfter, attempt) {
+    if (status !== 429 || attempt >= 3) return null;
+    const seconds = Number(retryAfter);
+    if (!Number.isFinite(seconds) || seconds < 0 || seconds > 5) return null;
+    return Math.max(250, seconds * 1000) * (attempt + 1);
+  }
+
   // Production path: Worker unions fixed-degree R2 tiles (shared multi-user cache).
   async function fetchBuildingsFromServer(bbox, { force = false } = {}) {
     const params = new URLSearchParams({
@@ -421,9 +297,15 @@ out geom;`;
       north: String(bbox.north), east: String(bbox.east),
     });
     if (force) params.set('force', '1');
-    const res = await fetch('/api/buildings?' + params.toString(), {
-      headers: { Accept: 'application/json' },
-    });
+    let res;
+    for (let attempt = 0; ; attempt++) {
+      res = await fetch('/api/buildings?' + params.toString(), {
+        headers: { Accept: 'application/json' },
+      });
+      const delay = res.ok ? null : retryDelayMs(res.status, res.headers.get('Retry-After'), attempt);
+      if (delay === null) break;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
     if (!res.ok) {
       let detail = 'HTTP ' + res.status;
       try {
@@ -442,12 +324,12 @@ out geom;`;
       source: data.source || 'server-tiles',
       release: data.release || null,
       correctionsApplied: data.correctionsApplied || 0,
+      correctionIds: Array.isArray(data.correctionIds) ? data.correctionIds : null,
       tiles: data.tiles || null,
     };
   }
 
-  // Returns the fused Overture footprint set. force=true bypasses browser and R2 caches.
-  async function fetchBuildingsCached(bbox, { force = false } = {}) {
+  async function fetchPartCached(bbox, force) {
     const key = bboxKey(bbox);
     if (!force) {
       const hit = await cacheGet(key);
@@ -455,7 +337,8 @@ out geom;`;
         return { buildings: hit.buildings, fetchedAt: hit.fetchedAt,
                  checkedAt: hit.checkedAt || hit.fetchedAt, fromCache: true,
                  source: 'local-overture', release: hit.release || null,
-                 correctionsApplied: hit.correctionsApplied || 0 };
+                 correctionsApplied: hit.correctionsApplied || 0,
+                 correctionIds: Array.isArray(hit.correctionIds) ? hit.correctionIds : null };
       }
     }
 
@@ -466,8 +349,18 @@ out geom;`;
       checkedAt: remote.checkedAt,
       release: remote.release,
       correctionsApplied: remote.correctionsApplied,
+      correctionIds: remote.correctionIds,
     });
     return remote;
+  }
+
+  // Returns the fused Overture footprint set. force=true bypasses browser and R2 caches.
+  // Areas wider than one Worker request are fetched block by block (sequentially, so cold
+  // fills do not contend for the Worker's global fill slot) and merged by footprint id.
+  async function fetchBuildingsCached(bbox, { force = false } = {}) {
+    const parts = [];
+    for (const part of splitServerBBox(bbox)) parts.push(await fetchPartCached(part, force));
+    return mergeServerResponses(parts);
   }
 
   async function submitBuildingCorrection(correction) {
@@ -483,47 +376,9 @@ out geom;`;
     }
     return response.json();
   }
-  // After a clean change-check ("no edits since fetchedAt"), reset the verification clock.
-  async function markCheckedCurrent(bbox) {
-    const key = bboxKey(bbox);
-    const hit = await cacheGet(key);
-    if (hit) { hit.checkedAt = new Date().toISOString(); await cachePut(key, hit); }
-    return hit && hit.checkedAt;
-  }
-
-  // ---------- Change detection: buildings edited since a given date ----------
-  // Overpass `newer:` filter — counts building ways/relations edited/created in the bbox
-  // since `sinceISO`. CAVEAT: deletions don't appear in `newer:` results (a deleted way
-  // is gone) — occasional full "Fresh data" refetches remain the backstop for deletions.
-  async function countChangedBuildings(bbox, sinceISO) {
-    const bb = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
-    const query = `[out:json][timeout:30];
-(
-  way["building"](newer:"${sinceISO}")(${bb});
-  relation["building"]["type"="multipolygon"](newer:"${sinceISO}")(${bb});
-);
-out count;`;
-    let lastErr;
-    for (const ep of OVERPASS_ENDPOINTS) {
-      try {
-        const res = await fetch(ep, {
-          method: 'POST',
-          body: 'data=' + encodeURIComponent(query),
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        });
-        if (!res.ok) throw new Error('Overpass HTTP ' + res.status);
-        const json = await res.json();
-        const c = (json.elements || []).find((el) => el.type === 'count');
-        return c ? parseInt(c.tags.total, 10) : 0;
-      } catch (e) { lastErr = e; }
-    }
-    throw lastErr;
-  }
-
-  root.TechumData = { classify, computeDataConfidence, geocode, reverseGeocode, autocomplete, fetchBuildings, fetchBuildingsCached,
-    fetchBuildingsFromServer, submitBuildingCorrection, countChangedBuildings, markCheckedCurrent,
+  root.TechumData = { classify, computeDataConfidence, geocode, reverseGeocode, autocomplete, fetchBuildingsCached,
+    submitBuildingCorrection,
     _tables: { DWELLING_TAGS, NON_DWELLING_TAGS, REVIEW_TAGS },
-    parseOvertureGeoJSON, compareBuildingSources,
-    _internals: { parseOverpass, parseOvertureGeoJSON, compareBuildingSources,
-      ringsIntersect, bboxKey, photonLabel, dedupeAutocompleteResults, isLocalHost } };
+    _internals: { bboxKey, photonLabel, dedupeAutocompleteResults, splitServerBBox,
+      mergeServerResponses, retryDelayMs } };
 })(typeof self !== 'undefined' ? self : this);

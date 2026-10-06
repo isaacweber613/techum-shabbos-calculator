@@ -29,12 +29,11 @@
     snapInfo: null,
     pinReview: null,
     pinPlacementConfirmed: false,
-    overtureReport: null,
     validatedPerimeter: null,
     validatedJoinPerimeters: [], // rav-confirmed residential yards/perimeters; geometry-only, house count = 0
   };
   const layerGroups = {
-    buildings: null, rects: null, second: null, settlements: null, audit: null, overture: null, perimeter: null,
+    buildings: null, rects: null, second: null, settlements: null, audit: null, perimeter: null,
   };
   const auditCache = new Map(); // building id + join dist -> buffer loops (pure geometry)
   let drawing = null;
@@ -256,7 +255,6 @@
     layerGroups.second = L.layerGroup().addTo(map);
     layerGroups.settlements = L.layerGroup().addTo(map);
     layerGroups.audit = L.layerGroup().addTo(map);
-    layerGroups.overture = L.layerGroup().addTo(map);
     layerGroups.perimeter = L.layerGroup().addTo(map);
     map.on('click', (e) => {
       if (drawing) { addDrawingVertex(e.latlng); return; }
@@ -477,6 +475,7 @@
     state.proj = G.makeProjection(state.pin.lat, state.pin.lon);
     let bbox = bboxAround(state.pin, settings.fetchRadiusM);
     let iteration = 0;
+    let expansionError = null;
     while (true) {
       setCalculationStage('fetch', `Getting map buildings${iteration ? ` (area pass ${iteration + 1})` : ''}…`);
       await nextPaint();
@@ -486,7 +485,18 @@
         fetched = await D.fetchBuildingsCached(bbox, { force: !!forceFresh });
         if (calculationId !== activeCalculationId) return;
       } catch (e) {
-        setStatus('Map-data error: ' + e.message + ' — try again in a minute (public server rate limits).');
+        if (calculationId !== activeCalculationId) return;
+        if (iteration > 0 && state.result) {
+          // A completed, analyzed pass already exists. Keep it, flagged exactly like a data
+          // cap (the chain may continue beyond the fetched area — techum is an inner bound),
+          // rather than discarding the whole calculation because a wider pass failed.
+          state.dataCapHit = true;
+          expansionError = e;
+          perf.passes.push({ pass: iteration + 1, buildings: 0, fetchMs: performance.now() - fetchStarted,
+            prepMs: 0, engineMs: 0, engineStages: null, failed: true });
+          break;
+        }
+        setStatus('Map-data error: ' + e.message + ' — try again in a minute.');
         finishCalculationProgress(false);
         return;
       }
@@ -502,7 +512,6 @@
       }
       state.rawBuildings = fetched.buildings;
       state.fetchedAt = fetched.fetchedAt;
-      state.checkedAt = fetched.checkedAt;
       state.fromCache = fetched.fromCache;
       state.dataSource = fetched.source || (fetched.fromCache ? 'local-overture' : 'overture');
       state.dataRelease = fetched.release || state.dataRelease;
@@ -573,7 +582,9 @@
         : state.result && state.result.mode === 'building'
           ? 'Techum drawn from the mapped building walls. '
           : 'Point-shevisa techum drawn. ') +
-      cacheLabel);
+      cacheLabel +
+      (expansionError ? ` ⚠ Could not load the wider area the city may extend into (${expansionError.message}); ` +
+        'the boundary is an inner bound — recalculate to retry.' : ''));
     finishCalculationProgress(true);
     track('calc', {
       q: state.lastQuery || null, label: state.lastLabel || null,
@@ -751,19 +762,19 @@
       settings.useValidatedPerimeter = false;
       document.getElementById('use-perimeter').checked = false;
       S.save(settings);
-      await recompute();
+      if (!await recompute()) return;
       setStatus('Validated enclosure stored but inactive. Enable it only after a rav confirms that this perimeter counts for techum.');
       return;
     }
     if (mode === 'join-perimeter') {
       state.validatedJoinPerimeters.push({ id: `validated-join-${Date.now()}`, ringLatLon });
-      prepareBuildings(); await recompute();
+      prepareBuildings(); if (!await recompute()) return;
       setStatus('Validated residential joining perimeter added. It affects join distances but does not count as a house.');
       return;
     }
     state.manualBuildings.push({ id: `manual-${Date.now()}-${state.manualBuildings.length + 1}`,
       tags: { building: 'yes', source: 'manual-review' }, ringLatLon });
-    prepareBuildings(); await recompute();
+    prepareBuildings(); if (!await recompute()) return;
     const shared = await shareBuildingCorrection({ decision: 'include', ringLatLon,
       note: 'User-drawn missing building footprint' });
     setStatus('Missing footprint added automatically.' + shared);
@@ -792,16 +803,12 @@
     if (announce && hadMode) setStatus('Map selection cancelled.');
   }
 
-  function polygonsFromGeoJSON(value) {
-    return K.parseGeoJSONFootprints(value);
-  }
-
   function importBuildings(file) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
         if (!state.pin || !state.proj) throw new Error('set an address and calculate first');
-        const polygons = polygonsFromGeoJSON(JSON.parse(reader.result));
+        const polygons = K.parseGeoJSONFootprints(JSON.parse(reader.result));
         if (!polygons.length) throw new Error('no Polygon or MultiPolygon footprints found');
         const stamp = Date.now();
         polygons.forEach((ringLatLon, i) => state.manualBuildings.push({ id: `manual-import-${stamp}-${i + 1}`,
@@ -811,43 +818,6 @@
       } catch (e) { setStatus('Building import failed: ' + e.message); }
     };
     reader.readAsText(file);
-  }
-
-  function importOverture(file) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        if (!state.rawBuildings.length) throw new Error('calculate an address before comparing sources');
-        const overture = D.parseOvertureGeoJSON(JSON.parse(reader.result));
-        if (!overture.length) throw new Error('no valid Overture Polygon or MultiPolygon footprints found');
-        state.overtureReport = D.compareBuildingSources(state.rawBuildings.concat(state.manualBuildings), overture);
-        renderOvertureReport();
-        setStatus(`Overture comparison complete: ${state.overtureReport.unmatchedOverture.length} unmatched review candidate(s). None were added automatically.`);
-      } catch (e) { setStatus('Overture comparison failed: ' + e.message); }
-    };
-    reader.readAsText(file);
-  }
-
-  function renderOvertureReport() {
-    const el = document.getElementById('overture-report'); layerGroups.overture.clearLayers(); el.replaceChildren();
-    const report = state.overtureReport; if (!report) return;
-    const summary = document.createElement('p'); summary.className = 'muted';
-    summary.textContent = `${report.matchedOverture} matched; ${report.unmatchedOverture.length} unmatched candidates. Review each against imagery.`; el.appendChild(summary);
-    report.unmatchedOverture.slice(0, 100).forEach((candidate) => {
-      const row = document.createElement('div'); row.className = 'source-candidate';
-      const label = document.createElement('span'); label.textContent = candidate.sourceId;
-      const add = document.createElement('button'); add.type = 'button'; add.textContent = 'Add for review';
-      const ignore = document.createElement('button'); ignore.type = 'button'; ignore.textContent = 'Ignore';
-      const layer = L.polygon(candidate.ringLatLon.map((p) => [p.lat, p.lon]), { color: '#ff2da4', weight: 2, dashArray: '5 4', fillOpacity: 0.16 })
-        .bindTooltip(`Overture-only candidate ${escapeHtml(candidate.sourceId)} — not in calculation`).addTo(layerGroups.overture);
-      add.addEventListener('click', () => {
-        state.manualBuildings.push({ id: `manual-${candidate.id}`, tags: { building: 'yes', source: 'overture-review', overture_id: candidate.sourceId }, ringLatLon: candidate.ringLatLon });
-        layerGroups.overture.removeLayer(layer); row.remove(); prepareBuildings(); recompute();
-        setStatus(`Overture candidate ${candidate.sourceId} added as an untagged manual footprint for explicit review.`);
-      });
-      ignore.addEventListener('click', () => { layerGroups.overture.removeLayer(layer); row.remove(); });
-      row.append(label, add, ignore); el.appendChild(row);
-    });
   }
 
   function importValidatedPerimeter(file) {
@@ -939,11 +909,18 @@
     return buildings.map((b) => ({ id: b.id, ring: b.ring, bbox: b.bbox, included: b.included, joinOnly: !!b.joinOnly }));
   }
 
+  // The worker imports geometry.js with this same query string, so the background engine can
+  // never run a different (stale-cached) build than the main-thread engine used for small areas.
+  function geometryAssetVersion() {
+    const script = document.querySelector('script[src*="js/geometry.js"]');
+    try { return script ? new URL(script.src, location.href).search : ''; } catch { return ''; }
+  }
+
   function runPipelineAsync(buildings, geoSettings, pinXY) {
     if (typeof Worker === 'undefined' || buildings.length < 1500) {
       return Promise.resolve(G.runPipeline(buildings, geoSettings, pinXY));
     }
-    if (!analysisWorker) analysisWorker = new Worker('js/analysis-worker.js?v=20260714-1');
+    if (!analysisWorker) analysisWorker = new Worker('js/analysis-worker.js' + geometryAssetVersion());
     const id = ++analysisRequestId;
     return new Promise((resolve, reject) => {
       analysisPending.set(id, reject);
@@ -973,7 +950,19 @@
     for (const b of state.buildings) b.included = isIncluded(b);
     const pinXY = state.proj.toXY(state.pin.lat, state.pin.lon);
     const geoSettings = geometrySettings();
-    const result = await runPipelineAsync(state.buildings, geoSettings, pinXY);
+    let result;
+    try {
+      result = await runPipelineAsync(state.buildings, geoSettings, pinXY);
+    } catch (error) {
+      // calculate() (skipRender) reports its own errors. Every other re-analysis (settings,
+      // overrides, imports) must not leave the previous boundary on screen looking current.
+      if (skipRender) throw error;
+      if (generation !== latestAnalysisId) return null;
+      state.result = null;
+      render();
+      setStatus('Recalculation failed: ' + error.message + ' — the previous boundary was removed. Adjust the input or recalculate.');
+      return null;
+    }
     if (generation !== latestAnalysisId) return null;
     state.result = result;
     if (!skipRender) render();
@@ -1038,7 +1027,7 @@
         else if (cur === 'include') state.overrides.set(b.id, 'exclude');
         else state.overrides.delete(b.id);
         const decision = state.overrides.get(b.id);
-        await recompute();
+        if (!await recompute()) return;
         if (!decision) { setStatus('Building returned to the automatic Overture decision.'); return; }
         const sourceRing = b.ring.map((point) => state.proj.toLatLon(point.x, point.y));
         const shared = await shareBuildingCorrection({ sourceId: b.id, decision, sourceRing,
@@ -1191,7 +1180,7 @@
     pinMarker.setLatLng([state.pin.lat, state.pin.lon]);
     state.proj = G.makeProjection(state.pin.lat, state.pin.lon);
     prepareBuildings();
-    await recompute();
+    if (!await recompute()) return;
     setStatus('Mapped starting footprint confirmed; the calculation now uses its walls.');
   }
 
@@ -1568,48 +1557,6 @@
     ].join('\n');
   }
 
-  // ---------------- map-update check ----------------
-  // "Did the map change since my data date — and if so, did the techum actually move?"
-  // Counts OSM building edits in the fetched extent since state.fetchedAt; if any,
-  // refetches fresh, recomputes, and reports the techum-line displacement. Most map
-  // edits don't move the boundary — the diff is what a reviewer actually cares about.
-  async function checkUpdates(auto) {
-    if (!state.fetchBBox || !state.fetchedAt) return;
-    setStatus((auto ? 'Data older than ' + (settings.autoCheckDays || 30) + ' days — auto-checking OSM for edits since ' : 'Checking OSM for building edits since ') + new Date(state.fetchedAt).toLocaleString() + '…');
-    let n;
-    try { n = await D.countChangedBuildings(state.fetchBBox, state.fetchedAt); }
-    catch (e) { setStatus('Update check failed: ' + e.message + (auto ? ' — using cached data (will retry next calculation).' : '')); return; }
-    if (!n) {
-      const stamped = await D.markCheckedCurrent(state.fetchBBox);
-      if (stamped) state.checkedAt = stamped;
-      setStatus('Auto-verified: no building edits in this area since ' + new Date(state.fetchedAt).toLocaleDateString() +
-        ' — the map is unchanged, techum is current.');
-      return;
-    }
-    const resultRegions = (result) => result && result.techumCorners
-      ? (result.techumRegions && result.techumRegions.length ? result.techumRegions : [result.techumCorners]) : [];
-    const oldTechum = resultRegions(state.result);
-    const oldFetchedAt = state.fetchedAt;
-    setStatus(`${n} building edit(s) since your data date — refetching fresh…`);
-    await calculate(true);
-    const newTechum = resultRegions(state.result);
-    if (oldTechum.length && newTechum.length) {
-      let maxD = oldTechum.length === newTechum.length ? 0 : Infinity;
-      if (Number.isFinite(maxD)) for (let region = 0; region < newTechum.length; region++) {
-        if (oldTechum[region].length !== newTechum[region].length) { maxD = Infinity; break; }
-        for (let i = 0; i < newTechum[region].length; i++) {
-          maxD = Math.max(maxD, Math.hypot(
-            newTechum[region][i].x - oldTechum[region][i].x,
-            newTechum[region][i].y - oldTechum[region][i].y));
-        }
-      }
-      setStatus(`Map updated (${n} edits since ${new Date(oldFetchedAt).toLocaleDateString()}). ` +
-        (maxD < 0.5
-          ? 'The techum line is UNCHANGED — the edits did not affect the boundary.'
-          : `⚠ THE TECHUM MOVED — up to ${maxD.toFixed(1)} m. Previous results/psak need re-review.`));
-    }
-  }
-
   // ---------------- snapshots (determinism / offline reproducibility) ----------------
   // The engine is pure; the only thing that changes between runs is map-release data. A snapshot
   // freezes the fetched buildings + pin + settings + overrides so the identical result is
@@ -1620,7 +1567,7 @@
       format: 'techum-snapshot', version: ENGINE_VERSION,
       pin: state.pin, fetchedAt: state.fetchedAt, fetchBBox: state.fetchBBox,
       dataRelease: state.dataRelease, dataSource: state.dataSource,
-      dataCapHit: state.dataCapHit,
+      dataCapHit: state.dataCapHit, correctionsApplied: state.correctionsApplied || 0,
       settings, overrides: [...state.overrides.entries()],
       rawBuildings: state.rawBuildings, manualBuildings: state.manualBuildings,
       validatedPerimeter: state.validatedPerimeter,
@@ -1645,6 +1592,8 @@
     state.pin = snap.pin; state.fetchedAt = snap.fetchedAt; state.fetchBBox = snap.fetchBBox;
     state.dataRelease = snap.dataRelease || null; state.dataSource = snap.dataSource || 'snapshot';
     state.dataCapHit = !!snap.dataCapHit; state.rawBuildings = snap.rawBuildings;
+    // Older snapshots did not record this; never carry over the previous calculation's count.
+    state.correctionsApplied = Number(snap.correctionsApplied) || 0;
     state.manualBuildings = snap.manualBuildings || []; state.overrides = new Map(snap.overrides || []);
     state.validatedPerimeter = snap.validatedPerimeter || null;
     state.validatedJoinPerimeters = snap.validatedJoinPerimeters || [];
