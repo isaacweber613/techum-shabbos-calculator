@@ -62,7 +62,6 @@
     fetchRadiusM: 1200,
     maxBuildings: 40000,
     maxExpandIterations: 4,
-    autoCheckDays: 30,      // auto change-check when cached data is older than this; no user button
     dataSourceVersion: 2,   // migrates prior OSM-era display defaults once
   };
 

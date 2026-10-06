@@ -59,7 +59,8 @@ proxy), and Esri World Imagery (satellite tiles).
    computed techum lines (settings-dependent). **L1:** browser IndexedDB for the same pin.
    **L2 (production):** Worker `/api/buildings` unions ~2 km grid tiles from R2 so the
    second user in the same city skips upstream PMTiles ranges. Cold tiles fill once from
-   an immutable named Overture release. Updating the release bumps the cache version.
+   an immutable named Overture release (falling back to Overture's latest release if the
+   pinned one has been removed upstream); results name every release they include.
    Accepted shared corrections are applied from D1; public corrections remain pending
    until an authenticated reviewer accepts them.
 8. The **amber dashed line** is the verified-dwellings-only scenario — it brackets the

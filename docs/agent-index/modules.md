@@ -10,7 +10,6 @@ Top-level exports from application, library, hook, context, and worker modules.
 | `Building` | `type` | `worker/buildings.ts` |
 | `BUILDINGS_CACHE_VERSION` | `inferred` | `worker/buildings.ts` |
 | `BuildingsEnv` | `type` | `worker/buildings.ts` |
-| `fetchOverpassBuildings` | `( bbox: BBox, contact: string, timeoutSec = 90, ): Promise<Building[]>` | `worker/buildings.ts` |
 | `filterBuildingsToBBox` | `(buildings: Building[], bbox: BBox): Building[]` | `worker/buildings.ts` |
 | `handleBuildings` | `(request: Request, env: BuildingsEnv): Promise<Response>` | `worker/buildings.ts` |
 | `isValidBBox` | `(bbox: BBox): boolean` | `worker/buildings.ts` |
@@ -18,8 +17,8 @@ Top-level exports from application, library, hook, context, and worker modules.
 | `mergeBuildings` | `(groups: Building[][]): Building[]` | `worker/buildings.ts` |
 | `oldestIso` | `(dates: string[]): string` | `worker/buildings.ts` |
 | `parseBBoxParams` | `(params: URLSearchParams): BBox \| null` | `worker/buildings.ts` |
-| `parseOverpass` | `(json: { elements?: unknown[] }): Building[]` | `worker/buildings.ts` |
 | `parseTileKey` | `(key: string): TileCoord \| null` | `worker/buildings.ts` |
+| `releasesForBuildings` | `(buildings: Building[], fallback: string[]): string[]` | `worker/buildings.ts` |
 | `TILE_DEG` | `inferred` | `worker/buildings.ts` |
 | `tileBBox` | `(i: number, j: number): BBox` | `worker/buildings.ts` |
 | `TileCoord` | `type` | `worker/buildings.ts` |
@@ -49,13 +48,18 @@ Top-level exports from application, library, hook, context, and worker modules.
 | `isTrustedMapConfigRequest` | `(request: Request): boolean` | `worker/map-config.ts` |
 | `normalizeGoogleMapsBrowserKey` | `(value?: string): string` | `worker/map-config.ts` |
 | `parseGoogleMapsDailyCap` | `(value?: string): number` | `worker/map-config.ts` |
-| `decodeOvertureTile` | `(data: ArrayBuffer, tile: OvertureTile): Building[]` | `worker/overture.ts` |
-| `fetchOvertureBuildings` | `(bbox: BBox): Promise<Building[]>` | `worker/overture.ts` |
+| `_resetOvertureReleaseCache` | `(): void` | `worker/overture.ts` |
+| `decodeOvertureTile` | `(data: ArrayBuffer, tile: OvertureTile, release = OVERTURE_RELEASE): Building[]` | `worker/overture.ts` |
+| `fetchOvertureBuildings` | `(bbox: BBox): Promise<` | `worker/overture.ts` |
+| `latestOvertureRelease` | `(fetchImpl: FetchLike = fetch): Promise<string>` | `worker/overture.ts` |
 | `OVERTURE_RELEASE` | `inferred` | `worker/overture.ts` |
+| `OVERTURE_STAC_CATALOG` | `inferred` | `worker/overture.ts` |
 | `OVERTURE_ZOOM` | `inferred` | `worker/overture.ts` |
-| `overtureFeatureToBuildings` | `(feature: GeoJsonFeature): Building[]` | `worker/overture.ts` |
+| `overtureArchiveUrl` | `(release: string): string` | `worker/overture.ts` |
+| `overtureFeatureToBuildings` | `(feature: GeoJsonFeature, release = OVERTURE_RELEASE): Building[]` | `worker/overture.ts` |
 | `OvertureTile` | `type` | `worker/overture.ts` |
 | `preferLargestDuplicate` | `(buildings: Building[]): Building[]` | `worker/overture.ts` |
+| `resolveOvertureRelease` | `(fetchImpl: FetchLike = fetch, now = Date.now()` | `worker/overture.ts` |
 | `tilesForOvertureBBox` | `(bbox: BBox, zoom = OVERTURE_ZOOM): OvertureTile[]` | `worker/overture.ts` |
 | `MAX_SNAPSHOT_BYTES` | `inferred` | `worker/registry.ts` |
 | `RegistrySubmission` | `type` | `worker/registry.ts` |

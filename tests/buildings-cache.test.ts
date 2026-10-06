@@ -6,7 +6,6 @@ import {
   tileKey,
   tileBBox,
   tilesForBBox,
-  parseOverpass,
   mergeBuildings,
   filterBuildingsToBBox,
   oldestIso,
@@ -14,14 +13,23 @@ import {
   parseTileKey,
   bboxForTiles,
   parseBBoxParams,
+  releasesForBuildings,
 } from '../worker/buildings.ts';
 import {
   OVERTURE_RELEASE,
   overtureFeatureToBuildings,
   preferLargestDuplicate,
   tilesForOvertureBBox,
+  overtureArchiveUrl,
+  resolveOvertureRelease,
+  OVERTURE_STAC_CATALOG,
+  _resetOvertureReleaseCache,
 } from '../worker/overture.ts';
 import { validateCorrectionInput } from '../worker/corrections.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const clientData = require('../js/data.js').TechumData;
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -81,18 +89,6 @@ test('bbox parsing rejects missing and blank coordinates instead of treating the
   assert.equal(parseBBoxParams(new URLSearchParams('south=&west=1&north=2&east=2')), null);
   assert.deepEqual(parseBBoxParams(new URLSearchParams('south=0&west=1&north=2&east=2')),
     { south: 0, west: 1, north: 2, east: 2 });
-});
-
-test('parseOverpass matches client multipolygon pseudo-ids', () => {
-  const geometry = [{ lat: 1, lon: 2 }, { lat: 1, lon: 3 }, { lat: 2, lon: 3 }];
-  const parsed = parseOverpass({ elements: [{
-    type: 'relation', id: 7, tags: { building: 'apartments' }, members: [
-      { role: 'outer', geometry }, { role: 'inner', geometry }, { role: 'outer', geometry },
-    ],
-  }, {
-    type: 'way', id: 9, tags: { building: 'house' }, geometry,
-  }] });
-  assert.deepEqual(parsed.map((b) => b.id), ['r7_0', 'r7_1', 'w9']);
 });
 
 test('mergeBuildings dedupes by id across tiles', () => {
@@ -157,4 +153,89 @@ test('shared correction validation requires a local bounded source ring', () => 
   assert.equal(validateCorrectionInput({ decision: 'include', ringLatLon: [{ lat: 0, lon: 0 }] }), null);
 });
 
+test('client request splitting always produces bboxes this Worker accepts', () => {
+  const areas = [
+    { south: 40.55, west: -74.08, north: 40.79, east: -73.83 },
+    { south: 41.0013, west: -74.2077, north: 41.2391, east: -73.9409 },
+    { south: -33.99, west: 18.37, north: -33.81, east: 18.61 },
+    { south: 51.43, west: -0.31, north: 51.6, east: 0.02 },
+  ];
+  for (const area of areas) {
+    const parts = clientData._internals.splitServerBBox(area);
+    assert.ok(parts.length > 1, 'test areas exceed one request');
+    for (const part of parts) {
+      assert.ok(isValidBBox(part), `invalid part ${JSON.stringify(part)}`);
+      assert.ok(tilesForBBox(part).length <= MAX_TILES_PER_REQUEST, `too many tiles ${JSON.stringify(part)}`);
+    }
+    const covered = new Set(parts.flatMap((part) => tilesForBBox(part).map((tile) => tile.key)));
+    for (const tile of tilesForBBox(area)) assert.ok(covered.has(tile.key), `tile ${tile.key} not requested`);
+  }
+});
+
+test('response release names every Overture release actually present', () => {
+  const ring = [{ lat: 0, lon: 0 }, { lat: 0, lon: 1 }, { lat: 1, lon: 0 }];
+  const old = { id: 'ovt:a', tags: { overture_release: '2026-06-17.0' }, ringLatLon: ring };
+  const fresh = { id: 'ovt:b', tags: { overture_release: '2026-09-23.1' }, ringLatLon: ring };
+  const shared = { id: 'shared:1', tags: { building: 'yes' }, ringLatLon: ring };
+  assert.deepEqual(releasesForBuildings([fresh, old, shared, fresh], ['x']), ['2026-06-17.0', '2026-09-23.1']);
+  assert.deepEqual(releasesForBuildings([], ['2026-09-23.1', '2026-09-23.1']), ['2026-09-23.1']);
+});
+
+test('Overture archive URLs only accept release-shaped names', () => {
+  assert.match(overtureArchiveUrl('2026-09-23.1'), /\/tiles\/2026-09-23\.1\/buildings\.pmtiles$/);
+  assert.throws(() => overtureArchiveUrl('../evil'));
+});
+
+const asyncTests: Promise<void>[] = [];
+function testAsync(name: string, fn: () => Promise<void>) {
+  asyncTests.push(fn().then(() => { passed++; console.log('  ok  ' + name); }, (e) => {
+    console.error('FAIL  ' + name + ' — ' + (e instanceof Error ? e.message : e));
+    process.exitCode = 1;
+  }));
+}
+
+function fakeFetch(routes: Record<string, () => Response>) {
+  const calls: string[] = [];
+  const impl = async (input: string, init?: RequestInit) => {
+    calls.push(`${init?.method || 'GET'} ${input}`);
+    const route = routes[`${init?.method || 'GET'} ${input}`];
+    return route ? route() : new Response('missing', { status: 404 });
+  };
+  return { impl, calls };
+}
+
+testAsync('a deleted pinned Overture release falls back to the catalog latest release', async () => {
+  _resetOvertureReleaseCache();
+  const { impl, calls } = fakeFetch({
+    [`GET ${OVERTURE_STAC_CATALOG}`]: () => Response.json({ latest: '2099-01-01.0' }),
+    [`HEAD ${overtureArchiveUrl('2099-01-01.0')}`]: () => new Response(null, { status: 200 }),
+  });
+  assert.equal(await resolveOvertureRelease(impl, 1000), '2099-01-01.0');
+  assert.equal(calls[0], `HEAD ${overtureArchiveUrl(OVERTURE_RELEASE)}`);
+  const before = calls.length;
+  assert.equal(await resolveOvertureRelease(impl, 2000), '2099-01-01.0', 'resolution is cached');
+  assert.equal(calls.length, before);
+  _resetOvertureReleaseCache();
+});
+
+testAsync('a published pinned release is used without consulting the catalog', async () => {
+  _resetOvertureReleaseCache();
+  const { impl, calls } = fakeFetch({
+    [`HEAD ${overtureArchiveUrl(OVERTURE_RELEASE)}`]: () => new Response(null, { status: 200 }),
+  });
+  assert.equal(await resolveOvertureRelease(impl, 1000), OVERTURE_RELEASE);
+  assert.deepEqual(calls, [`HEAD ${overtureArchiveUrl(OVERTURE_RELEASE)}`]);
+  _resetOvertureReleaseCache();
+});
+
+testAsync('transient archive failures surface instead of silently switching releases', async () => {
+  _resetOvertureReleaseCache();
+  const { impl } = fakeFetch({
+    [`HEAD ${overtureArchiveUrl(OVERTURE_RELEASE)}`]: () => new Response(null, { status: 503 }),
+  });
+  await assert.rejects(resolveOvertureRelease(impl, 1000), /HTTP 503/);
+  _resetOvertureReleaseCache();
+});
+
+await Promise.all(asyncTests);
 console.log(`building tile cache: ${passed} tests passed`);

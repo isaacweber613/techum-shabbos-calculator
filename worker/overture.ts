@@ -4,9 +4,63 @@ import { PbfReader } from 'pbf';
 
 import type { BBox, Building } from './buildings';
 
-export const OVERTURE_RELEASE = '2026-06-17.0';
+// Preferred (pinned) release. Overture deletes old releases from the public tile bucket
+// a few months after publication (2026-06-17.0 started returning 404 by 2026-10), so a
+// pinned release that has disappeared falls back to the STAC catalog's `latest` release.
+// Every footprint carries the release it was actually decoded from (tags.overture_release).
+export const OVERTURE_RELEASE = '2026-09-23.1';
 export const OVERTURE_ZOOM = 14;
-const OVERTURE_ARCHIVE = `https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/tiles/${OVERTURE_RELEASE}/buildings.pmtiles`;
+export const OVERTURE_STAC_CATALOG = 'https://stac.overturemaps.org/catalog.json';
+const OVERTURE_TILES_BASE = 'https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/tiles';
+const RELEASE_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
+const RELEASE_RESOLUTION_TTL_MS = 6 * 60 * 60 * 1000;
+
+export function overtureArchiveUrl(release: string): string {
+  if (!RELEASE_PATTERN.test(release)) throw new Error(`invalid Overture release ${JSON.stringify(release)}`);
+  return `${OVERTURE_TILES_BASE}/${release}/buildings.pmtiles`;
+}
+
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+
+async function archiveExists(release: string, fetchImpl: FetchLike): Promise<boolean> {
+  const response = await fetchImpl(overtureArchiveUrl(release), { method: 'HEAD' });
+  if (response.ok) return true;
+  // Only a definitive "gone" answer triggers fallback; transient upstream failures surface.
+  if (response.status === 403 || response.status === 404) return false;
+  throw new Error(`Overture archive check failed: HTTP ${response.status}`);
+}
+
+/** Latest release named by Overture's STAC catalog (validated release-name format). */
+export async function latestOvertureRelease(fetchImpl: FetchLike = fetch): Promise<string> {
+  const response = await fetchImpl(OVERTURE_STAC_CATALOG, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`Overture release catalog HTTP ${response.status}`);
+  const catalog = await response.json() as { latest?: unknown };
+  if (typeof catalog.latest !== 'string' || !RELEASE_PATTERN.test(catalog.latest)) {
+    throw new Error('Overture release catalog did not name a valid latest release');
+  }
+  return catalog.latest;
+}
+
+let resolvedRelease: { release: string; at: number } | null = null;
+
+/**
+ * The pinned release while Overture still publishes it; otherwise the catalog's latest.
+ * Resolution is cached per isolate so tile fills do not re-check on every request.
+ */
+export async function resolveOvertureRelease(fetchImpl: FetchLike = fetch, now = Date.now()): Promise<string> {
+  if (resolvedRelease && now - resolvedRelease.at < RELEASE_RESOLUTION_TTL_MS) return resolvedRelease.release;
+  let release = OVERTURE_RELEASE;
+  if (!await archiveExists(release, fetchImpl)) {
+    release = await latestOvertureRelease(fetchImpl);
+    if (release !== OVERTURE_RELEASE && !await archiveExists(release, fetchImpl)) {
+      throw new Error(`Overture release ${release} is not published as PMTiles`);
+    }
+  }
+  resolvedRelease = { release, at: now };
+  return release;
+}
+
+export function _resetOvertureReleaseCache(): void { resolvedRelease = null; }
 
 type GeoJsonGeometry = {
   type: 'Polygon' | 'MultiPolygon';
@@ -77,7 +131,7 @@ function ringArea(ring: { lat: number; lon: number }[]): number {
   return Math.abs(area / 2);
 }
 
-export function overtureFeatureToBuildings(feature: GeoJsonFeature): Building[] {
+export function overtureFeatureToBuildings(feature: GeoJsonFeature, release = OVERTURE_RELEASE): Building[] {
   const geometry = feature.geometry;
   const properties = feature.properties || {};
   const rawId = typeof properties.id === 'string' ? properties.id : '';
@@ -87,7 +141,7 @@ export function overtureFeatureToBuildings(feature: GeoJsonFeature): Building[] 
     building: buildingTag(properties),
     source: 'Overture Maps',
     overture_id: rawId,
-    overture_release: OVERTURE_RELEASE,
+    overture_release: release,
     geometry_source: dataset,
   };
   if (typeof properties.class === 'string') tags.overture_class = properties.class;
@@ -109,14 +163,14 @@ export function overtureFeatureToBuildings(feature: GeoJsonFeature): Building[] 
   }).filter((building) => building.ringLatLon.length >= 3);
 }
 
-export function decodeOvertureTile(data: ArrayBuffer, tile: OvertureTile): Building[] {
+export function decodeOvertureTile(data: ArrayBuffer, tile: OvertureTile, release = OVERTURE_RELEASE): Building[] {
   const vector = new VectorTile(new PbfReader(data));
   const layer = vector.layers.building;
   if (!layer) return [];
   const buildings: Building[] = [];
   for (let i = 0; i < layer.length; i++) {
     const feature = layer.feature(i).toGeoJSON(tile.x, tile.y, tile.z) as GeoJsonFeature;
-    buildings.push(...overtureFeatureToBuildings(feature));
+    buildings.push(...overtureFeatureToBuildings(feature, release));
   }
   return buildings;
 }
@@ -131,13 +185,14 @@ export function preferLargestDuplicate(buildings: Building[]): Building[] {
   return [...byId.values()].map((entry) => entry.building);
 }
 
-export async function fetchOvertureBuildings(bbox: BBox): Promise<Building[]> {
+export async function fetchOvertureBuildings(bbox: BBox): Promise<{ buildings: Building[]; release: string }> {
   const tiles = tilesForOvertureBBox(bbox);
   if (tiles.length > 64) throw new Error(`Overture request covers ${tiles.length} tiles; max is 64`);
-  const archive = new PMTiles(OVERTURE_ARCHIVE);
+  const release = await resolveOvertureRelease();
+  const archive = new PMTiles(overtureArchiveUrl(release));
   const decoded = await Promise.all(tiles.map(async (tile) => {
     const response = await archive.getZxy(tile.z, tile.x, tile.y);
-    return response ? decodeOvertureTile(response.data, tile) : [];
+    return response ? decodeOvertureTile(response.data, tile, release) : [];
   }));
-  return preferLargestDuplicate(decoded.flat());
+  return { buildings: preferLargestDuplicate(decoded.flat()), release };
 }

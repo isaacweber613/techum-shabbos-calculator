@@ -37,17 +37,6 @@ test('data confidence is deterministic and does not claim map completeness', () 
   assert.match(report.limitations[0], /not whether every real building/i);
 });
 
-test('multipolygon outers become stable pseudo-buildings', () => {
-  const geometry = [{ lat: 1, lon: 2 }, { lat: 1, lon: 3 }, { lat: 2, lon: 3 }];
-  const parsed = D._internals.parseOverpass({ elements: [{
-    type: 'relation', id: 7, tags: { building: 'apartments' }, members: [
-      { role: 'outer', geometry }, { role: 'inner', geometry }, { role: 'outer', geometry },
-    ],
-  }] });
-  assert.deepEqual(parsed.map((b) => b.id), ['r7_0', 'r7_1']);
-  assert.equal(parsed[0].tags.building, 'apartments');
-});
-
 test('Photon autocomplete labels are readable and deduplicated', () => {
   assert.equal(D._internals.photonLabel({
     housenumber: '10', street: 'Downing Street', city: 'London', state: 'London',
@@ -188,7 +177,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=202607(?:14-(?:2|3)|15-[1-6]|20-1)'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|20261005-1)'));
   }
 });
 
@@ -315,34 +304,6 @@ test('rav-validated residential perimeters are separate zero-house joining input
   assert.match(mainJs, /joinOnly: true/);
 });
 
-test('Overture GeoJSON parser preserves source identity without guessing dwelling status', () => {
-  const parsed = D.parseOvertureGeoJSON({ type: 'FeatureCollection', features: [{
-    type: 'Feature', id: 'abc', properties: { subtype: 'residential' },
-    geometry: { type: 'Polygon', coordinates: [[[-74, 40], [-73.9, 40], [-73.9, 40.1], [-74, 40]]] },
-  }] });
-  assert.equal(parsed.length, 1);
-  assert.equal(parsed[0].id, 'ovt:abc');
-  assert.equal(parsed[0].source, 'overture');
-  assert.equal(parsed[0].klass, 'unknown');
-  assert.deepEqual(parsed[0].tags, {});
-});
-
-test('Overture comparison reports intersecting and unmatched review candidates', () => {
-  const ring = (west, south, east, north) => [
-    { lon: west, lat: south }, { lon: east, lat: south },
-    { lon: east, lat: north }, { lon: west, lat: north }, { lon: west, lat: south },
-  ];
-  const osm = [{ id: 'w1', ringLatLon: ring(0, 0, 1, 1) }];
-  const overture = [
-    { id: 'ovt:match', ringLatLon: ring(0.5, 0.5, 1.5, 1.5) },
-    { id: 'ovt:review', ringLatLon: ring(3, 3, 4, 4) },
-  ];
-  const report = D.compareBuildingSources(osm, overture);
-  assert.equal(report.matchedOverture, 1);
-  assert.deepEqual(report.unmatchedOverture.map((b) => b.id), ['ovt:review']);
-  assert.match(report.limitations[0], /not proof/i);
-});
-
 test('KML can carry advanced audit footprints and measurement lines', () => {
   const triangle = [{ lat: 1, lon: 2 }, { lat: 1, lon: 3 }, { lat: 2, lon: 3 }];
   const kml = K.buildKML({
@@ -387,6 +348,69 @@ test('manual footprint import accepts Polygon and MultiPolygon without polygon h
   assert.equal(footprints.length, 3);
   assert.deepEqual(footprints[0][0], { lat: 1, lon: 2 });
   assert.equal(footprints[0].length, 3, 'closing coordinate is removed');
+});
+
+test('wide expansion areas are split into Worker-sized requests and merged by id', () => {
+  const small = { south: 41.70, west: -74.60, north: 41.72, east: -74.57 };
+  assert.deepEqual(D._internals.splitServerBBox(small), [small], 'ordinary areas stay one exact request');
+  const wide = { south: 40.55, west: -74.08, north: 40.79, east: -73.83 };
+  const parts = D._internals.splitServerBBox(wide);
+  assert.ok(parts.length > 1);
+  const area = (b) => (b.north - b.south) * (b.east - b.west);
+  assert.ok(Math.abs(parts.reduce((sum, b) => sum + area(b), 0) - area(wide)) < 1e-9, 'parts tile the area exactly');
+  for (const part of parts) {
+    assert.ok(part.north > part.south && part.east > part.west);
+    assert.ok(part.south >= wide.south && part.north <= wide.north && part.west >= wide.west && part.east <= wide.east);
+  }
+  const ring = [{ lat: 1, lon: 1 }, { lat: 1, lon: 2 }, { lat: 2, lon: 1 }];
+  const merged = D._internals.mergeServerResponses([
+    { buildings: [{ id: 'a', ringLatLon: ring }, { id: 'b', ringLatLon: ring }], fetchedAt: '2026-10-02T00:00:00Z',
+      checkedAt: '2026-10-02T00:00:00Z', fromCache: true, source: 'local-overture', release: '2026-06-17.0',
+      correctionsApplied: 1, correctionIds: ['c1'] },
+    { buildings: [{ id: 'b', ringLatLon: ring }, { id: 'c', ringLatLon: ring }], fetchedAt: '2026-10-01T00:00:00Z',
+      checkedAt: '2026-10-03T00:00:00Z', fromCache: false, source: 'overture-tiles', release: '2026-06-17.0 + 2026-09-23.1',
+      correctionsApplied: 2, correctionIds: ['c1', 'c2'] },
+  ]);
+  assert.deepEqual(merged.buildings.map((b) => b.id), ['a', 'b', 'c']);
+  assert.equal(merged.fetchedAt, '2026-10-01T00:00:00Z');
+  assert.equal(merged.fromCache, false);
+  assert.equal(merged.source, 'overture-tiles');
+  assert.equal(merged.release, '2026-06-17.0 + 2026-09-23.1');
+  assert.equal(merged.correctionsApplied, 2, 'a correction overlapping two blocks is counted once');
+});
+
+test('only brief Worker fill contention is retried automatically', () => {
+  assert.ok(D._internals.retryDelayMs(429, '1', 0) >= 1000);
+  assert.equal(D._internals.retryDelayMs(429, '60', 0), null, 'per-network rate limits surface to the user');
+  assert.equal(D._internals.retryDelayMs(429, '1', 3), null, 'retries are bounded');
+  assert.equal(D._internals.retryDelayMs(502, '1', 0), null);
+});
+
+test('snapshots record and restore the shared-correction count used in the audit', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.match(main, /correctionsApplied: state\.correctionsApplied \|\| 0/);
+  assert.match(main, /state\.correctionsApplied = Number\(snap\.correctionsApplied\) \|\| 0/);
+});
+
+test('a failed wider expansion pass keeps the completed pass as a flagged inner bound', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.match(main, /if \(iteration > 0 && state\.result\) \{[\s\S]{0,400}state\.dataCapHit = true;/);
+});
+
+test('background engine loads the same geometry.js build as the page', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'analysis-worker.js'), 'utf8');
+  const imported = [];
+  const self = { location: { search: '?v=page-build' } };
+  vm.runInNewContext(source, { self, importScripts: (url) => imported.push(url), performance: { now: () => 0 } });
+  assert.deepEqual(imported, ['geometry.js?v=page-build']);
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.match(main, /new Worker\('js\/analysis-worker\.js' \+ geometryAssetVersion\(\)\)/);
+  assert.match(main, /querySelector\('script\[src\*="js\/geometry\.js"\]'\)/);
+});
+
+test('a failed re-analysis clears the old boundary instead of leaving it looking current', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.match(main, /if \(skipRender\) throw error;[\s\S]{0,120}state\.result = null;\s*render\(\);\s*setStatus\('Recalculation failed: /);
 });
 
 console.log(`\n${passed} app tests passed`);
