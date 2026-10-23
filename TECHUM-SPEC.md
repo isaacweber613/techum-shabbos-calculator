@@ -767,6 +767,68 @@ overwrite).
 - §1.3 corrected to the text of SA OC 398:6: three walls of at least 4×4 amos count even
   without a roof, two walls count only under a roof, and a house built in the water counts.
 
+### Rev. 17 — 2026-10-23 (engine audit: determinism and measurement fixes; no psak default changes)
+
+An audit found places where the engine diverged from this spec or from its own
+determinism rule (same data + settings = same output, in any input order). No profile
+default changed. Engine version 1.5.3.
+
+- **City-status reviews follow the buildings, not the pin.** A reviewer's city-status
+  decision (§1.4) was keyed to each footprint's projected coordinates. Those move whenever
+  the pin moves (the projection is centered on it) or a reviewer squaring angle is set, so a
+  saved "not a city" silently reverted to the six-footprint proxy. Keys now use the stable
+  building ids (`cluster:v3`). Saved v2 records still apply: an unchanged v2 key matches
+  exactly, and otherwise the ids embedded in the saved member list are used for the usual
+  80% membership remap. A footprint with a missing or duplicated id keeps the old
+  coordinate form.
+- **Bows and large holes are measured from the houses (SA OC 398:3–4; §1.5 step 5).**
+  Detection measured the empty grid cells, which stop 70⅔ amos plus up to one cell short
+  of the buildings on each side. A pocket was flagged only when the house-to-house span
+  exceeded 4000 amos by about 141⅓ amos plus up to two cells, so a U-shaped city with a
+  4000–4300-amah mouth was filled without review. The 4000-amah test now uses the pocket
+  grown back to its houses, the same mask rev. 16 removes. The Rema depth test after
+  reviewer endpoints had the same shortfall and now measures to the houses as well, so a
+  pocket that is 2000 amos deep or more is no longer filled by the "depth <2000" leniency on
+  the strength of the shorter empty-cell depth. Pockets are still flagged only at ≥4000
+  (and ≥2000 for depth), with equality in the ≥ branch.
+- **Three villages: every qualifying triple counts (SA HaRav 398:12; §1.4).** The engine
+  merged the first qualifying triple it found and then started over, so when two middle
+  villages fit between the same outer villages, input order decided which one joined. §1.4
+  states the test for each actual middle village against the actual outer villages, and
+  nothing in it makes one qualifying village block another. Each pass now tests every triple
+  against the same set of settlements, then unites all qualifying triples (and any that
+  share a settlement) at once. The pass repeats with the 141⅓-amah merge to a fixed point as
+  before (§1.5 step 2). Each triple keeps its own audit warning. In a dense field of small
+  villages this can join more villages than the old first-found order did; a rav should
+  confirm such results. The pass is also pruned exactly and is about 50 times faster on a
+  900-village field (38 s to under 1 s), with identical results.
+- **Expansive overlap redraw (`join_redraw`) is order-independent (§1.5 step 6).** A joint
+  redraw that grows from one city is not symmetric: A and B's joint rectangle can reach C
+  while C's own rectangle reaches neither. The engine kept one such closure per starting
+  city and, for a resident of C, picked whichever came first in the input. Every group whose
+  joint redraw overlaps another city's rectangle is now united with it, and the united
+  groups are redrawn and retested together until stable.
+- **Several candidate cities under any overlap rule (§1.10a).** A pin outside every house
+  but inside two separate cities' starting areas (for example, where their two Rema karpefs
+  meet) took the first city in input order under both joining rules. The conservative
+  common area of all candidates, with its review warning, now applies under every overlap
+  rule, not only `no_join`.
+- **The open-field point square follows only the point rotation (§1.7).** The point-mode
+  square was also turned by the reviewer's city-squaring angle, while the audit reported
+  only the point rotation. It now uses the point rotation alone.
+- **Projection across ±180° longitude.** The local projection now uses the shorter
+  longitude difference, so a pin near the antimeridian no longer puts its neighbors on the
+  far side of the planet.
+- **Known remaining gap (app, not engine):** bow-endpoint reviews are still keyed and stored
+  in pin-centered coordinates. Moving the pin drops the saved endpoints and the bow returns
+  to the visible provisional no-fill result. That is conservative, but the review has to be
+  redone. Fixing it requires the app to store endpoints as latitude/longitude.
+
+Golden tests cover each item: a moved pin and a squaring angle with new and legacy review
+records, 3990/4010-amah mouths, a 2030-amah-deep reviewed bow, both orders of a
+redraw-only join, karpef-overlap pins under all three overlap rules, two middle villages in
+both orders, a 900-village field, the point square, and the antimeridian.
+
 ---
 
 ## Part 3 — Product spec

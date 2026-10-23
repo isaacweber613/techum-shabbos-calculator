@@ -32,10 +32,18 @@
       111132.92 - 559.82 * Math.cos(2 * lat0 * rad) + 1.175 * Math.cos(4 * lat0 * rad);
     const mPerDegLon = (lat) =>
       111412.84 * Math.cos(lat * rad) - 93.5 * Math.cos(3 * lat * rad);
+    // Shortest longitude difference, so a pin near ±180° does not project its
+    // neighbours across the antimeridian onto the far side of the planet. In-range
+    // differences are returned unchanged (bit-identical to the unwrapped value).
+    const wrapLon = (d) => {
+      while (d >= 180) d -= 360;
+      while (d < -180) d += 360;
+      return d;
+    };
     return {
       lat0, lon0, mPerDegLat,
       toXY(lat, lon) {
-        return { x: (lon - lon0) * mPerDegLon(lat), y: (lat - lat0) * mPerDegLat };
+        return { x: wrapLon(lon - lon0) * mPerDegLon(lat), y: (lat - lat0) * mPerDegLat };
       },
       toLatLon(x, y) {
         const lat = lat0 + y / mPerDegLat;
@@ -315,29 +323,61 @@
     return [...map.values()];
   }
 
-  function stableClusterKey(memberIds) {
+  function stableClusterKey(memberIds, version) {
     let hash = 2166136261;
     for (const ch of memberIds.join('\u001f')) {
       hash ^= ch.charCodeAt(0); hash = Math.imul(hash, 16777619) >>> 0;
     }
-    return `cluster:v2:${memberIds.length}:${hash.toString(16).padStart(8, '0')}`;
+    return `cluster:${version || 'v3'}:${memberIds.length}:${hash.toString(16).padStart(8, '0')}`;
   }
 
-  function annotateCityQualification(clusters, buildings, minCityHouses, overrides) {
+  // Legacy (v2) member ids embedded the footprint's projected bbox: `id@minX,minY,maxX,maxY`.
+  // That bbox moves with the projection origin (the pin) and the reviewer squaring angle.
+  const LEGACY_MEMBER_ID = /^(.*)@-?\d+\.\d{3},-?\d+\.\d{3},-?\d+\.\d{3},-?\d+\.\d{3}$/;
+  function legacyMemberId(building) {
+    const id = building.id == null ? 'missing-id' : String(building.id), box = building.bbox;
+    return `${id}@${box.minX.toFixed(3)},${box.minY.toFixed(3)},${box.maxX.toFixed(3)},${box.maxY.toFixed(3)}`;
+  }
+
+  // buildings: the caller's unrotated footprints (ids and joinOnly flags).
+  // frameBuildings: the same footprints in the working frame, used only to recognise a
+  // legacy v2 key saved under the same projection origin and squaring angle.
+  function annotateCityQualification(clusters, buildings, minCityHouses, overrides, frameBuildings) {
     const configured = overrides && typeof overrides === 'object' ? overrides : {};
+    const framed = frameBuildings || buildings;
+    // Member identity is the building's own stable id, independent of projection and
+    // rotation. A missing or duplicated id cannot identify one footprint, so only those
+    // fall back to the geometric legacy form (computed in the unrotated input frame).
+    const idCounts = new Map();
+    for (const cluster of clusters) for (const i of cluster.members) {
+      const id = buildings[i].id;
+      if (id != null) idCounts.set(String(id), (idCounts.get(String(id)) || 0) + 1);
+    }
+    const memberId = (i) => {
+      const id = buildings[i].id;
+      return id != null && idCounts.get(String(id)) === 1 ? String(id) : legacyMemberId(buildings[i]);
+    };
     for (const cluster of clusters) {
-      cluster.memberIds = cluster.members.map((i) => {
-        const b = buildings[i], id = b.id == null ? 'missing-id' : String(b.id), box = b.bbox;
-        return `${id}@${box.minX.toFixed(3)},${box.minY.toFixed(3)},${box.maxX.toFixed(3)},${box.maxY.toFixed(3)}`;
-      }).sort();
+      cluster.memberIds = cluster.members.map(memberId).sort();
       cluster.key = stableClusterKey(cluster.memberIds);
       let record = configured[cluster.key];
       let remapScore = null;
       if (record == null) {
+        const legacyKey = stableClusterKey(cluster.members.map((i) => legacyMemberId(framed[i])).sort(), 'v2');
+        record = configured[legacyKey];
+      }
+      if (record == null) {
         const current = new Set(cluster.memberIds);
+        // A legacy saved id is read back as the stable id it embeds.
+        const token = (value) => {
+          const text = String(value);
+          if (current.has(text)) return text;
+          const legacy = LEGACY_MEMBER_ID.exec(text);
+          return legacy ? legacy[1] : text;
+        };
         for (const candidate of Object.values(configured)) {
           if (!candidate || typeof candidate !== 'object' || !Array.isArray(candidate.memberIds) || typeof candidate.decision !== 'boolean') continue;
-          const old = new Set(candidate.memberIds.map(String));
+          const old = new Set(candidate.memberIds.map(token));
           let shared = 0; for (const id of current) if (old.has(id)) shared++;
           const score = shared / Math.max(1, current.size + old.size - shared);
           if (score >= 0.8 && (remapScore == null || score > remapScore)) { record = candidate; remapScore = score; }
@@ -631,12 +671,56 @@
   // projected interval must fit between the outer support intervals and leave no more than
   // 141 1/3 amos on either side.  B's actual footprint must also be <= 2000 amos from each
   // outer village.  There is deliberately no 4000-amah cap on A-C (SA HaRav 398:12).
-  function threeVillages(clusters, buildings, settings) {
+  //
+  // Every qualifying triple is evaluated against the same set of actual settlements in a
+  // pass, and all of them are united (union-find) before the next pass. Taking the first
+  // qualifying triple made the result depend on input order whenever two middle villages
+  // both fit between the same outers (rev. 17).
+  function threeVillages(clusters, buildings, settings, gapCache) {
     const t2 = AMOS.JOIN2 * settings.amahM;
     const techum = AMOS.TECHUM * settings.amahM;
     const warnings = [];
-    const buildingGrid = GridIndex(Math.max(techum, 100));
-    buildings.forEach((building, index) => { if (building.included) buildingGrid.insert(index, building.bbox); });
+    // "Is B within 2000 amos of X?" only needs one footprint pair within 2000 amos, not
+    // the minimum gap. Each settlement gets its own small spatial index, so a query
+    // touches that settlement's nearby footprints instead of every footprint in the area.
+    // Answers are symmetric and the cluster objects of untouched settlements persist
+    // across passes, so each pair is decided once per calculation.
+    const cache = gapCache || { within: new WeakMap(), grids: new WeakMap() };
+    const clusterGrid = (cluster) => {
+      let grid = cache.grids.get(cluster);
+      if (!grid) {
+        grid = GridIndex(Math.max(techum, 100));
+        for (const i of cluster.members) grid.insert(i, buildings[i].bbox);
+        cache.grids.set(cluster, grid);
+      }
+      return grid;
+    };
+    const withinTechum = (X, Y) => {
+      if (bboxGap(X.bbox, Y.bbox) > techum) return false;
+      const source = X.members.length <= Y.members.length ? X : Y;
+      const target = source === X ? Y : X, targetGrid = clusterGrid(target);
+      for (const i of source.members) {
+        const box = buildings[i].bbox;
+        if (bboxGap(box, target.bbox) > techum) continue;
+        for (const j of targetGrid.query(expandRect(box, techum))) {
+          if (bboxGap(box, buildings[j].bbox) > techum) continue;
+          if (ringDist(buildings[i].ring, buildings[j].ring) <= techum) return true;
+        }
+      }
+      return false;
+    };
+    const isNear = (A, B) => {
+      let row = cache.within.get(A);
+      if (!row) { row = new Map(); cache.within.set(A, row); }
+      if (row.has(B)) return row.get(B);
+      const near = withinTechum(A, B);
+      row.set(B, near);
+      let back = cache.within.get(B);
+      if (!back) { back = new Map(); cache.within.set(B, back); }
+      back.set(A, near);
+      return near;
+    };
+    const byKey = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
     let acted = true;
     while (acted) {
       acted = false;
@@ -650,80 +734,118 @@
       if (candidates.length < 3) break;
       const cityGrid = GridIndex(Math.max(techum, 100));
       candidates.forEach(({ cl, i }) => cityGrid.insert(i, cl.bbox));
-      outer:
+      const outerSupports = new Map(); // "a,c" -> outer support intervals on the a->c axis
+      const support = (cluster, nx, ny) => {
+        let min = Infinity, max = -Infinity;
+        for (const i of cluster.members) {
+          for (const p of buildings[i].ring) {
+            const projected = p.x * nx + p.y * ny;
+            min = Math.min(min, projected); max = Math.max(max, projected);
+          }
+        }
+        return { min, max, width: max - min };
+      };
+      const found = [];
       for (const { i: b } of candidates) {
         const nearby = [];
         for (const i of cityGrid.query(expandRect(clusters[b].bbox, techum))) {
           if (i === b) continue;
-          const gap = clusterGapIndexed(clusters[i], clusters[b], buildings, techum, buildingGrid);
-          if (gap <= techum) nearby.push(i);
+          if (isNear(clusters[i], clusters[b])) nearby.push(i);
         }
-        nearby.sort((a, c) => a - c);
+        // The outer pair is oriented by stable cluster key, never by input position.
+        nearby.sort((x, y) => byKey(clusters[x].key, clusters[y].key) || x - y);
+        const B = clusters[b];
+        const bDiag = Math.hypot(B.bbox.maxX - B.bbox.minX, B.bbox.maxY - B.bbox.minY);
+        // A valid placement needs outerGap = leftGap + B's projected width + rightGap
+        // <= 2 * t2 + that width, and B's width on any axis is <= its bbox diagonal. The
+        // slack only absorbs floating-point rounding; it never excludes a valid triple.
+        const outerGapLimit = 2 * t2 + bDiag + 1e-6;
         for (let ai = 0; ai < nearby.length; ai++) {
-          const a = nearby[ai];
+          const a = nearby[ai], A = clusters[a];
+          const acx = (A.bbox.minX + A.bbox.maxX) / 2, acy = (A.bbox.minY + A.bbox.maxY) / 2;
+          const ahw = (A.bbox.maxX - A.bbox.minX) / 2, ahh = (A.bbox.maxY - A.bbox.minY) / 2;
           for (let ci = ai + 1; ci < nearby.length; ci++) {
-            const c = nearby[ci];
-            const A = clusters[a], B = clusters[b], C = clusters[c];
+            const c = nearby[ci], C = clusters[c];
             // Canonical lowering axis for irregular mapped villages: line through the
             // centers of the two outer physical bounding boxes.  The sources give the
             // lowering construction but not a competing numeric center for real polygons,
             // so the axis and all support intervals are retained in the audit warning.
-            const ax = (A.bbox.minX + A.bbox.maxX) / 2, ay = (A.bbox.minY + A.bbox.maxY) / 2;
-            const cx = (C.bbox.minX + C.bbox.maxX) / 2, cy = (C.bbox.minY + C.bbox.maxY) / 2;
-            const ux = cx - ax, uy = cy - ay;
+            const ccx = (C.bbox.minX + C.bbox.maxX) / 2, ccy = (C.bbox.minY + C.bbox.maxY) / 2;
+            const ux = ccx - acx, uy = ccy - acy;
             const ulen = Math.hypot(ux, uy) || 1;
             const nx = ux / ulen, ny = uy / ulen;
-            const support = (cluster) => {
-              let min = Infinity, max = -Infinity;
-              for (const i of cluster.members) {
-                for (const p of buildings[i].ring) {
-                  const projected = p.x * nx + p.y * ny;
-                  min = Math.min(min, projected); max = Math.max(max, projected);
-                }
-              }
-              return { min, max, width: max - min };
-            };
-            const aSupport = support(A), bSupport = support(B), cSupport = support(C);
+            // Exact pruning: each support interval lies inside its bbox's projection.
+            const chw = (C.bbox.maxX - C.bbox.minX) / 2, chh = (C.bbox.maxY - C.bbox.minY) / 2;
+            const outerGapLowerBound = (ccx * nx + ccy * ny - (chw * Math.abs(nx) + chh * Math.abs(ny))) -
+              (acx * nx + acy * ny + (ahw * Math.abs(nx) + ahh * Math.abs(ny)));
+            if (outerGapLowerBound > outerGapLimit) continue;
+            const pairKey = a + ',' + c;
+            let outer = outerSupports.get(pairKey);
+            if (!outer) {
+              outer = { aSupport: support(A, nx, ny), cSupport: support(C, nx, ny) };
+              outerSupports.set(pairKey, outer);
+            }
+            const { aSupport, cSupport } = outer;
             const outerGap = cSupport.min - aSupport.max;
+            if (outerGap < 0 || outerGap > outerGapLimit) continue;
+            const bSupport = support(B, nx, ny);
             const leftGap = bSupport.min - aSupport.max;
             const rightGap = cSupport.min - bSupport.max;
-            if (outerGap >= 0 && bSupport.width <= outerGap &&
+            if (bSupport.width <= outerGap &&
                 leftGap >= 0 && rightGap >= 0 && leftGap <= t2 && rightGap <= t2) {
-              const outerDistance = clusterGap(A, C, buildings, Infinity);
-              warnings.push({
-                type: 'three-villages',
-                text: 'Three-villages rule (SA HaRav 398:12) merged three settlements using the disclosed outer-center lowering axis; confirm the axis if an irregular outline makes another placement material.',
-                middleComponentKeys: [...B.componentKeys],
-                outerComponentKeys: [A.componentKeys, C.componentKeys].map((keys) => [...keys]),
-                axis: { x: nx, y: ny },
-                actualMiddleGapsM: {
-                  toFirstOuter: clusterGap(A, B, buildings, techum),
-                  toSecondOuter: clusterGap(B, C, buildings, techum),
-                },
-                projectedPlacementM: {
-                  outerGap, middleWidth: bSupport.width, leftGap, rightGap,
-                  outerDistance,
-                },
-              });
-              const mergedCluster = {
-                members: A.members.concat(B.members, C.members),
-                houseCount: [A, B, C].reduce((sum, cluster) => sum +
-                  (cluster.houseCount == null ? cluster.members.length : cluster.houseCount), 0),
-                bbox: bboxUnion(bboxUnion(A.bbox, B.bbox), C.bbox),
-                key: `three:${A.componentKeys.concat(B.componentKeys, C.componentKeys).sort().join('|')}`,
-                qualifiesAsCity: true,
-                qualificationSource: 'three-villages',
-                componentKeys: A.componentKeys.concat(B.componentKeys, C.componentKeys),
-              };
-              const drop = [a, b, c].sort((x, y) => y - x);
-              for (const idx of drop) clusters.splice(idx, 1);
-              clusters.push(mergedCluster);
-              acted = true;
-              break outer;
+              found.push({ a, b, c, nx, ny, outerGap, middleWidth: bSupport.width, leftGap, rightGap });
             }
           }
         }
       }
+      if (!found.length) break;
+      const tripleKey = (t) => [clusters[t.b].key, clusters[t.a].key, clusters[t.c].key].join('|');
+      found.sort((x, y) => byKey(tripleKey(x), tripleKey(y)));
+      const uf = UnionFind(clusters.length);
+      for (const t of found) {
+        const A = clusters[t.a], B = clusters[t.b], C = clusters[t.c];
+        uf.union(t.a, t.b); uf.union(t.b, t.c);
+        warnings.push({
+          type: 'three-villages',
+          text: 'Three-villages rule (SA HaRav 398:12) merged three settlements using the disclosed outer-center lowering axis; confirm the axis if an irregular outline makes another placement material.',
+          middleComponentKeys: [...B.componentKeys],
+          outerComponentKeys: [A.componentKeys, C.componentKeys].map((keys) => [...keys]),
+          axis: { x: t.nx, y: t.ny },
+          actualMiddleGapsM: {
+            toFirstOuter: clusterGap(A, B, buildings, techum),
+            toSecondOuter: clusterGap(B, C, buildings, techum),
+          },
+          projectedPlacementM: {
+            outerGap: t.outerGap, middleWidth: t.middleWidth, leftGap: t.leftGap, rightGap: t.rightGap,
+            outerDistance: clusterGap(A, C, buildings, Infinity),
+          },
+        });
+      }
+      const groups = new Map();
+      clusters.forEach((cluster, index) => {
+        const root = uf.find(index);
+        if (!groups.has(root)) groups.set(root, []);
+        groups.get(root).push(cluster);
+      });
+      const untouched = [], merged = [];
+      for (const group of groups.values()) {
+        if (group.length === 1) { untouched.push(group[0]); continue; }
+        group.sort((x, y) => byKey(x.key, y.key));
+        const componentKeys = group.flatMap((cluster) => cluster.componentKeys);
+        merged.push({
+          members: group.flatMap((cluster) => cluster.members),
+          houseCount: group.reduce((sum, cluster) => sum +
+            (cluster.houseCount == null ? cluster.members.length : cluster.houseCount), 0),
+          bbox: group.slice(1).reduce((box, cluster) => bboxUnion(box, cluster.bbox), { ...group[0].bbox }),
+          key: `three:${componentKeys.slice().sort().join('|')}`,
+          qualifiesAsCity: true,
+          qualificationSource: 'three-villages',
+          componentKeys,
+        });
+      }
+      merged.sort((x, y) => byKey(x.key, y.key));
+      clusters.splice(0, clusters.length, ...untouched, ...merged);
+      acted = true;
     }
     return warnings;
   }
@@ -830,7 +952,19 @@
           if (!covered[nb] && !seen[nb]) { seen[nb] = 1; stack.push(nb); }
         }
       }
-      const spanX = (maxCX - minCX + 1) * cw, spanY = (maxCY - minCY + 1) * ch;
+      // The empty cells stop JOIN (plus up to a cell) short of every building, so their
+      // span understates the pocket. SA 398:3-4 measures a bow from its houses: test the
+      // pocket mask grown back to the houses (spec §1.5 step 5, rev. 17). A pocket whose
+      // cells could not reach 4000 amos even after the maximum growth is skipped cheaply.
+      const cellSpanX = (maxCX - minCX + 1) * cw, cellSpanY = (maxCY - minCY + 1) * ch;
+      const maxGrowth = 2 * (join + Math.max(cw, ch));
+      const couldBeLarge = touchesBorder
+        ? Math.max(cellSpanX, cellSpanY) + maxGrowth >= bow
+        : cellSpanX + maxGrowth >= bow && cellSpanY + maxGrowth >= bow;
+      if (!couldBeLarge) continue;
+      const maskRects = pocketMask(cells, nx, cw, ch, rect, cluster.members.map((i) => buildings[i].bbox), join);
+      const extent = maskRects.reduce((box, r) => bboxUnion(box, r), maskRects[0]);
+      const spanX = extent.maxX - extent.minX, spanY = extent.maxY - extent.minY;
       const isLargeBow = touchesBorder && Math.max(spanX, spanY) >= bow;
       const isLargeHole = !touchesBorder && spanX >= bow && spanY >= bow;
       if (isLargeBow || isLargeHole) {
@@ -860,7 +994,7 @@
             ? 'A wholly enclosed empty area is at least 4000 amos in both governing axes. The default includes it (Beit Yitzchok / R’ Shulem Weiss); the strict exclusion setting follows Zichron Yosef / R’ Pesach Falk.'
             : 'A material bow/L pocket reaches 4000 amos. Until a reviewer confirms its endpoints, the app uses a provisional no-fill boundary instead of silently granting the pocket.',
           region,
-          maskRects: pocketMask(cells, nx, cw, ch, rect, cluster.members.map((i) => buildings[i].bbox), join),
+          maskRects,
         });
       }
     }
@@ -903,7 +1037,7 @@
     markStage('iburClustering');
     const clusters = buildClusters(work, labels);
     markStage('clusterAssembly');
-    annotateCityQualification(clusters, work, settings.minCityHouses, settings.cityQualificationOverrides);
+    annotateCityQualification(clusters, buildings, settings.minCityHouses, settings.cityQualificationOverrides, work);
     const qualificationAudit = clusters.map((cluster) => ({
       key: cluster.key, members: [...cluster.members], memberIds: [...cluster.memberIds], bbox: { ...cluster.bbox },
       houseCount: cluster.houseCount, qualifiesAsCity: cluster.qualifiesAsCity,
@@ -917,6 +1051,7 @@
     // 141⅓ and three-village mergers are applied to a fixed point. A three-village
     // merger can create a settlement that now qualifies for another 141⅓ merger.
     let changed = true, cityMergeMs = 0, threeVillagesMs = 0;
+    const threeVillageGaps = { within: new WeakMap(), grids: new WeakMap() };
     while (changed) {
       const before = clusters.map((cluster) => cluster.componentKeys.slice().sort().join('|')).sort().join('::');
       let substageStarted = clock();
@@ -925,7 +1060,7 @@
       }
       cityMergeMs += clock() - substageStarted;
       substageStarted = clock();
-      warnings.push(...threeVillages(clusters, work, settings));
+      warnings.push(...threeVillages(clusters, work, settings, threeVillageGaps));
       threeVillagesMs += clock() - substageStarted;
       const after = clusters.map((cluster) => cluster.componentKeys.slice().sort().join('|')).sort().join('::');
       changed = before !== after;
@@ -952,35 +1087,63 @@
     const overlapClosure = (seedIndex, policy) => {
       const chosen = new Set([seedIndex]);
       if (policy === 'no-join') return { indices: [seedIndex], redraw: null };
-      if (policy === 'join-no-redraw') {
-        const queue = [seedIndex];
-        while (queue.length) {
-          const current = cityModels[queue.shift()];
-          cityModels.forEach((candidate, index) => {
-            if (!chosen.has(index) && ringsOverlap(current.ring, candidate.ring)) { chosen.add(index); queue.push(index); }
-          });
-        }
-        return { indices: [...chosen].sort((a, b) => a - b), redraw: null };
-      }
-      let redraw = null, acted = true;
-      while (acted) {
-        const jointSquaring = deriveSquaring([...chosen].flatMap((index) =>
-          clusterPoints(cityModels[index].cluster)), { reviewerAngleApplied: angle !== 0 });
-        redraw = jointSquaring;
-        const redrawRing = rectCornersInFrame(redraw.rect, redraw.angleRad);
-        acted = false;
+      // join-no-redraw: rectangle overlap is symmetric, so this is a connected component.
+      const queue = [seedIndex];
+      while (queue.length) {
+        const current = cityModels[queue.shift()];
         cityModels.forEach((candidate, index) => {
-          if (!chosen.has(index) && ringsOverlap(redrawRing, candidate.ring)) { chosen.add(index); acted = true; }
+          if (!chosen.has(index) && ringsOverlap(current.ring, candidate.ring)) { chosen.add(index); queue.push(index); }
         });
       }
-      return { indices: [...chosen].sort((a, b) => a - b), redraw };
+      return { indices: [...chosen].sort((a, b) => a - b), redraw: null };
     };
-    const closureMap = new Map();
-    cityModels.forEach((model, index) => {
-      const closure = overlapClosure(index, overlapPolicy), key = closure.indices.join(',');
-      if (!closureMap.has(key)) closureMap.set(key, closure);
-    });
-    const closures = [...closureMap.values()];
+    // Joint redraw of a set of city models (expansive approach, spec §1.5 step 6).
+    const redrawOf = (indices) => deriveSquaring(indices.flatMap((index) =>
+      clusterPoints(cityModels[index].cluster)), { reviewerAngleApplied: angle !== 0 });
+    let closures;
+    if (overlapPolicy !== 'no-join' && overlapPolicy !== 'join-no-redraw') {
+      // join-redraw. A redraw grown from one seed is not symmetric: A+B's joint rectangle can reach C
+      // while C's own rectangle reaches neither. Seed-by-seed closures therefore overlap,
+      // and picking one depended on input order. Instead every group whose joint redraw
+      // overlaps another city's rectangle is united with it (union-find), and the merged
+      // groups are redrawn and retested in synchronous rounds until stable (rev. 17).
+      const uf = UnionFind(cityModels.length);
+      let acted = true;
+      while (acted) {
+        acted = false;
+        const groups = new Map();
+        cityModels.forEach((model, index) => {
+          const root = uf.find(index);
+          if (!groups.has(root)) groups.set(root, []);
+          groups.get(root).push(index);
+        });
+        const unions = [];
+        for (const group of groups.values()) {
+          const redraw = redrawOf(group), redrawRing = rectCornersInFrame(redraw.rect, redraw.angleRad);
+          const inGroup = new Set(group);
+          cityModels.forEach((candidate, index) => {
+            if (!inGroup.has(index) && ringsOverlap(redrawRing, candidate.ring)) unions.push([group[0], index]);
+          });
+        }
+        for (const [a, b] of unions) {
+          if (uf.find(a) !== uf.find(b)) { uf.union(a, b); acted = true; }
+        }
+      }
+      const groups = new Map();
+      cityModels.forEach((model, index) => {
+        const root = uf.find(index);
+        if (!groups.has(root)) groups.set(root, []);
+        groups.get(root).push(index);
+      });
+      closures = [...groups.values()].map((indices) => ({ indices, redraw: redrawOf(indices) }));
+    } else {
+      const closureMap = new Map();
+      cityModels.forEach((model, index) => {
+        const closure = overlapClosure(index, overlapPolicy), key = closure.indices.join(',');
+        if (!closureMap.has(key)) closureMap.set(key, closure);
+      });
+      closures = [...closureMap.values()];
+    }
     markStage('overlapClosures');
 
     let homeBuilding = -1, homeBuildingArea = Infinity;
@@ -1010,6 +1173,7 @@
     markStage('homeSelection');
 
     let squaring = null, cityPolygons = [], karpefPolygons = [], techumPolygons = [], mil12Polygons = [];
+    let pointModeWorldFrame = false;
     const concavity = [];
     const regionDefToRing = (def, expansion) => rectCornersInFrame(expandRect(def.rect, expansion || 0), def.angleRad);
     const applyShapeRules = (defs, sourceCluster, sourceAngle) => {
@@ -1043,8 +1207,11 @@
             const [a, b] = endpoints, chord = Math.hypot(b.x - a.x, b.y - a.y) || 1;
             // Depth belongs to the detected empty bow/L pocket, not to the full
             // inhabited city behind its chord. Measuring every dwelling would
-            // overstate the depth whenever the city extends far inland.
-            depthM = Math.max(...rectCornersInFrame(warning.region, 0)
+            // overstate the depth whenever the city extends far inland. The pocket is
+            // measured to its houses (the mask grown back from the empty cells), not
+            // to the empty cells, which stop 70⅔ amos plus a cell short (rev. 17).
+            const pocketRects = warning.maskRects && warning.maskRects.length ? warning.maskRects : [warning.region];
+            depthM = Math.max(...pocketRects.flatMap((r) => rectCornersInFrame(r, 0))
               .map((point) => Math.abs((b.x - a.x) * (a.y - point.y) - (a.x - point.x) * (b.y - a.y)) / chord));
           }
           const fillByRema = endpoints && (chordM < AMOS.BOW * settings.amahM || depthM < techumM);
@@ -1102,12 +1269,17 @@
         };
       };
       const boundaries = selectedClosures.map(buildClosureBoundary);
-      if (boundaries.length > 1 && overlapPolicy === 'no-join' && physicalCityModel < 0) {
+      // Several disjoint starting areas contain a pin that is in none of their houses.
+      // Under every overlap policy the engine must not pick one by input order; the
+      // conservative common area applies (spec §1.10a; rev. 17 extends it beyond no-join).
+      if (boundaries.length > 1 && physicalCityModel < 0) {
         cityPolygons = intersectPolygonSets(boundaries.map((boundary) => boundary.city));
         karpefPolygons = settings.karpef ? intersectPolygonSets(boundaries.map((boundary) => boundary.karpef)) : [];
         techumPolygons = intersectPolygonSets(boundaries.map((boundary) => boundary.techum));
         mil12Polygons = intersectPolygonSets(boundaries.map((boundary) => boundary.mil12));
-        warnings.push({ type: 'multiple-home-candidates', text: 'The pin lies only in the empty overlap of unrelated no-join city squares. The displayed boundary is the conservative common area of every candidate; a rav must identify the governing city for a larger result.' });
+        warnings.push({ type: 'multiple-home-candidates', text: overlapPolicy === 'no-join'
+          ? 'The pin lies only in the empty overlap of unrelated no-join city squares. The displayed boundary is the conservative common area of every candidate; a rav must identify the governing city for a larger result.'
+          : 'The pin lies only in the empty overlap of separate city starting areas. The displayed boundary is the conservative common area of every candidate; a rav must identify the governing city for a larger result.' });
         squaring = { method: 'candidate-intersection', angleRad: 0, rectangularity: null };
       } else {
         const boundary = boundaries[0];
@@ -1126,8 +1298,8 @@
         const swallowed = techumPolygons.some((region) => model.ring.every((point) => pointInOrOnRing(point, region)));
         if (swallowed) warnings.push({ type: 'ir-muvlaas', text: 'Another complete city lies inside this techum. Its route-specific ir muvla’at continuation is not represented by one universal permission polygon; check the destination with a rav.' });
       });
-      if (overlapPolicy === 'join-no-redraw' && selectedClosures[0].indices.length > 1) warnings.push({ type: 'overlap-merge-no-redraw', text: 'Overlapping city rectangles join without a new encompassing redraw (R’ Shlomo Miller). The green and pink results remain stepped unions of the original rectangles.' });
-      if (overlapPolicy === 'join-redraw' && selectedClosures[0].indices.length > 1) warnings.push({ type: 'overlap-merge-redraw', text: 'Overlapping city rectangles join and were repeatedly redrawn to a fixed point under the selected expansive approach.' });
+      if (overlapPolicy === 'join-no-redraw' && selectedClosures.some((closure) => closure.indices.length > 1)) warnings.push({ type: 'overlap-merge-no-redraw', text: 'Overlapping city rectangles join without a new encompassing redraw (R’ Shlomo Miller). The green and pink results remain stepped unions of the original rectangles.' });
+      if (overlapPolicy === 'join-redraw' && selectedClosures.some((closure) => closure.indices.length > 1)) warnings.push({ type: 'overlap-merge-redraw', text: 'Overlapping city rectangles join and were repeatedly redrawn to a fixed point under the selected expansive approach.' });
     } else if (mode === 'building') {
       squaring = deriveSquaring(work[homeBuilding].ring, { reviewerAngleApplied: angle !== 0 });
       const def = { rect: squaring.rect, angleRad: squaring.angleRad };
@@ -1135,12 +1307,15 @@
       mil12Polygons = [regionDefToRing(def, AMOS.MIL12 * settings.amahM)];
       warnings.push({ type: 'building-mode', text: 'No qualifying city joins this footprint. The techum is measured from the mapped building walls; confirm the footprint and dwelling status.' });
     } else {
+      // The open-field square follows only pointRotationDeg. It is built around the
+      // caller's (unrotated) pin and bypasses the reviewer city-squaring angle (rev. 17).
+      pointModeWorldFrame = true;
       const half = 2 * settings.amahM;
-      const base = { minX: workPin.x - half, maxX: workPin.x + half, minY: workPin.y - half, maxY: workPin.y + half };
+      const base = { minX: pin.x - half, maxX: pin.x + half, minY: pin.y - half, maxY: pin.y + half };
       const rotateAroundPin = (ring) => pointAngle === 0 ? ring : ring.map((point) => {
-        const dx = point.x - workPin.x, dy = point.y - workPin.y;
-        return { x: workPin.x + dx * Math.cos(pointAngle) - dy * Math.sin(pointAngle),
-          y: workPin.y + dx * Math.sin(pointAngle) + dy * Math.cos(pointAngle) };
+        const dx = point.x - pin.x, dy = point.y - pin.y;
+        return { x: pin.x + dx * Math.cos(pointAngle) - dy * Math.sin(pointAngle),
+          y: pin.y + dx * Math.sin(pointAngle) + dy * Math.cos(pointAngle) };
       });
       cityPolygons = [rotateAroundPin(rectCornersInFrame(base, 0))];
       techumPolygons = [rotateAroundPin(rectCornersInFrame(expandRect(base, techumM), 0))];
@@ -1151,7 +1326,9 @@
     warnings.push(...concavity);
     markStage('boundaryAndWarnings');
 
-    const outward = (polygons) => polygons.map((ring) => ring.map(unrot));
+    const outward = (polygons) => pointModeWorldFrame
+      ? polygons.map((ring) => ring.map((point) => ({ x: point.x, y: point.y })))
+      : polygons.map((ring) => ring.map(unrot));
     const cityRegions = outward(cityPolygons), karpefRegions = outward(karpefPolygons);
     const techumRegions = outward(techumPolygons), mil12Regions = outward(mil12Polygons);
     const concavityAudit = concavity.map((warning) => ({

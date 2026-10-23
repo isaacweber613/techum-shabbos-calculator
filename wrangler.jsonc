@@ -4,6 +4,8 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-07-12",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
   "routes": [
     { "pattern": "tchumshabbos.com", "custom_domain": true },
     { "pattern": "www.tchumshabbos.com", "custom_domain": true }
@@ -61,7 +63,9 @@
     "REQUIRE_ACCESS": "true",
     "RAW_RETENTION_DAYS": "365",
     "GEOCODER_CONTACT": "https://tchumshabbos.com/about",
-    "GOOGLE_MAPS_DAILY_CAP": "300"
+    "GOOGLE_MAPS_DAILY_CAP": "300",
+    "ACCESS_TEAM_DOMAIN": "bolt-n3l-pages.cloudflareaccess.com",
+    "ACCESS_AUD": "4930a02c7927e58f369a77e011ac5ba642c098981ce69c84507845e95d24a9fb"
   },
   "triggers": { "crons": ["17 4 * * *"] },
   "observability": {

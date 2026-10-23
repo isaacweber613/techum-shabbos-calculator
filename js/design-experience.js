@@ -59,11 +59,17 @@
         </div>`;
       document.getElementById('status')?.after(quickSettings);
 
+      // Reads the real settings inputs: a profile change or snapshot load sets them
+      // programmatically, without the change events the quick selects listen for.
       const updateSettingsSummary = () => {
-        const profile = document.getElementById('quick-profile');
-        const amah = document.getElementById('quick-amah');
+        const profile = document.getElementById('profile');
+        const amah = document.getElementById('amah');
         const summary = document.getElementById('simple-settings-summary');
         if (!profile || !amah || !summary) return;
+        const quickProfile = document.getElementById('quick-profile');
+        const quickAmah = document.getElementById('quick-amah');
+        if (quickProfile) quickProfile.value = profile.value;
+        if (quickAmah) quickAmah.value = amah.value;
         const profileNames = {
           'mishna-berura': 'Mishna Berurah', 'chazon-ish': 'Chazon Ish',
           mechaber: 'Mechaber', custom: 'Custom',
@@ -83,10 +89,11 @@
           source.dispatchEvent(new Event('change', { bubbles: true }));
           updateSettingsSummary();
         });
-        source.addEventListener('change', () => { quick.value = source.value; updateSettingsSummary(); });
+        source.addEventListener('change', updateSettingsSummary);
       };
       syncSelect('profile', 'quick-profile');
       syncSelect('amah', 'quick-amah');
+      document.addEventListener('techum:settings-refreshed', updateSettingsSummary);
       updateSettingsSummary();
 
       const mapKey = document.createElement('div');
@@ -260,16 +267,54 @@
       const settingsBtn = document.getElementById('design-settings-button');
       if (settingsBtn) settingsBtn.textContent = btnLabel;
 
+      let returnFocus = null;
       const toggle = (open) => {
+        const wasOpen = document.body.classList.contains('design-settings-open');
         document.body.classList.toggle('design-settings-open', open);
         drawer.setAttribute('aria-hidden', String(!open));
         document.getElementById('design-settings-button')?.setAttribute('aria-expanded', String(open));
+        if (open && !wasOpen) {
+          returnFocus = document.activeElement;
+          document.getElementById('design-drawer-close')?.focus();
+        } else if (!open && wasOpen) {
+          // Return focus to the opener unless focus already moved to the map (draw mode).
+          if (drawer.contains(document.activeElement) || document.activeElement === document.body) returnFocus?.focus?.();
+          returnFocus = null;
+        }
       };
       document.getElementById('design-settings-button')?.addEventListener('click', () => toggle(true));
       document.getElementById('simple-more-settings')?.addEventListener('click', () => toggle(true));
       document.getElementById('design-drawer-close')?.addEventListener('click', () => toggle(false));
       backdrop.addEventListener('click', () => toggle(false));
-      document.addEventListener('keydown', (event) => { if (event.key === 'Escape') toggle(false); });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && document.body.classList.contains('design-settings-open')) toggle(false);
+      });
+
+      // Draw and bow-endpoint modes need map clicks, which the drawer backdrop would swallow.
+      // Close the drawer when a map mode starts and keep Finish/Cancel on the map itself.
+      const mapModeBar = document.createElement('div');
+      mapModeBar.id = 'map-mode-bar';
+      mapModeBar.setAttribute('role', 'group');
+      mapModeBar.setAttribute('aria-label', 'Map drawing controls');
+      mapModeBar.innerHTML = '<span>Click the map to place points</span>';
+      ['btn-finish-building', 'btn-cancel-map-mode'].forEach((id) => {
+        const button = document.getElementById(id);
+        if (button) mapModeBar.append(button);
+      });
+      const mapEl = document.getElementById('map');
+      if (mapEl) {
+        mapEl.append(mapModeBar);
+        if (window.L?.DomEvent) {
+          window.L.DomEvent.disableClickPropagation(mapModeBar);
+          window.L.DomEvent.disableScrollPropagation(mapModeBar);
+        }
+      }
+      new MutationObserver(() => {
+        if (document.body.classList.contains('map-mode-active') && document.body.classList.contains('design-settings-open')) {
+          toggle(false);
+          mapEl?.focus();
+        }
+      }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
     }
   });
 })();

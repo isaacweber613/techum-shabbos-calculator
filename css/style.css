@@ -340,7 +340,7 @@ button.primary { width:100%; min-height:32px; height:32px; margin:0 0 4px; paddi
 .setting-items { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:8px; }
 .settings-grid details label {
   display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:5px;
-  min-height:23px; margin:0; padding:0 17px 0 0; font-size:10px; line-height:1.05;
+  min-height:24px; margin:0; padding:0 28px 0 0; font-size:10px; line-height:1.05;
 }
 .settings-grid details label.check { grid-template-columns:auto minmax(0,1fr); }
 .settings-grid details label > small,.settings-grid .muted,.settings-grid .audit-toggle span small { display:none; }
@@ -350,9 +350,9 @@ button.primary { width:100%; min-height:32px; height:32px; margin:0 0 4px; paddi
 }
 .settings-grid input[type="number"] { width:58px; justify-self:end; }
 .settings-grid label.check input { width:13px; height:13px; }
-.settings-grid button:not(.setting-help) { min-height:22px; height:22px; padding:1px 6px; border-radius:3px; font-size:9px; }
+.settings-grid button:not(.setting-help) { min-height:24px; height:auto; padding:2px 8px; border-radius:3px; font-size:12px; }
 .settings-grid .row { margin:0; gap:3px; }
-.setting-help { top:4px; width:13px; height:13px; border-color:#c7ceca; font-size:8px!important; }
+.setting-help { top:0; width:24px; height:24px; border-color:#c7ceca; font-size:12px!important; }
 .setting-help:before { width:175px; font-size:10px; }
 .audit-toggle { background:none!important; border:0!important; border-radius:0!important; }
 
@@ -367,7 +367,7 @@ button.primary { width:100%; min-height:32px; height:32px; margin:0 0 4px; paddi
 .review-list button small { display:none; }
 
 #sidebar > .exports { display:flex; gap:3px; margin:3px 0; }
-#sidebar > .exports button { min-height:23px; height:23px; padding:1px 5px; border-radius:3px; font-size:9px; }
+#sidebar > .exports button { min-height:24px; height:auto; padding:2px 8px; border-radius:3px; font-size:12px; }
 #sidebar > details {
   margin:0; padding:0; border:0; border-top:1px solid #e2e6e4; border-radius:0; background:none;
 }
@@ -379,7 +379,7 @@ button.primary { width:100%; min-height:32px; height:32px; margin:0 0 4px; paddi
 #sidebar > details[open] { padding-bottom:4px; }
 #sidebar > details[open] p { display:none; }
 #sidebar > details .row { margin:2px 0; }
-#sidebar > details button { min-height:23px; padding:2px 6px; border-radius:3px; font-size:9px; }
+#sidebar > details button { min-height:24px; padding:2px 8px; border-radius:3px; font-size:12px; }
 #sidebar > details label { margin:3px 0; font-size:9.5px; }
 .source-report { margin:2px 0; }
 
@@ -419,6 +419,13 @@ footer { display:none; }
 .legend div { white-space:normal; }
 footer { display:block; }
 .map-mode-active #map { outline:4px solid #d43f8d; outline-offset:-4px; }
+/* Finish/Cancel live on the map while drawing so they stay reachable with the settings drawer closed. */
+#map-mode-bar { display:none; position:absolute; z-index:1100; top:10px; left:50%; transform:translateX(-50%); align-items:center; gap:8px;
+  max-width:calc(100% - 20px); padding:7px 9px; border-radius:10px; background:#fffaf0; color:#253328; box-shadow:0 6px 20px rgba(0,0,0,.22);
+  font:600 12px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif; }
+.map-mode-active #map-mode-bar { display:flex; }
+#map-mode-bar button { min-height:36px; padding:6px 12px; font-size:13px; }
+#map-mode-bar button[hidden] { display:none; }
 button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible { outline:3px solid rgba(23,107,82,.35); outline-offset:2px; }
 @media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto!important; } .calc-action { animation:none!important; } }
 @media (max-width:900px) {

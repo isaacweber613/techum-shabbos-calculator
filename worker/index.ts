@@ -4,6 +4,7 @@ import { issueGoogleMapConfig } from './map-config';
 import { sha256Hex, validateRegistrySubmission } from './registry';
 import { feedbackScreenshot, listFeedback, submitFeedback, updateFeedbackStatus } from './feedback';
 import { shouldRedirectToCanonical } from './routing';
+import { accessEmail as verifiedAccessEmail } from './access';
 
 interface Env {
   DB: D1Database;
@@ -21,20 +22,21 @@ interface Env {
   REGISTRY_WRITES?: string;
   GOOGLE_MAPS_BROWSER_KEY?: string;
   GOOGLE_MAPS_DAILY_CAP?: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
 }
 
-function accessEmail(request: Request): string | null {
-  if (!request.headers.get('Cf-Access-Jwt-Assertion')) return null;
-  return request.headers.get('Cf-Access-Authenticated-User-Email')?.trim().toLowerCase() || null;
+function accessEmail(request: Request, env: Env): Promise<string | null> {
+  return verifiedAccessEmail(request, { teamDomain: env.ACCESS_TEAM_DOMAIN, aud: env.ACCESS_AUD });
 }
 
-function requireRegistryAdmin(request: Request, env: Env): string | null {
+async function requireRegistryAdmin(request: Request, env: Env): Promise<string | null> {
   if (env.REGISTRY_WRITES !== 'true') return null;
-  return accessEmail(request);
+  return accessEmail(request, env);
 }
 
-function privateAccessEmail(request: Request, env: Env): string | null {
-  const email = accessEmail(request);
+async function privateAccessEmail(request: Request, env: Env): Promise<string | null> {
+  const email = await accessEmail(request, env);
   return env.REQUIRE_ACCESS === 'true' ? email : (email || 'local-development');
 }
 
@@ -102,7 +104,7 @@ async function recordEvent(request: Request, env: Env): Promise<Response> {
   if (!env.IP_HASH_SECRET && !localRequest) return json({ error: 'analytics secret is not configured' }, 503);
   const month = new Date().toISOString().slice(0, 7);
   const networkId = await hmacHex(env.IP_HASH_SECRET || 'local-development-only', month + '|' + ip);
-  const rateKey = `${event.vid || 'anon'}:${networkId}`;
+  const rateKey = networkId;
   const { success } = await env.EVENT_RATE_LIMITER.limit({ key: rateKey });
   if (!success) return json({ error: 'rate limit exceeded' }, 429, { 'Retry-After': '60' });
 
@@ -150,25 +152,23 @@ function topCounts(map: Map<string, { count: number; [key: string]: unknown }>, 
 }
 
 async function analytics(request: Request, env: Env): Promise<Response> {
-  if (env.REQUIRE_ACCESS === 'true' &&
-      (!request.headers.get('Cf-Access-Authenticated-User-Email') || !request.headers.get('Cf-Access-Jwt-Assertion'))) {
-    return json({ error: 'Cloudflare Access authentication required' }, 403);
-  }
+  if (!await privateAccessEmail(request, env)) return json({ error: 'Cloudflare Access authentication required' }, 403);
   const url = new URL(request.url);
   const finite = (name: string, fallback: number) => {
     const value = Number(url.searchParams.get(name));
     return Number.isFinite(value) ? value : fallback;
   };
   const from = finite('from', 0), to = finite('to', Date.now() + 86400000);
-  const tz = finite('tz', 0);
+  // Newest first so truncation drops the oldest events, then restore chronological order.
   const rows = await env.DB.prepare(`SELECT t, type, vid, payload, country, colo, user_agent FROM events
-    WHERE t >= ?1 AND t < ?2 ORDER BY t ASC LIMIT 50000`).bind(from, to).all<StoredEvent>();
+    WHERE t >= ?1 AND t < ?2 ORDER BY t DESC LIMIT 50000`).bind(from, to).all<StoredEvent>();
+  rows.results.reverse();
   const fromDay = new Date(Math.max(0, from)).toISOString().slice(0, 10);
   const toDay = new Date(Math.max(0, to - 1)).toISOString().slice(0, 10);
   const dailyRows = await env.DB.prepare(`SELECT day, visits, searches, calcs, exports, snapshots,
     search_found, city_calcs, point_calcs, cache_hits
     FROM daily_totals WHERE day >= ?1 AND day <= ?2 ORDER BY day ASC`).bind(fromDay, toDay).all<DailyTotal>();
-  const events: AnalyticsEvent[] = rows.results.map((row) => ({ ...row, ...JSON.parse(row.payload) as Record<string, unknown> }));
+  const events: AnalyticsEvent[] = rows.results.map((row) => ({ ...JSON.parse(row.payload) as Record<string, unknown>, ...row }));
   const totals = dailyRows.results.reduce((sum, day) => ({
     visits: sum.visits + day.visits, uniqueVisitors: 0,
     searches: sum.searches + day.searches, calcs: sum.calcs + day.calcs,
@@ -400,7 +400,7 @@ async function getRegistry(slug: string, env: Env): Promise<Response> {
 }
 
 async function publishRegistry(request: Request, env: Env): Promise<Response> {
-  const email = requireRegistryAdmin(request, env);
+  const email = await requireRegistryAdmin(request, env);
   if (!email) return json({ error: env.REGISTRY_WRITES === 'true' ? 'Cloudflare Access authentication required' : 'registry writes are disabled' }, env.REGISTRY_WRITES === 'true' ? 403 : 503);
   let raw: unknown;
   try { raw = await request.json(); } catch { return json({ error: 'invalid JSON' }, 400); }
@@ -410,18 +410,24 @@ async function publishRegistry(request: Request, env: Env): Promise<Response> {
   const hash = await sha256Hex(snapshotJson);
   const id = crypto.randomUUID();
   const now = Date.now();
-  await env.DB.prepare(`INSERT INTO reviewed_snapshots (id, slug, revision, city_label, snapshot_json,
-    snapshot_sha256, reviewer_name, reviewed_at, review_decision, review_conditions, source_notes,
-    status, created_at, created_by) SELECT ?1, ?2, COALESCE(MAX(revision), 0) + 1, ?3, ?4, ?5,
-    ?6, ?7, ?8, ?9, ?10, 'published', ?11, ?12 FROM reviewed_snapshots WHERE slug = ?2`)
-    .bind(id, value.slug, value.cityLabel, snapshotJson, hash, value.review.reviewerName,
-      value.review.reviewedAt, value.review.decision, value.review.conditions || null, value.review.sourceNotes, now, email).run();
+  try {
+    await env.DB.prepare(`INSERT INTO reviewed_snapshots (id, slug, revision, city_label, snapshot_json,
+      snapshot_sha256, reviewer_name, reviewed_at, review_decision, review_conditions, source_notes,
+      status, created_at, created_by) SELECT ?1, ?2, COALESCE(MAX(revision), 0) + 1, ?3, ?4, ?5,
+      ?6, ?7, ?8, ?9, ?10, 'published', ?11, ?12 FROM reviewed_snapshots WHERE slug = ?2`)
+      .bind(id, value.slug, value.cityLabel, snapshotJson, hash, value.review.reviewerName,
+        value.review.reviewedAt, value.review.decision, value.review.conditions || null, value.review.sourceNotes, now, email).run();
+  } catch (error) {
+    // A concurrent publish for the same slug claimed this revision number first.
+    if (error instanceof Error && error.message.includes('UNIQUE')) return json({ error: 'concurrent publish; retry' }, 409);
+    throw error;
+  }
   const created = await env.DB.prepare('SELECT revision FROM reviewed_snapshots WHERE id = ?1').bind(id).first<{ revision: number }>();
   return json({ id, slug: value.slug, revision: created?.revision, snapshotSha256: hash }, 201);
 }
 
 async function withdrawRegistry(request: Request, id: string, env: Env): Promise<Response> {
-  const email = requireRegistryAdmin(request, env);
+  const email = await requireRegistryAdmin(request, env);
   if (!email) return json({ error: env.REGISTRY_WRITES === 'true' ? 'Cloudflare Access authentication required' : 'registry writes are disabled' }, env.REGISTRY_WRITES === 'true' ? 403 : 503);
   let raw: unknown;
   try { raw = await request.json(); } catch { return json({ error: 'invalid JSON' }, 400); }
@@ -450,27 +456,30 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return submitFeedback(request, env);
   }
   if (url.pathname === '/api/analytics-feedback' && request.method === 'GET') {
-    if (!privateAccessEmail(request, env)) return json({ error: 'Cloudflare Access authentication required' }, 403);
+    if (!await privateAccessEmail(request, env)) return json({ error: 'Cloudflare Access authentication required' }, 403);
     return listFeedback(env);
   }
   const feedbackScreenshotMatch = url.pathname.match(/^\/api\/analytics-feedback\/([0-9a-f-]+)\/screenshot$/);
   if (feedbackScreenshotMatch && request.method === 'GET') {
-    if (!privateAccessEmail(request, env)) return json({ error: 'Cloudflare Access authentication required' }, 403);
+    if (!await privateAccessEmail(request, env)) return json({ error: 'Cloudflare Access authentication required' }, 403);
     return feedbackScreenshot(feedbackScreenshotMatch[1], env);
   }
   const feedbackMatch = url.pathname.match(/^\/api\/analytics-feedback\/([0-9a-f-]+)$/);
   if (feedbackMatch && request.method === 'PATCH') {
-    const reviewer = privateAccessEmail(request, env);
+    const reviewer = await privateAccessEmail(request, env);
     if (!reviewer) return json({ error: 'Cloudflare Access authentication required' }, 403);
     return updateFeedbackStatus(request, feedbackMatch[1], reviewer, env);
   }
-  if (url.pathname === '/api/buildings' && request.method === 'GET') return handleBuildings(request, env);
+  if (url.pathname === '/api/buildings' && request.method === 'GET') {
+    const forceRequested = ['1', 'true'].includes(url.searchParams.get('force') || '');
+    return handleBuildings(request, env, forceRequested && !!await accessEmail(request, env));
+  }
   if (url.pathname === '/api/building-corrections' && request.method === 'POST') {
     const network = await hmacHex(env.IP_HASH_SECRET || 'local-development-only',
       request.headers.get('CF-Connecting-IP') || 'unknown');
     const limited = await env.BUILDINGS_RATE_LIMITER.limit({ key: `correction:${network}` });
     if (!limited.success) return json({ error: 'correction rate limit exceeded' }, 429, { 'Retry-After': '60' });
-    const email = accessEmail(request);
+    const email = await accessEmail(request, env);
     return submitBuildingCorrection(request, env.DB, email || `network:${network}`, !!email);
   }
   if (url.pathname === '/api/registry' && request.method === 'GET') return listRegistry(env);
@@ -491,23 +500,41 @@ async function handle(request: Request, env: Env): Promise<Response> {
   return env.ASSETS.fetch(request);
 }
 
+async function respond(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    if (shouldRedirectToCanonical(url)) {
+      url.protocol = 'https:';
+      url.hostname = 'tchumshabbos.com';
+      url.port = '';
+      return Response.redirect(url.toString(), 308);
+    }
+    return await handle(request, env);
+  }
+  catch (error) {
+    console.error(JSON.stringify({ message: 'request failed', path: new URL(request.url).pathname,
+      error: error instanceof Error ? error.message : String(error) }));
+    return json({ error: 'internal server error' }, 500);
+  }
+}
+
+const SECURITY_HEADERS: Record<string, string> = {
+  'X-Content-Type-Options': 'nosniff',
+  'Strict-Transport-Security': 'max-age=31536000',
+  'Content-Security-Policy': "frame-ancestors 'self'",
+};
+
+function withSecurityHeaders(response: Response): Response {
+  const secured = new Response(response.body, response);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    if (!secured.headers.has(name)) secured.headers.set(name, value);
+  }
+  return secured;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    try {
-      const url = new URL(request.url);
-      if (shouldRedirectToCanonical(url)) {
-        url.protocol = 'https:';
-        url.hostname = 'tchumshabbos.com';
-        url.port = '';
-        return Response.redirect(url.toString(), 308);
-      }
-      return await handle(request, env);
-    }
-    catch (error) {
-      console.error(JSON.stringify({ message: 'request failed', path: new URL(request.url).pathname,
-        error: error instanceof Error ? error.message : String(error) }));
-      return json({ error: 'internal server error' }, 500);
-    }
+    return withSecurityHeaders(await respond(request, env));
   },
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     const days = Math.max(30, Number(env.RAW_RETENTION_DAYS) || 365);

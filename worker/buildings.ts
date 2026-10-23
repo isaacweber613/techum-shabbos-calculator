@@ -3,7 +3,7 @@
  * Pure tile math is exported for unit tests; the Worker fills misses from Overture PMTiles.
  */
 
-import { fetchOvertureBuildings, OVERTURE_RELEASE } from './overture.ts';
+import { fetchOvertureBuildings, MAX_OVERTURE_TILES, OVERTURE_RELEASE, tilesForOvertureBBox } from './overture.ts';
 import { applyAcceptedCorrections } from './corrections.ts';
 
 export const TILE_DEG = 0.02; // ~2.2 km at mid-latitudes
@@ -137,11 +137,16 @@ async function hmacHex(secret: string, value: string): Promise<string> {
   return Array.from(bytes.slice(0, 16), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function loadTile(env: BuildingsEnv, key: string): Promise<{ meta: TileMeta; buildings: Building[] } | null> {
-  const meta = await env.DB.prepare(
-    'SELECT tile_key, fetched_at, checked_at, building_count, bytes, r2_key FROM building_tiles WHERE tile_key = ?1',
-  ).bind(key).first<TileMeta>();
-  if (!meta) return null;
+async function loadTiles(env: BuildingsEnv, keys: string[]): Promise<Map<string, { meta: TileMeta; buildings: Building[] }>> {
+  const placeholders = keys.map((_, index) => `?${index + 1}`).join(', ');
+  const metas = await env.DB.prepare(
+    `SELECT tile_key, fetched_at, checked_at, building_count, bytes, r2_key FROM building_tiles WHERE tile_key IN (${placeholders})`,
+  ).bind(...keys).all<TileMeta>();
+  const loaded = await Promise.all(metas.results.map((meta) => loadTilePayload(env, meta)));
+  return new Map(loaded.filter((tile) => tile !== null).map((tile) => [tile.meta.tile_key, tile]));
+}
+
+async function loadTilePayload(env: BuildingsEnv, meta: TileMeta): Promise<{ meta: TileMeta; buildings: Building[] } | null> {
   const obj = await env.BUILDINGS.get(meta.r2_key);
   if (!obj) return null;
   try {
@@ -153,14 +158,14 @@ async function loadTile(env: BuildingsEnv, key: string): Promise<{ meta: TileMet
   }
 }
 
-async function storeTile(env: BuildingsEnv, coord: TileCoord, buildings: Building[], nowIso: string): Promise<void> {
+async function storeTile(env: BuildingsEnv, coord: TileCoord, buildings: Building[], nowIso: string): Promise<D1PreparedStatement> {
   const r2Key = `tiles/${coord.key}.json`;
   const body = JSON.stringify(buildings);
   await env.BUILDINGS.put(r2Key, body, {
     httpMetadata: { contentType: 'application/json' },
     customMetadata: { fetchedAt: nowIso, count: String(buildings.length) },
   });
-  await env.DB.prepare(`INSERT INTO building_tiles (tile_key, fetched_at, checked_at, building_count, bytes, r2_key)
+  return env.DB.prepare(`INSERT INTO building_tiles (tile_key, fetched_at, checked_at, building_count, bytes, r2_key)
     VALUES (?1, ?2, ?2, ?3, ?4, ?5)
     ON CONFLICT(tile_key) DO UPDATE SET
       fetched_at = excluded.fetched_at,
@@ -168,7 +173,7 @@ async function storeTile(env: BuildingsEnv, coord: TileCoord, buildings: Buildin
       building_count = excluded.building_count,
       bytes = excluded.bytes,
       r2_key = excluded.r2_key`)
-    .bind(coord.key, nowIso, buildings.length, body.length, r2Key).run();
+    .bind(coord.key, nowIso, buildings.length, body.length, r2Key);
 }
 
 async function reserveFillSlot(env: BuildingsEnv): Promise<void> {
@@ -200,6 +205,23 @@ export function bboxForTiles(tiles: TileCoord[]): BBox {
   };
 }
 
+/**
+ * Partition cache tiles into groups whose Overture z14 footprint stays within the per-fetch
+ * cap. At high latitudes a full 6×6 request spans more z14 tiles than one fetch allows.
+ */
+export function overtureFetchGroups(tiles: TileCoord[]): TileCoord[][] {
+  if (tiles.length <= 1 || tilesForOvertureBBox(bboxForTiles(tiles)).length <= MAX_OVERTURE_TILES) return [tiles];
+  const is = tiles.map((tile) => tile.i), js = tiles.map((tile) => tile.j);
+  const iSpan = Math.max(...is) - Math.min(...is), jSpan = Math.max(...js) - Math.min(...js);
+  const axis: 'i' | 'j' = iSpan >= jSpan ? 'i' : 'j';
+  const values = [...new Set(tiles.map((tile) => tile[axis]))].sort((a, b) => a - b);
+  const pivot = values[Math.ceil(values.length / 2)];
+  return [
+    ...overtureFetchGroups(tiles.filter((tile) => tile[axis] < pivot)),
+    ...overtureFetchGroups(tiles.filter((tile) => tile[axis] >= pivot)),
+  ];
+}
+
 async function fillTiles(
   env: BuildingsEnv,
   tiles: TileCoord[],
@@ -208,15 +230,17 @@ async function fillTiles(
 
   // Fetch the cold area once, then partition the response into cache tiles. The public
   // Overture PMTiles archive serves byte ranges, so only intersecting vector tiles move.
-  const { buildings: allBuildings, release } = await fetchOvertureBuildings(bboxForTiles(tiles));
+  const fetched = await Promise.all(overtureFetchGroups(tiles).map(async (group) =>
+    ({ group, ...await fetchOvertureBuildings(bboxForTiles(group)) })));
   const nowIso = new Date().toISOString();
   const filled = new Map<string, { buildings: Building[]; fetchedAt: string }>();
-  for (const tile of tiles) {
-    const buildings = filterBuildingsToBBox(allBuildings, tileBBox(tile.i, tile.j));
-    await storeTile(env, tile, buildings, nowIso);
+  const writes = await Promise.all(fetched.flatMap(({ group, buildings: groupBuildings }) => group.map((tile) => {
+    const buildings = filterBuildingsToBBox(groupBuildings, tileBBox(tile.i, tile.j));
     filled.set(tile.key, { buildings, fetchedAt: nowIso });
-  }
-  return { release, tiles: filled };
+    return storeTile(env, tile, buildings, nowIso);
+  })));
+  await env.DB.batch(writes);
+  return { release: fetched[0].release, tiles: filled };
 }
 
 export function parseBBoxParams(params: URLSearchParams): BBox | null {
@@ -233,7 +257,7 @@ export function parseBBoxParams(params: URLSearchParams): BBox | null {
  * GET /api/buildings?south=&west=&north=&east=&force=0|1
  * Unions fixed-degree tiles covering the bbox. Cold tiles are filled from Overture into R2.
  */
-export async function handleBuildings(request: Request, env: BuildingsEnv): Promise<Response> {
+export async function handleBuildings(request: Request, env: BuildingsEnv, allowForce = false): Promise<Response> {
   if (!env.BUILDINGS) return json({ error: 'building cache is not configured' }, 503);
 
   const url = new URL(request.url);
@@ -251,7 +275,8 @@ export async function handleBuildings(request: Request, env: BuildingsEnv): Prom
     return json({ error: `bbox covers ${tiles.length} tiles; max is ${MAX_TILES_PER_REQUEST}` }, 400);
   }
 
-  const force = url.searchParams.get('force') === '1' || url.searchParams.get('force') === 'true';
+  // Bypassing the shared tile cache refetches from Overture, so only verified reviewers may.
+  const force = allowForce && (url.searchParams.get('force') === '1' || url.searchParams.get('force') === 'true');
 
   const network = await hmacHex(env.IP_HASH_SECRET || 'local-development-only',
     request.headers.get('CF-Connecting-IP') || 'unknown');
@@ -266,16 +291,15 @@ export async function handleBuildings(request: Request, env: BuildingsEnv): Prom
   const coldTiles: TileCoord[] = [];
   const fillReleases: string[] = [];
 
+  const cachedTiles = force ? new Map() : await loadTiles(env, tiles.map((tile) => tile.key));
   for (const tile of tiles) {
-    if (!force) {
-      const cached = await loadTile(env, tile.key);
-      if (cached) {
-        groups.push(cached.buildings);
-        fetchedAts.push(cached.meta.fetched_at);
-        checkedAts.push(cached.meta.checked_at || cached.meta.fetched_at);
-        hits++;
-        continue;
-      }
+    const cached = cachedTiles.get(tile.key);
+    if (cached) {
+      groups.push(cached.buildings);
+      fetchedAts.push(cached.meta.fetched_at);
+      checkedAts.push(cached.meta.checked_at || cached.meta.fetched_at);
+      hits++;
+      continue;
     }
     coldTiles.push(tile);
   }

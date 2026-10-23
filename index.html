@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Techum Shabbos Calculator (תחום שבת) | 2,000 Amos Map</title>
   <meta name="description" content="Explore a draft techum Shabbos boundary for any address using building footprints, ibur ha'ir, ribua, and a 2,000-amah map. Review every result with a qualified rav." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%23365f46%27/%3E%3Ctext x=%2732%27 y=%2746%27 font-size=%2740%27 font-family=%27serif%27 text-anchor=%27middle%27 fill=%27%23fff8e8%27%3E%D7%AA%3C/text%3E%3C/svg%3E" />
   <link rel="canonical" href="https://tchumshabbos.com/" />
   <meta name="robots" content="index,follow,max-image-preview:large" />
   <meta property="og:type" content="website" />
@@ -30,7 +31,7 @@
   </script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261005-1" />
+  <link rel="stylesheet" href="css/style.css?v=20261023-1" />
   <script>
     (() => {
       const requestedDesign = new URLSearchParams(location.search).get('design');
@@ -39,7 +40,7 @@
         : '10';
     })();
   </script>
-  <link rel="stylesheet" href="css/design-experience.css?v=20260720-1" />
+  <link rel="stylesheet" href="css/design-experience.css?v=20261023-1" />
   <link rel="stylesheet" href="css/feedback.css?v=20260722-4" />
 </head>
 <body>
@@ -51,7 +52,7 @@
     </button>
     <button id="btn-dismiss-banner" type="button" aria-label="Dismiss disclaimer">×</button>
   </div>
-  <div id="app">
+  <main id="app">
     <aside id="sidebar">
       <header class="brand"><a class="brand-mark" href="/">ת</a><div><h1>Techum Shabbos</h1><p><span lang="he" dir="rtl">תחום שבת</span> boundary calculator</p></div><a class="about-link" href="/about">About</a></header>
       <section class="intro"><span class="eyebrow">Start with a place</span><h2>Where will you be for Shabbos?</h2><p>Enter the address where your techum begins. We’ll guide you through the rest.</p></section>
@@ -256,20 +257,18 @@
       <footer>Built for careful review · <a href="/about">Method &amp; halachic sources</a> · <a href="/guide">What is techum Shabbos?</a> · <a href="/he/">תחום שבת בעברית</a></footer>
     </aside>
     <div id="map"></div>
-  </div>
+  </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script src="js/track.js"></script>
   <script src="js/geometry.js?v=20261006-2"></script>
-  <script src="js/data.js?v=20261006-2"></script>
-  <script src="js/settings.js?v=20261005-1"></script>
-  <script src="js/kml.js?v=20260714-1"></script>
-  <script src="js/map-export.js?v=20260715-2"></script>
-  <script src="js/main.js?v=20261006-2"></script>
-  <script src="js/design-experience.js?v=20260720-1"></script>
+  <script src="js/data.js?v=20261023-1"></script>
+  <script src="js/settings.js?v=20261023-1"></script>
+  <script src="js/kml.js?v=20260714-2"></script>
+  <script src="js/map-export.js?v=20261023-1"></script>
+  <script src="js/main.js?v=20261023-1"></script>
+  <script src="js/design-experience.js?v=20261023-1"></script>
   <script src="js/feedback.js?v=20260722-2"></script>
 </body>
 </html>

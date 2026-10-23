@@ -11,11 +11,12 @@ Top-level exports from application, library, hook, context, and worker modules.
 | `BUILDINGS_CACHE_VERSION` | `inferred` | `worker/buildings.ts` |
 | `BuildingsEnv` | `type` | `worker/buildings.ts` |
 | `filterBuildingsToBBox` | `(buildings: Building[], bbox: BBox): Building[]` | `worker/buildings.ts` |
-| `handleBuildings` | `(request: Request, env: BuildingsEnv): Promise<Response>` | `worker/buildings.ts` |
+| `handleBuildings` | `(request: Request, env: BuildingsEnv, allowForce = false): Promise<Response>` | `worker/buildings.ts` |
 | `isValidBBox` | `(bbox: BBox): boolean` | `worker/buildings.ts` |
 | `MAX_TILES_PER_REQUEST` | `inferred` | `worker/buildings.ts` |
 | `mergeBuildings` | `(groups: Building[][]): Building[]` | `worker/buildings.ts` |
 | `oldestIso` | `(dates: string[]): string` | `worker/buildings.ts` |
+| `overtureFetchGroups` | `(tiles: TileCoord[]): TileCoord[][]` | `worker/buildings.ts` |
 | `parseBBoxParams` | `(params: URLSearchParams): BBox \| null` | `worker/buildings.ts` |
 | `parseTileKey` | `(key: string): TileCoord \| null` | `worker/buildings.ts` |
 | `releasesForBuildings` | `(buildings: Building[], fallback: string[]): string[]` | `worker/buildings.ts` |
@@ -52,6 +53,7 @@ Top-level exports from application, library, hook, context, and worker modules.
 | `decodeOvertureTile` | `(data: ArrayBuffer, tile: OvertureTile, release = OVERTURE_RELEASE): Building[]` | `worker/overture.ts` |
 | `fetchOvertureBuildings` | `(bbox: BBox): Promise<` | `worker/overture.ts` |
 | `latestOvertureRelease` | `(fetchImpl: FetchLike = fetch): Promise<string>` | `worker/overture.ts` |
+| `MAX_OVERTURE_TILES` | `inferred` | `worker/overture.ts` |
 | `OVERTURE_RELEASE` | `inferred` | `worker/overture.ts` |
 | `OVERTURE_STAC_CATALOG` | `inferred` | `worker/overture.ts` |
 | `OVERTURE_ZOOM` | `inferred` | `worker/overture.ts` |

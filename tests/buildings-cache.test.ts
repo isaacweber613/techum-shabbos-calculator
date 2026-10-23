@@ -14,6 +14,7 @@ import {
   bboxForTiles,
   parseBBoxParams,
   releasesForBuildings,
+  overtureFetchGroups,
 } from '../worker/buildings.ts';
 import {
   OVERTURE_RELEASE,
@@ -24,6 +25,7 @@ import {
   resolveOvertureRelease,
   OVERTURE_STAC_CATALOG,
   _resetOvertureReleaseCache,
+  MAX_OVERTURE_TILES,
 } from '../worker/overture.ts';
 import { validateCorrectionInput } from '../worker/corrections.ts';
 import { createRequire } from 'node:module';
@@ -45,6 +47,16 @@ test('tile index and key round-trip', () => {
   assert.equal(tileKey(2037, -3701), `v2/2037/-3701`);
   assert.deepEqual(parseTileKey('v2/2037/-3701'), { i: 2037, j: -3701, key: 'v2/2037/-3701' });
   assert.equal(parseTileKey('v1/1/2'), null);
+});
+
+test('high-latitude cold fills split into Overture-sized fetch groups covering every tile', () => {
+  for (const [lat, lon] of [[51.5, -0.12], [53.48, -2.24], [59.9, 10.75], [41.7, -74.6]]) {
+    const tiles = tilesForBBox({ south: lat, west: lon, north: lat + 0.12, east: lon + 0.12 });
+    const groups = overtureFetchGroups(tiles);
+    assert.deepEqual(groups.flat().map((t) => t.key).sort(), tiles.map((t) => t.key).sort());
+    for (const group of groups) assert.ok(tilesForOvertureBBox(bboxForTiles(group)).length <= MAX_OVERTURE_TILES);
+    if (lat < 45) assert.equal(groups.length, 1);
+  }
 });
 
 test('tile bbox is half-open degree cell', () => {

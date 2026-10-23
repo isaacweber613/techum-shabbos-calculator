@@ -192,7 +192,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12])'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-1)'));
   }
 });
 
@@ -254,6 +254,9 @@ test('snapshot replay preserves legacy overlap choices and explicit modern polic
       state: {}, settings: {}, S: { ...S, save: (value) => { persisted = value; } },
       G: { makeProjection: () => ({}) }, map: { setView() {} },
       setPin() {}, prepareBuildings() {}, setStatus() {}, track() {},
+      clearTimeout() {}, automaticCalculationTimer: null, cancelCalculation() {}, cancelMapMode() {}, refreshSettingsInputs() {},
+      saveSettings: () => context.S.save(context.settings),
+      document: { getElementById: () => ({ value: '' }) },
       recompute: () => { computed = context.settings; },
     };
     const apply = vm.runInNewContext(`(${source})`, context);
@@ -426,6 +429,106 @@ test('background engine loads the same geometry.js build as the page', () => {
 test('a failed re-analysis clears the old boundary instead of leaving it looking current', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
   assert.match(main, /if \(skipRender\) throw error;[\s\S]{0,120}state\.result = null;\s*render\(\);\s*setStatus\('Recalculation failed: /);
+});
+
+test('analytics non-defaults never carry reviewer records, only their counts', () => {
+  const stored = S.normalize(JSON.parse(JSON.stringify(S.DEFAULTS)));
+  assert.deepEqual(S.diffFromDefaults(stored), {}, 'JSON-roundtripped empty review objects are not reported');
+  stored.cityQualificationOverrides = { 'cluster:v2:7:abc': { decision: true, basis: 'rav-attestation',
+    evidence: 'Private note from the rav', memberIds: ['w1@0,0,1,1'] } };
+  const diff = S.diffFromDefaults(stored);
+  assert.deepEqual(diff, { cityQualificationOverridesCount: 1 });
+  assert.doesNotMatch(JSON.stringify(diff), /Private note|w1@/);
+});
+
+test('settings save failures are reported and a stored perimeter flag is not restored', () => {
+  const saved = globalThis.localStorage;
+  try {
+    globalThis.localStorage = { setItem() { throw new Error('quota'); },
+      getItem: () => JSON.stringify({ useValidatedPerimeter: true, dataSourceVersion: 2 }) };
+    assert.equal(S.save({}), false);
+    assert.equal(S.load().useValidatedPerimeter, false, 'the perimeter itself is never persisted');
+  } finally { globalThis.localStorage = saved; }
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.match(main, /settingsSaveFailed = !S\.save\(settings\)/);
+  assert.doesNotMatch(main, /[^!]S\.save\(settings\)/, 'every save goes through saveSettings()');
+  assert.match(main, /\$\('use-perimeter'\)\.checked = !!settings\.useValidatedPerimeter && !!state\.validatedPerimeter/);
+});
+
+test('browser building cache keys are versioned with the pinned Overture release', () => {
+  const overture = fs.readFileSync(path.join(__dirname, '..', 'worker', 'overture.ts'), 'utf8');
+  const release = overture.match(/OVERTURE_RELEASE = '([^']+)'/)[1];
+  assert.ok(D._internals.CACHE_VERSION.startsWith(release + '#'),
+    'bump CACHE_VERSION in js/data.js when worker/overture.ts adopts a new release');
+  const bbox = { south: 41.7, west: -74.6, north: 41.72, east: -74.57 };
+  assert.equal(D._internals.cacheKey(bbox), `${D._internals.CACHE_VERSION}|${D._internals.bboxKey(bbox)}`);
+});
+
+test('PDF summary, recalculation, and race guards follow the current result', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.doesNotMatch(main, /getElementById\('results'\)\.innerText/, 'collapsed review notes must reach the PDF');
+  assert.match(main, /'CALCULATION SUMMARY\\n' \+ resultSummaryText/);
+  assert.match(main, /const onChange = \(\) => \{ saveSettings\(\); if \(state\.result\) recompute\(\); \}/);
+  assert.match(main, /state\.manualBuildings = \[\]; if \(state\.result\) \{ prepareBuildings\(\); recompute\(\); \}/);
+  assert.match(main, /if \(!state\.pin \|\| !state\.proj\) return null;/);
+  const calc = main.slice(main.indexOf('  async function calculate('), main.indexOf('  function renderPerformanceReport('));
+  assert.ok(calc.indexOf('state.proj = proj') > calc.indexOf('D.fetchBuildingsCached'), 'frame switches only after a fetch succeeds');
+  assert.match(calc, /const startPin = state\.pin;/);
+  assert.match(calc, /await nextPaint\(\);\s*if \(isStale\(\)\) return;\s*const renderStarted/);
+  assert.match(main, /function invalidateCalculationForMovedPin\(\) \{\s*latestAnalysisId\+\+;/);
+  assert.match(main, /if \(state\.validatedPerimeter\) \{\s*L\.polygon/);
+  const geojson = main.slice(main.indexOf('  function exportGeoJSON('), main.indexOf('  function exportKMZ('));
+  assert.doesNotMatch(geojson, /L\.polygon/, 'export must not draw map layers');
+  const kml = main.slice(main.indexOf('  function exportKML('), main.indexOf('  function exportGeoJSON('));
+  assert.match(kml, /if \(canRunComparisonAmah\(\)\)/);
+});
+
+test('snapshot and registry loads refresh settings, label, and in-flight work', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const apply = main.slice(main.indexOf('  function applySnapshot('), main.indexOf('  async function browseRegistry('));
+  assert.match(apply, /cancelCalculation\(\);/);
+  assert.match(apply, /refreshSettingsInputs\(\);/);
+  assert.match(apply, /document\.getElementById\('address'\)\.value = label/);
+  assert.match(main, /if \(!detail\.ok\) throw new Error/);
+  const experience = fs.readFileSync(path.join(__dirname, '..', 'js', 'design-experience.js'), 'utf8');
+  assert.match(experience, /addEventListener\('techum:settings-refreshed', updateSettingsSummary\)/);
+});
+
+test('map draw modes stay reachable and the drawer manages focus', () => {
+  const experience = fs.readFileSync(path.join(__dirname, '..', 'js', 'design-experience.js'), 'utf8');
+  assert.match(experience, /mapModeBar\.id = 'map-mode-bar'/);
+  assert.match(experience, /\['btn-finish-building', 'btn-cancel-map-mode'\]/);
+  assert.match(experience, /disableClickPropagation\(mapModeBar\)/);
+  assert.match(experience, /classList\.contains\('map-mode-active'\) && document\.body\.classList\.contains\('design-settings-open'\)/);
+  assert.match(experience, /getElementById\('design-drawer-close'\)\?\.focus\(\)/);
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.match(main, /select\.dataset\.clusterKey = cluster\.key/);
+  assert.match(main, /target\.focus\(\{ preventScroll: true \}\)/);
+});
+
+test('export libraries load lazily with subresource integrity and PNGs carry a caption', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.doesNotMatch(html, /html2canvas|jspdf/, 'not loaded on every page view');
+  assert.match(main, /html2canvas@1\.4\.1\/dist\/html2canvas\.min\.js[\s\S]{0,120}integrity: 'sha384-/);
+  assert.match(main, /jspdf@2\.5\.2\/dist\/jspdf\.umd\.min\.js[\s\S]{0,120}integrity: 'sha384-/);
+  assert.match(main, /script\.crossOrigin = 'anonymous'/);
+  assert.match(main, /captureMapCanvas\(\{ caption: true \}\)/);
+  assert.match(main, /\.leaflet-control-zoom, \.leaflet-control-layers/);
+  const lines = require('../js/map-export.js').exportCaptionLines({ label: 'Woodbourne, NY', profileLabel: 'Chazon Ish', amahCm: 57.6 });
+  assert.equal(lines[0], 'Woodbourne, NY');
+  assert.match(lines[1], /Chazon Ish · amah 22\.68 in \(57\.6 cm\)/);
+  assert.match(lines[2], /DRAFT .* not a psak/);
+  assert.match(html, /<main id="app">/);
+  assert.match(html, /rel="icon"/);
+});
+
+test('public guides name Overture as the footprint source', () => {
+  for (const file of ['guide.html', path.join('he', 'index.html')]) {
+    const html = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+    assert.doesNotMatch(html, /footprints from OpenStreetMap|מ־OpenStreetMap/);
+    assert.match(html, /Overture Maps/);
+  }
 });
 
 console.log(`\n${passed} app tests passed`);
