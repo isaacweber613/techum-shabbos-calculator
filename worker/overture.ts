@@ -185,7 +185,10 @@ export function preferLargestDuplicate(buildings: Building[]): Building[] {
   return [...byId.values()].map((entry) => entry.building);
 }
 
-export const MAX_OVERTURE_TILES = 64;
+// Workers Free allows 50 external subrequests per invocation. One fetch is one z14 tile
+// range; the rest of the budget covers release resolution and the PMTiles header/leaf
+// directories. Larger cold areas are filled across several requests (see buildings.ts).
+export const MAX_OVERTURE_TILES = 36;
 
 export async function fetchOvertureBuildings(bbox: BBox): Promise<{ buildings: Building[]; release: string }> {
   const tiles = tilesForOvertureBBox(bbox);

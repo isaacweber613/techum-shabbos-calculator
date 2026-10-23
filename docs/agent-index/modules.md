@@ -5,6 +5,10 @@ Top-level exports from application, library, hook, context, and worker modules.
 
 | Export | Signature/type | Source |
 | --- | --- | --- |
+| `AccessConfig` | `type` | `worker/access.ts` |
+| `accessEmail` | `(request: Request, config: AccessConfig): Promise<string \| null>` | `worker/access.ts` |
+| `accessToken` | `(request: Request): string \| null` | `worker/access.ts` |
+| `verifyAccessJwt` | `(token: string, config: AccessConfig, fetcher: typeof fetch = fetch, now = Date.now()` | `worker/access.ts` |
 | `BBox` | `type` | `worker/buildings.ts` |
 | `bboxForTiles` | `(tiles: TileCoord[]): BBox` | `worker/buildings.ts` |
 | `Building` | `type` | `worker/buildings.ts` |
