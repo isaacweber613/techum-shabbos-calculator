@@ -207,7 +207,8 @@ export function bboxForTiles(tiles: TileCoord[]): BBox {
 
 /**
  * Partition cache tiles into groups whose Overture z14 footprint stays within the per-fetch
- * cap. At high latitudes a full 6×6 request spans more z14 tiles than one fetch allows.
+ * cap. A full 6×6 request can span more z14 tiles than one invocation may fetch, so each
+ * request fills one group and the client retries until the area is complete.
  */
 export function overtureFetchGroups(tiles: TileCoord[]): TileCoord[][] {
   if (tiles.length <= 1 || tilesForOvertureBBox(bboxForTiles(tiles)).length <= MAX_OVERTURE_TILES) return [tiles];
@@ -230,17 +231,16 @@ async function fillTiles(
 
   // Fetch the cold area once, then partition the response into cache tiles. The public
   // Overture PMTiles archive serves byte ranges, so only intersecting vector tiles move.
-  const fetched = await Promise.all(overtureFetchGroups(tiles).map(async (group) =>
-    ({ group, ...await fetchOvertureBuildings(bboxForTiles(group)) })));
+  const { buildings: allBuildings, release } = await fetchOvertureBuildings(bboxForTiles(tiles));
   const nowIso = new Date().toISOString();
   const filled = new Map<string, { buildings: Building[]; fetchedAt: string }>();
-  const writes = await Promise.all(fetched.flatMap(({ group, buildings: groupBuildings }) => group.map((tile) => {
-    const buildings = filterBuildingsToBBox(groupBuildings, tileBBox(tile.i, tile.j));
+  const writes = await Promise.all(tiles.map((tile) => {
+    const buildings = filterBuildingsToBBox(allBuildings, tileBBox(tile.i, tile.j));
     filled.set(tile.key, { buildings, fetchedAt: nowIso });
     return storeTile(env, tile, buildings, nowIso);
-  })));
+  }));
   await env.DB.batch(writes);
-  return { release: fetched[0].release, tiles: filled };
+  return { release, tiles: filled };
 }
 
 export function parseBBoxParams(params: URLSearchParams): BBox | null {
@@ -305,8 +305,16 @@ export async function handleBuildings(request: Request, env: BuildingsEnv, allow
   }
 
   if (coldTiles.length) {
+    // Fill one invocation-sized group now. Never answer with a partial area: the remaining
+    // tiles are reported as a retryable fill-in-progress and filled by the next request.
+    const [fillNow] = overtureFetchGroups(coldTiles);
+    const remaining = coldTiles.length - fillNow.length;
     try {
-      const { release, tiles: filledTiles } = await fillTiles(env, coldTiles);
+      const { release, tiles: filledTiles } = await fillTiles(env, fillNow);
+      if (remaining) {
+        return json({ error: 'building fill in progress; retry', remainingTiles: remaining }, 429,
+          { 'Retry-After': '1', 'X-Building-Fill-Remaining': String(remaining) });
+      }
       fillReleases.push(release);
       for (const tile of coldTiles) {
         const filled = filledTiles.get(tile.key);

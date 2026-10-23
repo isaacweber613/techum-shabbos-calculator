@@ -352,10 +352,19 @@
     });
     if (force) params.set('force', '1');
     let res;
+    let fillRemaining = Infinity;
     for (let attempt = 0; ; attempt++) {
       res = await fetch('/api/buildings?' + params.toString(), {
         headers: { Accept: 'application/json' },
       });
+      // A large cold area is filled over several requests; keep going while it shrinks.
+      const remaining = Number(res.headers.get('X-Building-Fill-Remaining'));
+      if (res.status === 429 && Number.isFinite(remaining) && remaining > 0 && remaining < fillRemaining) {
+        fillRemaining = remaining;
+        attempt = -1;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
       const delay = res.ok ? null : retryDelayMs(res.status, res.headers.get('Retry-After'), attempt);
       if (delay === null) break;
       await new Promise((resolve) => setTimeout(resolve, delay));

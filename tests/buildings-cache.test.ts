@@ -49,13 +49,12 @@ test('tile index and key round-trip', () => {
   assert.equal(parseTileKey('v1/1/2'), null);
 });
 
-test('high-latitude cold fills split into Overture-sized fetch groups covering every tile', () => {
-  for (const [lat, lon] of [[51.5, -0.12], [53.48, -2.24], [59.9, 10.75], [41.7, -74.6]]) {
+test('cold fills split into invocation-sized Overture fetch groups covering every tile', () => {
+  for (const [lat, lon] of [[51.5, -0.12], [53.48, -2.24], [59.9, 10.75], [69.6, 18.9], [41.7, -74.6], [0, 0]]) {
     const tiles = tilesForBBox({ south: lat, west: lon, north: lat + 0.12, east: lon + 0.12 });
     const groups = overtureFetchGroups(tiles);
     assert.deepEqual(groups.flat().map((t) => t.key).sort(), tiles.map((t) => t.key).sort());
     for (const group of groups) assert.ok(tilesForOvertureBBox(bboxForTiles(group)).length <= MAX_OVERTURE_TILES);
-    if (lat < 45) assert.equal(groups.length, 1);
   }
 });
 
