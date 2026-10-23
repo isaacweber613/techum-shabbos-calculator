@@ -1898,9 +1898,10 @@
     const key = clonedMap.querySelector('#simple-map-key');
     if (key) {
       key.classList.add('open');
-      // Sit above the tile attribution so neither covers the other.
-      const attribution = clonedMap.querySelector('.leaflet-control-attribution');
-      Object.assign(key.style, { left: '10px', right: 'auto', bottom: `${(attribution ? attribution.offsetHeight : 0) + 8}px`,
+      // Sit above the tile attribution (Leaflet's, or Google's repainted strip) so neither covers the other.
+      const attributionHeight = Math.max(0, ...[...clonedMap.querySelectorAll(
+        '.leaflet-control-attribution, .google-static-attribution-overlay')].map((element) => element.offsetHeight));
+      Object.assign(key.style, { left: '10px', right: 'auto', bottom: `${attributionHeight + 8}px`,
         transform: 'none', maxWidth: 'calc(100% - 20px)', backdropFilter: 'none' });
       const toggle = key.querySelector('.map-key-toggle'); if (toggle) toggle.style.display = 'none';
       const items = key.querySelector('.map-key-items'); if (items) items.style.flexWrap = 'wrap';
@@ -2096,8 +2097,10 @@
         .replace(/[—–]/g, '-').replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/·/g, '-')
         .replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/…/g, '...')
         .normalize('NFKD').replace(/[^\x20-\x7E\n]/g, '');
+      // Wrap with the font the report is printed in, or long lines run off the page.
+      pdf.setFont('courier', 'normal'); pdf.setFontSize(8.5);
       const lines = pdfSafeReport.split('\n').flatMap((line) =>
-        line ? pdf.splitTextToSize(line, usableW - 40) : ['']);
+        line ? pdf.splitTextToSize(line, usableW) : ['']);
       pdf.addPage('letter', 'landscape'); paintPdfPage();
       pdf.setTextColor(54, 95, 70); pdf.setFont('courier', 'normal'); pdf.setFontSize(8.5);
       let y = 12;
