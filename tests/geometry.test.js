@@ -538,5 +538,156 @@ function rectSpan(corners) {
     fromArm.techumRegions.some((ring) => G._internals.pointInRing(armPin, ring)));
 }
 
+// --- rev. 17 determinism and measurement regressions ------------------------------
+const withIds = (houses, prefix) => houses.map((h, i) => ({ ...h, id: `${prefix}-${i}` }));
+const shiftHouses = (houses, dx, dy) => houses.map((h) => {
+  const ring = h.ring.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+  return { ...h, ring, bbox: G._internals.bboxOfRing(ring) };
+});
+const regionSig = (regions) => regions.map((ring) => ring.map((p) => `${p.x.toFixed(4)},${p.y.toFixed(4)}`).sort().join(';')).sort().join('|');
+
+// City-status review keys follow stable building ids, not the projection origin or angle.
+{
+  const town = withIds(grid6(0, 0), 'gers');
+  const first = G.runPipeline(town, S, { x: 0, y: 0 });
+  const record = { decision: false, basis: 'does-not-qualify', memberIds: first.qualificationClusters[0].memberIds };
+  const overrides = { [first.qualificationClusters[0].key]: record };
+  const moved = G.runPipeline(shiftHouses(town, 37, -12), { ...S, cityQualificationOverrides: overrides }, { x: 37, y: -12 });
+  const angled = G.runPipeline(town, { ...S, squaringAngleDeg: 10, cityQualificationOverrides: overrides }, { x: 0, y: 0 });
+  assert('rev17: cluster key is unchanged when the pin (projection origin) moves',
+    moved.qualificationClusters[0].key === first.qualificationClusters[0].key);
+  assert('rev17: reviewer "not a city" survives a moved pin and a reviewer squaring angle',
+    [moved, angled].every((r) => r.qualificationClusters[0].qualificationSource === 'reviewer' &&
+      r.qualificationClusters[0].qualifiesAsCity === false && r.mode === 'building'));
+
+  // Legacy (v2) records embed the projected bbox in each member id and in the key hash.
+  const legacyIds = town.map((h) => `${h.id}@${[h.bbox.minX, h.bbox.minY, h.bbox.maxX, h.bbox.maxY]
+    .map((v) => v.toFixed(3)).join(',')}`).sort();
+  let hash = 2166136261;
+  for (const ch of legacyIds.join('\u001f')) { hash ^= ch.charCodeAt(0); hash = Math.imul(hash, 16777619) >>> 0; }
+  const legacyKey = `cluster:v2:${legacyIds.length}:${hash.toString(16).padStart(8, '0')}`;
+  const legacy = { [legacyKey]: { decision: false, basis: 'does-not-qualify', memberIds: legacyIds } };
+  const sameOrigin = G.runPipeline(town, { ...S, cityQualificationOverrides: legacy }, { x: 0, y: 0 });
+  const boolOnly = G.runPipeline(town, { ...S, cityQualificationOverrides: { [legacyKey]: false } }, { x: 0, y: 0 });
+  const legacyMoved = G.runPipeline(shiftHouses(town, 37, -12), { ...S, cityQualificationOverrides: legacy }, { x: 37, y: -12 });
+  assert('rev17: a legacy v2 key still matches exactly at its original origin',
+    [sameOrigin, boolOnly].every((r) => r.qualificationClusters[0].qualificationSource === 'reviewer' &&
+      r.qualificationClusters[0].qualifiesAsCity === false));
+  assert('rev17: a legacy v2 record remaps by the ids embedded in its member ids after the pin moves',
+    legacyMoved.qualificationClusters[0].qualificationSource === 'reviewer-remapped' &&
+    legacyMoved.qualificationClusters[0].qualificationRemapScore === 1 &&
+    legacyMoved.qualificationClusters[0].qualifiesAsCity === false);
+}
+
+// Bow detection and the Rema depth test measure from the houses (SA 398:3-4; spec §1.5 step 5).
+{
+  const uCity = (mouthAmos, depthAmos) => {
+    const mouth = mouthAmos * RCN, rightX = 10 + mouth, top = depthAmos * RCN, out = [];
+    const steps = Math.ceil(top / 30);
+    for (let k = 0; k <= steps; k++) { out.push(squareHouse(0, (top * k) / steps)); out.push(squareHouse(rightX, (top * k) / steps)); }
+    for (let x = 30; x < rightX - 5; x += 30) out.push(squareHouse(x, 0));
+    return { houses: out, rightX, top };
+  };
+  const bows = (r) => r.concavityAudit.filter((a) => a.shapeKind === 'bow');
+  const narrow = uCity(3990, 2083), wide = uCity(4010, 2083);
+  assert('rev17: a bow with a 3990-amah house-to-house mouth is filled without review',
+    bows(G.runPipeline(narrow.houses, S, { x: 0, y: 0 })).length === 0);
+  const wideResult = G.runPipeline(wide.houses, S, { x: 0, y: 0 });
+  assert('rev17: a bow with a 4010-amah house-to-house mouth is flagged (was filled silently)',
+    bows(wideResult).length === 1 && wideResult.calculationStatus === 'provisional-no-fill');
+
+  // Chord >= 4000 and a house depth of 2030 amos: the empty cells alone read < 2000.
+  const deep = uCity(4400, 2030);
+  const detected = bows(G.runPipeline(deep.houses, S, { x: 0, y: 0 }));
+  const endpoints = [{ x: 5, y: deep.top + 5 }, { x: deep.rightX - 5, y: deep.top + 5 }];
+  const reviewed = G.runPipeline(deep.houses, {
+    ...S, concavityReviews: detected.length ? { [detected[0].reviewKey]: { endpoints } } : {},
+  }, { x: 0, y: 0 });
+  const audit = bows(reviewed)[0];
+  assert('rev17: Rema depth is measured to the houses, so a 2030-amah-deep wide bow stays unfilled',
+    audit && audit.reviewStatus === 'reviewed-no-fill-applied' && audit.depthM >= TECHUM,
+    audit && `status=${audit.reviewStatus} depth=${(audit.depthM / RCN).toFixed(1)} amos`);
+}
+
+// join-redraw closures are unioned, so input order cannot pick a different city.
+{
+  const L = (x0, y0, len, corner) => {
+    const out = [];
+    for (let t = 0; t <= len; t += 30) {
+      if (corner === 'bl') { out.push(squareHouse(x0, y0 + t)); if (t) out.push(squareHouse(x0 + t, y0)); }
+      else { out.push(squareHouse(x0 + len, y0 + t)); if (t < len) out.push(squareHouse(x0 + t, y0 + len)); }
+    }
+    return out;
+  };
+  const A = L(0, 0, 390, 'bl'), B = L(330, 330, 390, 'tr'), C = grid6(500, 50);
+  const settings = { ...S, overlapPolicy: 'join-redraw' };
+  const pin = { x: 520, y: 50 };
+  const abc = G.runPipeline(A.concat(B, C), settings, pin);
+  const cab = G.runPipeline(C.concat(A, B), settings, pin);
+  assert('rev17: join-redraw result is independent of input order',
+    regionSig(abc.cityRegions) === regionSig(cab.cityRegions) && regionSig(abc.techumRegions) === regionSig(cab.techumRegions));
+  assert('rev17: a city reached only by a joint redraw joins it from either side',
+    cab.homeCandidates.length === 1 && cab.homeCandidates[0].length === 3 &&
+    approx(rectSpan(cab.cityRegions[0]).w, 730, 1e-6));
+
+  // Pin in the karpef overlap of two separate closures: every policy takes the common area.
+  const P = L(0, 0, 390, 'bl'), Q = L(445, 445, 390, 'tr');
+  const karpefPin = { x: 418, y: 418 };
+  const sigs = ['no-join', 'join-no-redraw', 'join-redraw'].flatMap((overlapPolicy) => [P.concat(Q), Q.concat(P)].map((houses) => {
+    const r = G.runPipeline(houses, { ...S, karpef: true, overlapPolicy }, karpefPin);
+    return r.warnings.some((w) => w.type === 'multiple-home-candidates') && r.squaring.method === 'candidate-intersection'
+      ? regionSig(r.techumRegions) : 'no-intersection';
+  }));
+  assert('rev17: a pin only in two separate karpefs gets the conservative intersection under every policy',
+    sigs.every((sig) => sig === sigs[0] && sig !== 'no-intersection'), JSON.stringify(sigs.map((s) => s.slice(0, 30))));
+}
+
+// Three villages: every qualifying triple is united, independent of input order.
+{
+  const V1 = grid6(0, 0), V3 = grid6(220, 0), V2 = grid6(110, 500), V4 = grid6(110, -500);
+  const pin = { x: 130, y: -490 };
+  const one = G.runPipeline(V1.concat(V2, V3, V4), S, pin);
+  const two = G.runPipeline(V1.concat(V4, V3, V2), S, pin);
+  assert('rev17: two middle villages between the same outers both join, in any input order',
+    [one, two].every((r) => r.clusters.length === 1 &&
+      r.warnings.filter((w) => w.type === 'three-villages').length === 2) &&
+    regionSig(one.cityRegions) === regionSig(two.cityRegions));
+}
+
+// Three-villages pruning keeps a 900-village field practical (it took ~38 s before), and
+// the many overlapping triples in such a field give the same result in any input order.
+{
+  const houses = [];
+  for (let i = 0; i < 30; i++) for (let j = 0; j < 30; j++) houses.push(...grid6(i * 130, j * 130));
+  const started = Date.now();
+  const r = G.runPipeline(houses, S, { x: 0, y: 0 });
+  const ms = Date.now() - started;
+  assert('rev17: a 900-village field finishes within the practical 5-second bound', ms < 5000, `${ms} ms`);
+  const reversed = G.runPipeline(houses.slice().reverse(), S, { x: 0, y: 0 });
+  assert('rev17: a 900-village field with many three-village triples is input-order independent',
+    r.warnings.some((w) => w.type === 'three-villages') && r.clusters.length === reversed.clusters.length &&
+    regionSig(r.cityRegions) === regionSig(reversed.cityRegions));
+}
+
+// Point mode follows pointRotationDeg only, never the city squaring angle.
+{
+  const r = G.runPipeline([], { ...S, squaringAngleDeg: 30, pointRotationDeg: 0 }, { x: 0, y: 0 });
+  const edge = Math.atan2(r.techumCorners[1].y - r.techumCorners[0].y, r.techumCorners[1].x - r.techumCorners[0].x) * 180 / Math.PI;
+  assert('rev17: point square ignores the reviewer city-squaring angle', r.mode === 'point' && approx(edge, 0, 1e-9) &&
+    r.squaring.angleDeg === 0, `edge=${edge}`);
+  const turned = G.runPipeline([], { ...S, squaringAngleDeg: 30, pointRotationDeg: 45 }, { x: 0, y: 0 });
+  const edge2 = Math.atan2(turned.techumCorners[1].y - turned.techumCorners[0].y, turned.techumCorners[1].x - turned.techumCorners[0].x) * 180 / Math.PI;
+  assert('rev17: point square uses exactly pointRotationDeg', approx(edge2, 45, 1e-9), `edge=${edge2}`);
+}
+
+// Projection wraps longitude across the antimeridian.
+{
+  const proj = G.makeProjection(65, 179.99);
+  const east = proj.toXY(65, -179.99);
+  assert('rev17: a point 0.02 degrees east across ±180 projects ~0.94 km east, not across the globe',
+    east.x > 0 && approx(east.x, 0.02 * (111412.84 * Math.cos(65 * Math.PI / 180) - 93.5 * Math.cos(195 * Math.PI / 180)), 0.01),
+    `x=${east.x}`);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

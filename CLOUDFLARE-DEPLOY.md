@@ -80,8 +80,14 @@ local-development server; it is not the production origin.
    npm run cf:deploy
    ```
 
-The Worker also requires the Access identity header once `REQUIRE_ACCESS=true`; the Access
-policy remains the primary enforcement layer.
+The Worker also requires a verified Access identity once `REQUIRE_ACCESS=true`; the Access
+policy remains the primary enforcement layer. The Worker never trusts `Cf-Access-*` headers by
+themselves (a client can send them on paths no Access app covers): it verifies the Access JWT
+(`Cf-Access-Jwt-Assertion` header or `CF_Authorization` cookie) against the team certs using
+`ACCESS_TEAM_DOMAIN` and the analytics application's `ACCESS_AUD` in `wrangler.jsonc`. Only a
+verified identity can auto-accept building corrections, publish/withdraw registry snapshots,
+or force a shared-tile refill (`/api/buildings?force=1`). If the Access application is ever
+recreated, update `ACCESS_AUD` (the `kid` in the Access login redirect URL).
 5. Confirm the custom-domain deployment reports the `workers.dev` route disabled so the
    unprotected temporary hostname cannot bypass the domain's Access application.
 
@@ -91,7 +97,7 @@ policy remains the primary enforcement layer.
 - Anonymous visitor first/last-seen records and non-identifying daily totals: indefinite.
 - Raw IP addresses are never inserted into D1.
 - A keyed, monthly rotating network identifier expires with each raw event.
-- Event writes: 60/minute per anonymous visitor/network combination.
+- Event writes: 60/minute per network.
 - Geocoding: 20/minute per network plus a global one-request-per-second cache-miss gate.
 - Repeated geocoding queries are cached in D1.
 - Building tiles: 30/minute per network; cold Overture fills share a one-per-second global slot.

@@ -224,11 +224,31 @@
   //   L2 Worker R2 tiles — shared across users for the same ~2 km grid cells
   //   L3 Overture public PMTiles — cold fill via the Worker
   const DB_NAME = 'techum-cache-v2', STORE = 'overture';
+  // Every cache key carries this version. Keep it in step with worker/overture.ts
+  // OVERTURE_RELEASE (and bump the suffix when cached areas must refill for another reason,
+  // e.g. the shared-correction set). Entries under any other version are deleted on first use.
+  const CACHE_VERSION = '2026-09-23.1#1';
+  const CACHE_KEY_PREFIX = `${CACHE_VERSION}|`;
+  let pruned = false;
+  function pruneOtherVersions(db) {
+    if (pruned) return;
+    pruned = true;
+    try {
+      const store = db.transaction(STORE, 'readwrite').objectStore(STORE);
+      const cursor = store.openKeyCursor();
+      cursor.onsuccess = () => {
+        const c = cursor.result;
+        if (!c) return;
+        if (!String(c.key).startsWith(CACHE_KEY_PREFIX)) store.delete(c.key);
+        c.continue();
+      };
+    } catch { /* cache is best-effort */ }
+  }
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);
       req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => { pruneOtherVersions(req.result); resolve(req.result); };
       req.onerror = () => reject(req.error);
     });
   }
@@ -256,6 +276,7 @@
     const r = (x) => x.toFixed(5);
     return `${r(bbox.south)},${r(bbox.west)},${r(bbox.north)},${r(bbox.east)}`;
   }
+  function cacheKey(bbox) { return CACHE_KEY_PREFIX + bboxKey(bbox); }
 
   // ---------- Server request sizing ----------
   // Mirrors worker/buildings.ts: 0.02° cache tiles, at most 36 tiles (6×6) per request.
@@ -363,7 +384,7 @@
   }
 
   async function fetchPartCached(bbox, force) {
-    const key = bboxKey(bbox);
+    const key = cacheKey(bbox);
     if (!force) {
       const hit = await cacheGet(key);
       if (hit) {
@@ -412,6 +433,6 @@
   root.TechumData = { classify, computeDataConfidence, geocode, reverseGeocode, autocomplete, fetchBuildingsCached,
     submitBuildingCorrection,
     _tables: { DWELLING_TAGS, NON_DWELLING_TAGS, REVIEW_TAGS },
-    _internals: { bboxKey, photonLabel, dedupeAutocompleteResults, splitServerBBox,
+    _internals: { bboxKey, cacheKey, CACHE_VERSION, photonLabel, dedupeAutocompleteResults, splitServerBBox,
       mergeServerResponses, retryDelayMs } };
 })(typeof self !== 'undefined' ? self : this);

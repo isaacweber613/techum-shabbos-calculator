@@ -90,13 +90,16 @@
           saved.showVerifiedOnly = false;
           saved.dataSourceVersion = 2;
         }
-        return normalize(saved);
+        // The validated perimeter itself is never stored in the browser (only in snapshots),
+        // so a restored "use perimeter" flag would point at nothing.
+        return { ...normalize(saved), useValidatedPerimeter: false };
       }
     } catch (e) { /* fresh defaults */ }
     return { ...DEFAULTS };
   }
+  // Returns false when the browser refuses storage (private mode, quota) so the UI can say so.
   function save(s) {
-    try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* ignore */ }
+    try { localStorage.setItem(KEY, JSON.stringify(s)); return true; } catch (e) { return false; }
   }
   function applyProfile(s, profileKey) {
     const p = PROFILES[profileKey];
@@ -106,11 +109,19 @@
       largeHolePolicy: p.largeHolePolicy, bowPolicy: p.bowPolicy,
       minCityHouses: p.minCityHouses };
   }
+  // Reviewer records (free-text evidence, member ids, endpoints) never go to analytics; only
+  // how many exist.
+  const REVIEW_RECORD_KEYS = ['cityQualificationOverrides', 'concavityReviews'];
   // Every setting that differs from the app-wide defaults (for analytics: "what do
   // people change?"). Keys mirror DEFAULTS; values are the chosen non-default value.
   function diffFromDefaults(s) {
     const out = {};
     for (const k of Object.keys(DEFAULTS)) {
+      if (REVIEW_RECORD_KEYS.includes(k)) {
+        const count = s[k] && typeof s[k] === 'object' ? Object.keys(s[k]).length : 0;
+        if (count) out[k + 'Count'] = count;
+        continue;
+      }
       if (s[k] !== DEFAULTS[k]) out[k] = s[k];
     }
     return out;

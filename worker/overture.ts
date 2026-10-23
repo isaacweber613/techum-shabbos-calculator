@@ -185,9 +185,11 @@ export function preferLargestDuplicate(buildings: Building[]): Building[] {
   return [...byId.values()].map((entry) => entry.building);
 }
 
+export const MAX_OVERTURE_TILES = 64;
+
 export async function fetchOvertureBuildings(bbox: BBox): Promise<{ buildings: Building[]; release: string }> {
   const tiles = tilesForOvertureBBox(bbox);
-  if (tiles.length > 64) throw new Error(`Overture request covers ${tiles.length} tiles; max is 64`);
+  if (tiles.length > MAX_OVERTURE_TILES) throw new Error(`Overture request covers ${tiles.length} tiles; max is ${MAX_OVERTURE_TILES}`);
   const release = await resolveOvertureRelease();
   const archive = new PMTiles(overtureArchiveUrl(release));
   const decoded = await Promise.all(tiles.map(async (tile) => {

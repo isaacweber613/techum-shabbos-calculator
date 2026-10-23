@@ -134,7 +134,8 @@
     a.href = URL.createObjectURL(blob);
     a.download = filename;
     a.click();
-    URL.revokeObjectURL(a.href);
+    // Revoking synchronously can cancel the download in some browsers.
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
   // KMZ is a ZIP containing a doc.kml file.  This deliberately uses the simple

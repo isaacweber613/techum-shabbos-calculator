@@ -41,5 +41,15 @@
     return `0 0 ${values[2]} ${values[3]}`;
   }
 
-  return { MAX_STATIC_MAP_SIZE, staticMapPlan, normalizedLeafletSvgViewBox };
+  // Caption burned into exported map images so a shared PNG names its place and shita.
+  function exportCaptionLines({ label, profileLabel, amahCm }) {
+    const amah = Number(amahCm);
+    return [
+      String(label || 'Selected map point'),
+      `${profileLabel} · amah ${(amah / 2.54).toFixed(2)} in (${amah} cm) · 2,000 amos = ${Math.round(20 * amah).toLocaleString('en-US')} m`,
+      'DRAFT — decision support, not a psak. Review with a rav/mumcheh.',
+    ];
+  }
+
+  return { MAX_STATIC_MAP_SIZE, staticMapPlan, normalizedLeafletSvgViewBox, exportCaptionLines };
 }));
