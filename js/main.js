@@ -1108,13 +1108,16 @@
     }
 
     // rectangles
+    // The boundary shapes are drawn above the footprints. While footprints are shown, the
+    // shapes let clicks through so a footprint under the pink or green area can be corrected.
+    const shapesTakeClicks = !document.getElementById('layer-buildings').checked;
     const addRect = (corners, style, label, group) => {
       if (!corners) return;
       if (style.casing) // white underlay so the line reads against any satellite imagery
-        L.polygon(cornersToLatLngs(corners), { color: '#ffffff', weight: (style.weight || 3) + 3, fill: false, opacity: 0.85 })
+        L.polygon(cornersToLatLngs(corners), { color: '#ffffff', weight: (style.weight || 3) + 3, fill: false, opacity: 0.85, interactive: false })
           .addTo(group || layerGroups.rects);
-      const p = L.polygon(cornersToLatLngs(corners), style).addTo(group || layerGroups.rects);
-      if (label) p.bindTooltip(label, { sticky: true });
+      const p = L.polygon(cornersToLatLngs(corners), { ...style, interactive: shapesTakeClicks }).addTo(group || layerGroups.rects);
+      if (label && shapesTakeClicks) p.bindTooltip(label, { sticky: true });
     };
     const addRegions = (regions, style, label, group) => {
       const list = Array.isArray(regions) && regions.length ? regions : [];
@@ -1267,6 +1270,8 @@
       L.polygon(cornersToLatLngs(cluster.corners), {
         color, weight: isHome ? 3 : 1.5, dashArray: isHome ? '10 5' : '6 6',
         fill: true, fillColor: color, fillOpacity: isHome ? 0.055 : 0.018,
+        // lets a click reach a footprint underneath while footprints are shown
+        interactive: !document.getElementById('layer-buildings').checked,
       }).bindTooltip(label, { sticky: true }).addTo(layerGroups.settlements);
 
       const center = cluster.corners.reduce((p, c) => ({ x: p.x + c.x / 4, y: p.y + c.y / 4 }), { x: 0, y: 0 });
