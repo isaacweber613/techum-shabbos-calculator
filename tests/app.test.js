@@ -192,7 +192,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12])'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-1)'));
   }
 });
 
@@ -479,8 +479,9 @@ test('PDF summary, recalculation, and race guards follow the current result', ()
   assert.match(main, /if \(state\.validatedPerimeter\) \{\s*L\.polygon/);
   const geojson = main.slice(main.indexOf('  function exportGeoJSON('), main.indexOf('  function exportKMZ('));
   assert.doesNotMatch(geojson, /L\.polygon/, 'export must not draw map layers');
-  const kml = main.slice(main.indexOf('  function exportKML('), main.indexOf('  function exportGeoJSON('));
+  const kml = main.slice(main.indexOf('  function buildKmlText('), main.indexOf('  function exportKML('));
   assert.match(kml, /if \(canRunComparisonAmah\(\)\)/);
+  assert.match(main, /K\.buildKMZ\(buildKmlText\(res\)\)/, 'KMZ carries the same layers as KML');
 });
 
 test('snapshot and registry loads refresh settings, label, and in-flight work', () => {

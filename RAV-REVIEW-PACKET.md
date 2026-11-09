@@ -58,7 +58,7 @@ append-only spec revision.
 3. Inspect each 70⅔-amah bridge. Borderline gaps should be checked against better imagery or
    survey data; mapping error of a few meters can flip the chain.
 4. Confirm which clusters qualify as independent cities before relying on a 141⅓ merge.
-5. Inspect overlap, three-villages, concavity/bow, data-limit, and stale-data warnings.
+5. Inspect overlap, three-villages, concavity/bow, and data-limit warnings.
 6. Confirm the *ribua* orientation, karpef setting, amah profile, and the home settlement.
 7. Compare the ordinary and verified-dwellings-only scenarios. Neither is guaranteed to be
    the correct, larger, smaller, lenient, or stringent result.
@@ -67,7 +67,7 @@ append-only spec revision.
 
 ## What the software does not establish
 
-It does not prove that OSM is complete, that a mapped building is a halachic dwelling, that
+It does not prove that the Overture map data is complete, that a mapped building is a halachic dwelling, that
 six footprints equal three qualifying courtyards, that a community eruv is *hukaf l'dira*,
 or that an automatically detected bow/hole mask identifies the halachically correct factual
 endpoints. It also does

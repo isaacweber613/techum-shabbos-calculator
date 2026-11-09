@@ -86,6 +86,9 @@ createServer(async (req, res) => {
     if (path === '/') path = '/index.html';
     if (path === '/analytics') path = '/analytics.html';
     if (path === '/about') path = '/about.html';
+    if (path === '/guide') path = '/guide.html';
+    if (path === '/feedback') path = '/feedback.html';
+    if (path === '/he' || path === '/he/') path = '/he/index.html';
     if (path === '/designtest' || path === '/designtest/') path = '/designtest/index.html';
     if (/^\/designtest\/(?:[1-9]|10)\/?$/.test(path)) path = path.replace(/\/$/, '') + '/index.html';
     if (path.startsWith('/data/')) { res.writeHead(403); res.end(); return; } // logged events are not public

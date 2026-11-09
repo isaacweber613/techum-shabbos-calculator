@@ -77,13 +77,6 @@
   function expandRect(r, d) {
     return { minX: r.minX - d, minY: r.minY - d, maxX: r.maxX + d, maxY: r.maxY + d };
   }
-  function rectsOverlap(a, b) {
-    return a.minX <= b.maxX && b.minX <= a.maxX && a.minY <= b.maxY && b.minY <= a.maxY;
-  }
-  function rectContains(outer, inner) {
-    return inner.minX >= outer.minX && inner.maxX <= outer.maxX &&
-           inner.minY >= outer.minY && inner.maxY <= outer.maxY;
-  }
 
   function pointSegDist(p, a, b) {
     const abx = b.x - a.x, aby = b.y - a.y;
@@ -127,9 +120,6 @@
       }
     }
     return false;
-  }
-  function ringContainsRing(outer, inner) {
-    return inner.every((p) => pointInOrOnRing(p, outer));
   }
   // Minimum edge-to-edge distance between two polygon rings (0 if touching/overlapping).
   function ringDist(r1, r2) {
@@ -1286,7 +1276,8 @@
         cityPolygons = boundary.city; karpefPolygons = boundary.karpef;
         techumPolygons = boundary.techum; mil12Polygons = boundary.mil12;
         const primary = cityModels[selectedClosures[0].indices[0]];
-        squaring = selectedClosures[0].redraw
+        // A lone city under join-redraw was not redrawn with anything; report its own squaring.
+        squaring = selectedClosures[0].redraw && selectedClosures[0].indices.length > 1
           ? { method: 'overlap-joint-redraw', angleRad: selectedClosures[0].redraw.angleRad, rectangularity: null }
           : primary.sq;
       }
@@ -1402,10 +1393,10 @@
     AMOS, makeProjection, runPipeline, bufferRing,
     // exported for tests
     _internals: {
-      bboxOfRing, bboxGap, expandRect, rectsOverlap, rectContains, ringDist,
+      bboxOfRing, bboxGap, expandRect, ringDist,
       ringDistToPoint, clusterBuildings, buildClusters, mergeCities, GridIndex,
       pointInRing, segSegDist, annotateCityQualification, concavityWarnings,
-      ringsOverlap, ringContainsRing,
+      ringsOverlap,
       convexHull, minimumAreaRect, deriveSquaring, toOrientedFrame, fromOrientedFrame,
       intersectConvexPolygons, intersectPolygonSets,
     },

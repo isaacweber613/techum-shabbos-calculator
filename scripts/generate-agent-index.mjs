@@ -127,7 +127,7 @@ function discoverRoutes() {
       add(`regex:${match[1]}`, "dynamic", file);
     }
     for (const match of contents.matchAll(
-      /pathname\.match\(\s*(\/\^\\\/[^/]+\/[gimsuy]*)\s*\)/g,
+      /pathname\.match\(\s*(\/\^\\\/.+?\$\/[gimsuy]*)\s*\)/g,
     )) {
       add(`regex:${match[1]}`, "dynamic", file);
     }

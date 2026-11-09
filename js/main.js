@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.5.3 (2026-10-23)';
+  const ENGINE_VERSION = '1.5.4 (2026-11-09)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -577,7 +577,6 @@
     perf.renderMs = performance.now() - renderStarted;
     perf.totalMs = performance.now() - calcStarted;
     perf.buildings = state.rawBuildings.length;
-    state.performance = perf;
     renderPerformanceReport(perf);
     if (state.result && state.result.techumCorners) {
       const regions = state.result.techumRegions && state.result.techumRegions.length
@@ -683,7 +682,10 @@
     return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
   }
 
+  // A finished run hides the strip after a delay; a run that starts meanwhile must keep it.
+  let progressHideTimer = null;
   function setCalculationStage(stage, message) {
+    clearTimeout(progressHideTimer);
     const progress = document.getElementById('calc-progress');
     const button = document.getElementById('btn-calc');
     const order = ['fetch', 'analyze', 'draw'];
@@ -711,7 +713,8 @@
     button.setAttribute('aria-busy', 'false');
     button.disabled = false;
     button.querySelector('.calc-label').textContent = succeeded ? 'Recalculate my techum' : 'Try calculating again';
-    window.setTimeout(() => {
+    clearTimeout(progressHideTimer);
+    progressHideTimer = window.setTimeout(() => {
       progress.hidden = true;
       progress.setAttribute('aria-hidden', 'true');
     }, succeeded ? 1200 : 0);
@@ -1034,12 +1037,15 @@
       const poly = L.polygon(b.ring.map((p) => { const ll = state.proj.toLatLon(p.x, p.y); return [ll.lat, ll.lon]; }), {
         color: st.color, weight, fillColor: st.fillColor, fillOpacity: homeMembers.has(i) ? Math.min(0.65, fillOpacity + 0.15) : fillOpacity,
         opacity, dashArray: dash, renderer: buildingRenderer,
+        bubblingMouseEvents: false, // a footprint click must not also move the pin
       });
       b.mapLayer = poly;
       poly.bindTooltip(`<b>${b.joinOnly ? 'RAV-VALIDATED JOIN PERIMETER' : escapeHtml(b.klass.toUpperCase())}</b> — ${escapeHtml(b.reason)}` +
         (b.joinOnly ? '<br>Participates in 70⅔/141⅓ geometry; house count +0.' : '') +
         (ov ? `<br>manual correction: ${escapeHtml(ov)}` : '') + `<br><i>Optional: click to correct include/exclude</i>`, { sticky: true });
-      poly.on('click', async () => {
+      poly.on('click', async (e) => {
+        if (drawing) { addDrawingVertex(e.latlng); return; }
+        if (bowCapture) { addBowEndpoint(e.latlng); return; }
         const cur = state.overrides.get(b.id);
         if (!cur) state.overrides.set(b.id, 'include');
         else if (cur === 'include') state.overrides.set(b.id, 'exclude');
@@ -1056,16 +1062,22 @@
     });
   }
 
-  function invalidateCalculationForMovedPin() {
-    latestAnalysisId++; // an analysis still running for the old pin must not repopulate the result
-    state.result = null;
-    state.snapInfo = null;
+  // Removes every trace of a result that no longer applies (moved pin, failed re-analysis).
+  function clearResultDisplay() {
     document.body.classList.remove('has-result');
+    layerGroups.buildings.clearLayers();
     layerGroups.rects.clearLayers(); layerGroups.second.clearLayers(); layerGroups.settlements.clearLayers();
     layerGroups.audit.clearLayers(); layerGroups.perimeter.clearLayers();
     document.getElementById('results').replaceChildren();
     document.getElementById('confidence').hidden = true;
     document.getElementById('review-queue').hidden = true;
+  }
+
+  function invalidateCalculationForMovedPin() {
+    latestAnalysisId++; // an analysis still running for the old pin must not repopulate the result
+    state.result = null;
+    state.snapInfo = null;
+    clearResultDisplay();
     setStatus('Pin moved. Calculate again to fetch the correct surrounding buildings; the previous boundary was cleared.');
   }
 
@@ -1077,13 +1089,13 @@
   }
 
   function render() {
+    const res = state.result;
+    if (!res) { clearResultDisplay(); return; }
     document.body.classList.add('has-result');
     layerGroups.rects.clearLayers();
     layerGroups.second.clearLayers();
     layerGroups.settlements.clearLayers();
     layerGroups.perimeter.clearLayers();
-    const res = state.result;
-    if (!res) return;
 
     renderBuildings();
 
@@ -1491,10 +1503,10 @@
     const keepExact = document.getElementById('btn-keep-exact-pin');
     if (useMapped) useMapped.addEventListener('click', () => void useMappedPinCandidate());
     if (keepExact) keepExact.addEventListener('click', keepExactPin);
-    renderConfidence(counts);
+    renderConfidence();
   }
 
-  function renderConfidence(counts) {
+  function renderConfidence() {
     const el = document.getElementById('confidence');
     const report = D.computeDataConfidence(state.buildings);
     const uncertain = report.needsReview;
@@ -1704,9 +1716,8 @@
     } catch (e) { el.textContent = 'Reviewed library unavailable: ' + e.message; }
   }
 
-  function exportKML() {
-    const res = state.result;
-    if (!res) { setStatus('Calculate a techum before exporting KML.'); return; }
+  // KML and KMZ carry the same layers, including the comparison-amah line when it is on.
+  function buildKmlText(res) {
     const toPath = (corners) => corners && cornersToLatLngs(corners).map(([lat, lon]) => ({ lat, lon }));
     const toPaths = (regions) => (regions || []).map(toPath).filter(Boolean);
     let second = null;
@@ -1716,7 +1727,7 @@
       second = toPath(res2.techumCorners);
       secondRegions = toPaths(res2.techumRegions);
     }
-    const kml = K.buildKML({
+    return K.buildKML({
       pin: state.pin,
       techum: toPath(res.techumCorners),
       city: toPath(res.cityCorners),
@@ -1725,7 +1736,12 @@
       karpefRegions: toPaths(res.karpefRegions), second, secondRegions,
       ...exportAuditLayers(res, toPath),
     }, configText());
-    K.download('techum-draft.kml', kml);
+  }
+
+  function exportKML() {
+    const res = state.result;
+    if (!res) { setStatus('Calculate a techum before exporting KML.'); return; }
+    K.download('techum-draft.kml', buildKmlText(res));
     track('export', { format: 'kml' });
   }
 
@@ -1746,14 +1762,7 @@
   function exportKMZ() {
     const res = state.result;
     if (!res) { setStatus('Calculate a techum before exporting KMZ.'); return; }
-    const toPath = (corners) => corners && cornersToLatLngs(corners).map(([lat, lon]) => ({ lat, lon }));
-    const toPaths = (regions) => (regions || []).map(toPath).filter(Boolean);
-    const kml = K.buildKML({
-      pin: state.pin, techum: toPath(res.techumCorners), city: toPath(res.cityCorners),
-      karpef: toPath(res.karpefCorners), techumRegions: toPaths(res.techumRegions),
-      cityRegions: toPaths(res.cityRegions), karpefRegions: toPaths(res.karpefRegions), ...exportAuditLayers(res, toPath),
-    }, configText());
-    downloadBlob('techum-draft.kmz', new Blob([K.buildKMZ(kml)], { type: 'application/vnd.google-earth.kmz' }));
+    downloadBlob('techum-draft.kmz', new Blob([K.buildKMZ(buildKmlText(res))], { type: 'application/vnd.google-earth.kmz' }));
     track('export', { format: 'kmz' });
     setStatus('KMZ exported for Google Earth review.');
   }
@@ -1792,13 +1801,18 @@
       exportLibraryLoads.set(name, new Promise((resolve, reject) => {
         const script = document.createElement('script');
         script.src = lib.src; script.integrity = lib.integrity; script.crossOrigin = 'anonymous'; script.async = true;
-        script.onload = () => (lib.ready() ? resolve() : reject(new Error(lib.failure)));
+        script.onload = () => {
+          if (lib.ready()) { resolve(); return; }
+          exportLibraryLoads.delete(name); script.remove(); reject(new Error(lib.failure));
+        };
         script.onerror = () => { exportLibraryLoads.delete(name); script.remove(); reject(new Error(lib.failure)); };
         document.head.appendChild(script);
       }));
     }
     return exportLibraryLoads.get(name);
   }
+  // The feedback screenshot (js/feedback.js) uses the same lazily loaded html2canvas.
+  window.TechumLoadExportLibrary = loadExportLibrary;
 
   function exportCaptionLines() {
     const eff = S.effectiveProfile(settings);
@@ -2174,10 +2188,10 @@
     $('show-12mil').addEventListener('change', (e) => { settings.show12mil = e.target.checked; onChange(); });
     $('audit-rings').addEventListener('change', (e) => {
       settings.showAuditRings = e.target.checked; saveSettings();
-      if (state.result) { renderAuditRings(); renderAuditGuide(); }
+      if (state.result) { renderAuditRings(); renderAuditGuide(); renderReviewQueue(); }
     });
-    $('fetch-radius').addEventListener('change', (e) => { settings.fetchRadiusM = Math.max(300, parseInt(e.target.value, 10) || 1200); saveSettings(); });
-    $('max-buildings').addEventListener('change', (e) => { settings.maxBuildings = Math.max(1000, parseInt(e.target.value, 10) || 30000); saveSettings(); });
+    $('fetch-radius').addEventListener('change', (e) => { settings.fetchRadiusM = Math.max(300, parseInt(e.target.value, 10) || S.DEFAULTS.fetchRadiusM); saveSettings(); });
+    $('max-buildings').addEventListener('change', (e) => { settings.maxBuildings = Math.max(1000, parseInt(e.target.value, 10) || S.DEFAULTS.maxBuildings); saveSettings(); });
     $('use-perimeter').addEventListener('change', (e) => {
       if (e.target.checked && !state.validatedPerimeter) { e.target.checked = false; setStatus('Import a rav-validated perimeter first.'); return; }
       settings.useValidatedPerimeter = e.target.checked; saveSettings(); if (state.result) recompute();

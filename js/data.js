@@ -441,7 +441,6 @@
   }
   root.TechumData = { classify, computeDataConfidence, geocode, reverseGeocode, autocomplete, fetchBuildingsCached,
     submitBuildingCorrection,
-    _tables: { DWELLING_TAGS, NON_DWELLING_TAGS, REVIEW_TAGS },
     _internals: { bboxKey, cacheKey, CACHE_VERSION, photonLabel, dedupeAutocompleteResults, splitServerBBox,
       mergeServerResponses, retryDelayMs } };
 })(typeof self !== 'undefined' ? self : this);

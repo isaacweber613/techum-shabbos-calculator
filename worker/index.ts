@@ -73,7 +73,7 @@ function sanitizeEvent(raw: unknown): EventPayload | null {
   const input = raw as Record<string, unknown>;
   if (typeof input.type !== 'string' || !EVENT_TYPES.has(input.type as EventType)) return null;
   const event: EventPayload = { type: input.type as EventType, vid: String(input.vid || 'anon').slice(0, 40) };
-  for (const [key, value] of Object.entries(input)) {
+  for (const [key, value] of Object.entries(input).slice(0, MAX_KEYS)) {
     if (key === 'type' || key === 'vid' || key === 't') continue;
     const cleaned = cleanValue(value);
     if (cleaned !== undefined) event[key.slice(0, 60)] = cleaned;
@@ -253,7 +253,8 @@ async function geocode(request: Request, env: Env): Promise<Response> {
     latRaw >= -90 && latRaw <= 90 && lonRaw >= -180 && lonRaw <= 180;
   const lat = hasBias ? Math.round(latRaw * 100) / 100 : 0;
   const lon = hasBias ? Math.round(lonRaw * 100) / 100 : 0;
-  const normalized = query.toLowerCase().replace(/\s+/g, ' ') + (hasBias ? `|${lat},${lon}` : '');
+  // Prefixed like 'photon:' and 'reverse:' so a search for "photon:x" cannot overwrite another cache.
+  const normalized = 'search:' + query.toLowerCase().replace(/\s+/g, ' ') + (hasBias ? `|${lat},${lon}` : '');
   const cached = await env.DB.prepare('SELECT response FROM geocode_cache WHERE query = ?1').bind(normalized).first<{ response: string }>();
   if (cached) return new Response(cached.response, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } });
 
@@ -352,7 +353,7 @@ async function autocomplete(request: Request, env: Env): Promise<Response> {
 
   const endpoint = new URL('https://photon.komoot.io/api/');
   endpoint.searchParams.set('q', query);
-  endpoint.searchParams.set('limit', '5');
+  endpoint.searchParams.set('limit', '8'); // js/data.js asks for 8 so duplicates can be dropped
   if (hasBias) {
     endpoint.searchParams.set('lat', String(lat));
     endpoint.searchParams.set('lon', String(lon));
