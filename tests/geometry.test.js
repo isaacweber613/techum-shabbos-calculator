@@ -98,6 +98,11 @@ function rectSpan(corners) {
   const techumSide = Math.hypot(t[1].x - t[0].x, t[1].y - t[0].y);
   assert('rotated rectangle: techum expands in the preserved frame',
     approx(techumSide, side + 2 * TECHUM, 0.5), `techumSide=${techumSide}`);
+  // A lone city has nothing to join, so the joining policy must not change how its squaring is reported.
+  const alone = G.runPipeline(houses, { ...S, overlapPolicy: 'join-redraw' }, { x: 0, y: 0 });
+  assert('rotated rectangle: a lone city under join-redraw still reports its own squaring',
+    alone.squaring.method === 'preserved-rectangle' && alone.squaring.rectangularity != null,
+    JSON.stringify(alone.squaring));
 }
 
 // 3. Ibur chain: gaps just under/over 70 2/3 amos ----------------------------

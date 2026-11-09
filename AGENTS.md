@@ -8,19 +8,20 @@ folder as the working directory.
 
 A techum Shabbos (תחום שבת) calculator: address → Overture building footprints → halachic city
 derivation (ibur ha'ir chaining at 70⅔ amos, 141⅓ city merges, three-villages rule) →
-ribua (true-north squared rectangle) → 2000-amos techum with square corners. Client-side
-static app, no build step, no API keys. v1 built + live-verified 2026-07-10.
+ribua (shape-aware squared rectangle) → 2000-amos techum with square corners. Browser app
+plus one Cloudflare Worker (D1 + R2); `npm run build` copies the static files to `dist/`.
+One secret, `GOOGLE_MAPS_BROWSER_KEY`. v1 built + live-verified 2026-07-10.
 
 - Run: `node serve.mjs` → http://localhost:4173 (or preview_start name `tchum-calculator`
   — config in this project's `.claude/launch.json`)
-- Tests: `node tests/geometry.test.js` — 22 golden tests from the Gemara's canonical
+- Tests: `npm test` runs every suite. `node tests/geometry.test.js` holds the golden tests from the Gemara's canonical
   shapes (circle, rotated square, chain gaps per amah, karpef, three villages, overlap
   machlokes, point mode). Keep them green; add a golden test for any new halachic rule.
 
 ## Source of truth
 
 **TECHUM-SPEC.md is the halachic source of truth.** Every psak default, every machlokes,
-every retraction is recorded there with dated rev notes (currently rev. 16). Isaac's
+every retraction is recorded there with dated rev notes (currently rev. 18). Isaac's
 standing rule: any change to a halachic default gets a dated note in the spec — append,
 don't overwrite. The tool is decision-support for a rav (MB 399:7 requires a mumcheh);
 permanent draft banner, never present output as psak.
@@ -33,8 +34,10 @@ permanent draft banner, never present output as psak.
 | `js/data.js` | Overture client + IndexedDB cache, Nominatim geocode, auditable dwelling-classification tag table |
 | `worker/overture.ts` | Public Overture PMTiles range fetch + vector-tile decoding |
 | `js/settings.js` | Psak profiles (MB/Ashkenazi default, Chazon Ish, Mechaber/Sefardi) + persistence |
-| `js/main.js` | App flow, Leaflet render, auto-expanding fetch, per-building overrides, snapshots, auto staleness check |
-| `js/kml.js` | KML/GeoJSON export with embedded config + audit block |
+| `js/main.js` | App flow, Leaflet render, auto-expanding fetch, per-building overrides, snapshots |
+| `js/kml.js` | KML/KMZ/GeoJSON export with embedded config + audit block |
+| `js/map-export.js`, `js/analysis-worker.js`, `js/feedback.js`, `js/track.js`, `js/design-experience.js` | PNG/PDF export layout, off-thread engine run, feedback dialog, analytics events, the production layout (design 10) |
+| `worker/index.ts` and the other `worker/*.ts` | API routes: buildings cache, shared corrections, feedback inbox, reviewed-city registry, Access check, Google map config, analytics |
 
 ## Generated agent index
 
@@ -62,8 +65,8 @@ build/deploy; `npm run agent:index:check` is the non-mutating freshness check.
   if every cached tile should refill) when adopting a new release. There is no user-facing
   staleness workflow.
 - Snapshots (JSON: buildings + pin + settings + overrides) = the reviewable/approvable
-  artifact; loading one replays it exactly (no automatic re-check against today's map). v2 idea: shared
-  library of rav-approved snapshots ("database of cities" = psak registry, not a cache).
+  artifact; loading one replays it exactly (no automatic re-check against today's map). The shared
+  library of rav-approved snapshots is built (`worker/registry.ts`, "Browse reviewed cities"): a psak registry, not a cache.
 - Amah comparison lines are "scenarios," NOT machmir/meikil — results don't nest across
   amos (the 4×4 minimum and join gaps scale too; topology can flip either way).
 - Verified-dwellings-only amber line brackets untagged-building uncertainty; neither line
@@ -92,8 +95,8 @@ Biggest: does a tzuras-hapesach eruv make the enclosed area "the city" (techum f
 eruv line)? Also: bow-rule endpoint designation on real city outlines, modern beis-dirah
 cases (hotels/offices/schools), courtyard model vs footprint count for city status,
 karpef-after-ibur split, whether ribua's filled corners count as "in the city" for a
-person standing there. Q2 (eruv) and Q4 (bow) are getting default mehalachim per the
-mehalich policy above.
+person standing there. Q2 (eruv) and Q4 (bow) have documented defaults since spec rev. 5
+(eruv off; bow no-fill until the reviewer designates endpoints).
 
 ## Shipping
 
@@ -142,7 +145,7 @@ requests a new deployment architecture.
 - Overture building use classes are sparse, especially on ML footprints. Use-unknown
   structures are included automatically; corrections are optional and share-reviewable.
 - Metro-scale (>20k buildings) merge passes may be slow (O(pairs) with bbox pruning).
-- Multipolygon relations are exploded into pseudo-buildings per outer ring (slightly
+- MultiPolygon footprints are exploded into pseudo-buildings per outer ring (slightly
   inflates footprint counts — flagged because it can affect the provisional 6-count proxy).
 - Bow/concavity ≥4000 amos: provisional no-fill until the reviewer designates endpoints;
   then the selected sourced bow rule changes the multi-region boundary.

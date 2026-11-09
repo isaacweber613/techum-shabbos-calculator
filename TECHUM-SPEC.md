@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 14, 2026-07-14) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 18, 2026-11-09) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -830,6 +830,15 @@ redraw-only join, karpef-overlap pins under all three overlap rules, two middle 
 both orders, a 900-village field, the point square, and the antimeridian.
 
 ---
+
+
+### Rev. 18 — 2026-11-09 (reporting fix; no psak default changes)
+
+- **A lone city reports its own squaring under joint redraw.** With the joint-redraw overlap
+  approach selected, a city that joined nothing was still labeled `overlap-joint-redraw`
+  with no rectangularity score, so the result text called a preserved rectangle "irregular
+  city squared to the world directions." The drawn boundary was already correct. The label
+  now says joint redraw only when two or more cities were redrawn together. Engine version 1.5.4.
 
 ## Part 3 — Product spec
 

@@ -17,3 +17,7 @@ Static discovery of browser and HTTP entry points. Dynamic regex routes are show
 | `/api/registry` | GET | `—` | `worker/index.ts` |
 | `/api/registry` | POST | `—` | `worker/index.ts` |
 | `/api/reverse-geocode` | GET | `—` | `worker/index.ts` |
+| `regex:/^\/api\/analytics-feedback\/([0-9a-f-]+)\/screenshot$/` | dynamic | `—` | `worker/index.ts` |
+| `regex:/^\/api\/analytics-feedback\/([0-9a-f-]+)$/` | dynamic | `—` | `worker/index.ts` |
+| `regex:/^\/api\/registry\/([a-z0-9-]+)\/withdraw$/` | dynamic | `—` | `worker/index.ts` |
+| `regex:/^\/api\/registry\/([a-z0-9]+(?:-[a-z0-9]+)*)$/` | dynamic | `—` | `worker/index.ts` |

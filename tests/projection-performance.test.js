@@ -25,11 +25,15 @@ test('grid index keeps a 20,000-footprint sparse clustering pass practical', () 
   for (let i = 0; i < 20000; i++) {
     const x = (i % 200) * 100;
     const y = Math.floor(i / 200) * 100;
-    buildings.push({ id: String(i), ring: [{ x, y }, { x: x + 8, y }, { x: x + 8, y: y + 8 }, { x, y: y + 8 }] });
+    buildings.push({ id: String(i), included: true, bbox: { minX: x, minY: y, maxX: x + 8, maxY: y + 8 },
+      ring: [{ x, y }, { x: x + 8, y }, { x: x + 8, y: y + 8 }, { x, y: y + 8 }] });
   }
   const started = Date.now();
   const clusters = G._internals.clusterBuildings(buildings, 34);
   assert.equal(clusters.length, buildings.length);
+  // 92 m gaps exceed the 34 m threshold, so every footprint must end up in its own cluster.
+  assert.equal(new Set(clusters).size, buildings.length);
+  assert.ok(!clusters.includes(-1), 'no footprint may be skipped');
   assert.ok(Date.now() - started < 10000, '20k clustering exceeded 10 seconds');
 });
 

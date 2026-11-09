@@ -37,6 +37,8 @@
   }
 
   async function captureViewport() {
+    // html2canvas is not on the page until something asks for it (see loadExportLibrary in main.js).
+    if (!window.html2canvas && window.TechumLoadExportLibrary) await window.TechumLoadExportLibrary('html2canvas');
     if (!window.html2canvas) throw new Error('Screenshot tool did not load.');
     document.documentElement.classList.add('feedback-capturing');
     try {

@@ -13,7 +13,7 @@ Commercial licensing: contact the author.
 
 Type an address → the app fetches the detected buildings around it from Overture Maps,
 derives the halachic city (ibur ha'ir chaining at 70⅔ amos, city merges at 141⅓,
-three-villages rule), squares it to a true-north rectangle (ribua ha'ir), and draws the
+three-villages rule), squares it (ribua ha'ir: an existing rectangle keeps its direction, any other shape is squared to the compass), and draws the
 2000-amos techum with square corners — all shitos configurable, all uncertainty flagged.
 
 Halachic sources and every design decision: **[TECHUM-SPEC.md](TECHUM-SPEC.md)**.
@@ -38,18 +38,18 @@ npm run cf:dev
 ```
 
 Data: Overture Buildings PMTiles (fused OSM + ML footprint sources), Nominatim (geocoding through an identified/cached production
-proxy), and Esri World Imagery (satellite tiles).
+proxy), Google Maps imagery (metered, with Esri World Imagery as the fallback), and CARTO label tiles.
 
 ## Using it
 
 1. Enter an address (or click the map), confirm the pin, **Calculate techum**.
 2. Layers: buildings (green dwelling / orange untagged / purple needs-review / gray
-   non-dwelling), blue city rectangle, teal karpef, **red techum boundary**.
+   non-dwelling), green city rectangle, dashed green karpef, **pink techum boundary**.
 3. **Click any building** to force include/exclude it — recomputes instantly.
 4. Psak profiles: Mishna Berurah/Ashkenazi (default), Chazon Ish, Mechaber/Sefardi —
    every setting individually overridable (profile shows "Custom").
 5. Optional comparison line: draw the techum under a second amah simultaneously.
-6. Export KML (opens in Google Earth for review) or GeoJSON — both embed the full config
+6. Export KML or KMZ (open in Google Earth for review), GeoJSON, PDF, or PNG — the data formats embed the full config
    **plus an audit block** (engine version, Overture release/timestamp, extent, counts, overrides,
    whether the search frontier closed, projection, orientation choice).
 7. **Save/Load snapshot** — freezes the fetched buildings + settings + overrides to a JSON
@@ -77,7 +77,7 @@ proxy), and Esri World Imagery (satellite tiles).
 | `js/settings.js` | Psak profiles (spec Part 2) + persistence |
 | `js/main.js` | App flow, Leaflet rendering, auto-expanding fetch, per-building overrides |
 | `js/kml.js` | KML/GeoJSON export with embedded config + disclaimer |
-| `tests/geometry.test.js` | Golden tests: circle→square, rotated square re-squared, chain gaps under each amah, lone-house asymmetry, karpef, three villages, overlap machlokes, point mode |
+| `tests/geometry.test.js` | Golden tests: circle→square, rotated square keeps its direction, chain gaps under each amah, lone-house asymmetry, karpef, three villages, overlap machlokes, point mode |
 
 ## Known limits (v1)
 

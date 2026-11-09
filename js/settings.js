@@ -1,16 +1,10 @@
 /*
- * Psak profiles & settings — mirrors TECHUM-SPEC.md Part 2 (rev. 14).
+ * Psak profiles & settings — mirrors TECHUM-SPEC.md Part 2.
  * Every disputed rule is a setting; profiles are documented defaults, all overridable.
  * Classic script: exposes window.TechumSettings.
  */
 (function (root) {
   'use strict';
-
-  const AMOS_OPTIONS = [
-    { cm: 48, label: "R' Chaim Naeh — 18.90 in (2,000 amos = 960 m)" },
-    { cm: 53.98, label: "R' Moshe Feinstein — 21.25 in (2000 amos = 1,080 m)" },
-    { cm: 57.6, label: 'Chazon Ish — 22.68 in (2,000 amos = 1,152 m)' },
-  ];
 
   const PROFILES = {
     'mishna-berura': {
@@ -21,7 +15,7 @@
       overlapPolicy: 'no-join', // R' Elyashiv / R' N. Karelitz / R' Belsky
       largeHolePolicy: 'include-with-warning', // Beit Yitzchok / R' Shulem Weiss
       bowPolicy: 'rema-majority', // Tosafos/Rosh/Rema; reviewer supplies real-city endpoints
-      minCityHouses: 6,    // MB 398:38
+      minCityHouses: 6,    // provisional footprint proxy for MB 398:38, not the rule itself
     },
     'chazon-ish': {
       label: 'Chazon Ish',
@@ -137,6 +131,6 @@
     return same ? s.profile : 'custom';
   }
 
-  root.TechumSettings = { PROFILES, DEFAULTS, AMOS_OPTIONS, normalize, load, save, applyProfile,
+  root.TechumSettings = { PROFILES, DEFAULTS, normalize, load, save, applyProfile,
     effectiveProfile, diffFromDefaults };
 })(typeof self !== 'undefined' ? self : this);

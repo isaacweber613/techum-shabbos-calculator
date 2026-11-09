@@ -1,6 +1,6 @@
 # Cloudflare production handoff
 
-Production is one Cloudflare Worker serving explicit static assets plus three API routes,
+Production is one Cloudflare Worker serving explicit static assets plus the API routes listed in `docs/agent-index/routes.md`,
 with D1 for analytics and Cloudflare Access protecting the dashboard. `serve.mjs` remains a
 local-development server; it is not the production origin.
 
@@ -61,7 +61,7 @@ local-development server; it is not the production origin.
    Overture buildings PMTiles (global one-fill-per-second gate + 30 requests/minute per
    network). Payloads stay as raw Overture footprints; techum lines are never server-cached.
 
-6. Test the `workers.dev` URL before connecting the domain: address search, calculation,
+6. First-time setup only (`workers_dev` is now off in `wrangler.jsonc`): test the `workers.dev` URL before connecting the domain: address search, calculation,
    `/about`, `/analytics`, exports, mobile layout, and browser console.
 
 ## Domain and private analytics

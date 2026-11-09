@@ -171,5 +171,5 @@
     return out;
   }
 
-  root.TechumKML = { buildKML, buildGeoJSON, buildKMZ, parseGeoJSONFootprints, download, _internals: { esc, coordString, crc32 } };
+  root.TechumKML = { buildKML, buildGeoJSON, buildKMZ, parseGeoJSONFootprints, download };
 })(typeof self !== 'undefined' ? self : this);
