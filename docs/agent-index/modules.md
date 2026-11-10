@@ -31,7 +31,11 @@ Top-level exports from application, library, hook, context, and worker modules.
 | `tileKey` | `(i: number, j: number): string` | `worker/buildings.ts` |
 | `tilesForBBox` | `(bbox: BBox): TileCoord[]` | `worker/buildings.ts` |
 | `applyAcceptedCorrections` | `( db: D1Database, bbox: BBox, buildings: Building[], ): Promise<` | `worker/corrections.ts` |
+| `CorrectionReviewStatus` | `type` | `worker/corrections.ts` |
+| `listBuildingCorrections` | `(db: D1Database): Promise<Response>` | `worker/corrections.ts` |
+| `reviewBuildingCorrection` | `( request: Request, id: string, db: D1Database, reviewer: string, ): Promise<Response>` | `worker/corrections.ts` |
 | `submitBuildingCorrection` | `( request: Request, db: D1Database, actor: string, trusted: boolean, ): Promise<Response>` | `worker/corrections.ts` |
+| `VALID_CORRECTION_REVIEW_STATUSES` | `inferred` | `worker/corrections.ts` |
 | `validateCorrectionInput` | `(raw: unknown): CorrectionInput \| null` | `worker/corrections.ts` |
 | `buildCodexFeedbackPrompt` | `(report: FeedbackReportForPrompt): string` | `worker/feedback.ts` |
 | `FeedbackEnv` | `type` | `worker/feedback.ts` |

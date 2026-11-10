@@ -178,6 +178,36 @@ test('ordinary users get one automatic Overture result with optional corrections
   assert.equal(S.DEFAULTS.showVerifiedOnly, false);
 });
 
+test('automatic result keeps messages, exposes a retry, and keeps the audit toggle reachable', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const design = fs.readFileSync(path.join(__dirname, '..', 'js', 'design-experience.js'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'css', 'design-experience.css'), 'utf8');
+  assert.match(html, /id="btn-retry"/);
+  assert.match(main, /setRetryVisible\(!succeeded\)/);
+  assert.match(main, /btn-retry'\)\.addEventListener\('click', \(\) => calculate\(false\)\)/);
+  assert.doesNotMatch(css, /body\.has-result #status[^{]*\{[^}]*display:none/s);
+  assert.match(css, /body\.has-result #status[^{]*\{[^}]*display:block/s);
+  assert.match(design, /mapDisplayDetails\.prepend\(methodCallout\)/);
+  assert.match(design, /location\.hostname === 'localhost'/);
+});
+
+test('a forced map-data refresh drops force after the first fill retry', () => {
+  const data = fs.readFileSync(path.join(__dirname, '..', 'js', 'data.js'), 'utf8');
+  assert.match(data, /activeForce = force/);
+  assert.match(data, /if \(activeForce\) \{ activeForce = false; params\.delete\('force'\); \}/);
+});
+
+test('analytics drops the empty address-search views and reports every export format and mode', () => {
+  const analytics = fs.readFileSync(path.join(__dirname, '..', 'analytics.html'), 'utf8');
+  assert.doesNotMatch(analytics, /Address searches|Top address searches/);
+  assert.match(analytics, /Exports \(all formats\)/);
+  assert.match(analytics, /agg\.modes\.building/);
+  const worker = fs.readFileSync(path.join(__dirname, '..', 'worker', 'index.ts'), 'utf8');
+  assert.match(worker, /strftime\('%Y-%m-%d', \(t \/ 1000\) - \(\?1 \* 60\)/);
+  assert.match(worker, /json_extract\(payload, '\$\.mode'\) = 'building'/);
+});
+
 test('audit map and city-status controls use the correct merge stage', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
   assert.match(main, /const settlementClusters = res\.clusters/);
@@ -192,7 +222,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-[12])'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-[12]|20261110-[12])'));
   }
 });
 

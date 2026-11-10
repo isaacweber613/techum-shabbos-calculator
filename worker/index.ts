@@ -1,5 +1,5 @@
 import { handleBuildings } from './buildings';
-import { submitBuildingCorrection } from './corrections';
+import { listBuildingCorrections, reviewBuildingCorrection, submitBuildingCorrection } from './corrections';
 import { issueGoogleMapConfig } from './map-config';
 import { sha256Hex, validateRegistrySubmission } from './registry';
 import { feedbackScreenshot, listFeedback, submitFeedback, updateFeedbackStatus } from './feedback';
@@ -18,6 +18,7 @@ interface Env {
   IP_HASH_SECRET: string;
   REQUIRE_ACCESS: string;
   RAW_RETENTION_DAYS: string;
+  GEOCODE_CACHE_DAYS?: string;
   GEOCODER_CONTACT: string;
   REGISTRY_WRITES?: string;
   GOOGLE_MAPS_BROWSER_KEY?: string;
@@ -139,8 +140,8 @@ async function recordEvent(request: Request, env: Env): Promise<Response> {
 }
 
 type StoredEvent = { t: number; type: EventType; vid: string; payload: string; country: string | null; colo: string | null; user_agent: string | null };
-type DailyTotal = { day: string; visits: number; searches: number; calcs: number; exports: number; snapshots: number;
-  search_found: number; city_calcs: number; point_calcs: number; cache_hits: number };
+type DailyCount = { day: string; visits: number; searches: number; calcs: number; exports: number; snapshots: number;
+  city_calcs: number; point_calcs: number; building_calcs: number; cache_hits: number };
 type AnalyticsEvent = StoredEvent & {
   found?: unknown; q?: unknown; label?: unknown; mode?: unknown; fromCache?: unknown;
   profile?: unknown; nonDefaults?: unknown; page?: unknown; format?: unknown;
@@ -159,35 +160,43 @@ async function analytics(request: Request, env: Env): Promise<Response> {
     return Number.isFinite(value) ? value : fallback;
   };
   const from = finite('from', 0), to = finite('to', Date.now() + 86400000);
+  const tzOffsetMin = finite('tz', 0);
   // Newest first so truncation drops the oldest events, then restore chronological order.
   const rows = await env.DB.prepare(`SELECT t, type, vid, payload, country, colo, user_agent FROM events
     WHERE t >= ?1 AND t < ?2 ORDER BY t DESC LIMIT 50000`).bind(from, to).all<StoredEvent>();
   rows.results.reverse();
-  const fromDay = new Date(Math.max(0, from)).toISOString().slice(0, 10);
-  const toDay = new Date(Math.max(0, to - 1)).toISOString().slice(0, 10);
-  const dailyRows = await env.DB.prepare(`SELECT day, visits, searches, calcs, exports, snapshots,
-    search_found, city_calcs, point_calcs, cache_hits
-    FROM daily_totals WHERE day >= ?1 AND day <= ?2 ORDER BY day ASC`).bind(fromDay, toDay).all<DailyTotal>();
+  // Aggregate the exact range by the viewer's local calendar day. The old rollup
+  // table is keyed by UTC days, which put part of another day into "Today".
+  const dailyRows = await env.DB.prepare(`SELECT
+      strftime('%Y-%m-%d', (t / 1000) - (?1 * 60), 'unixepoch') AS day,
+      SUM(type = 'visit') AS visits,
+      SUM(type = 'search') AS searches,
+      SUM(type = 'calc') AS calcs,
+      SUM(type = 'export') AS exports,
+      SUM(type = 'snapshot') AS snapshots,
+      SUM(type = 'calc' AND json_extract(payload, '$.fromCache')) AS cache_hits,
+      SUM(type = 'calc' AND json_extract(payload, '$.mode') = 'city') AS city_calcs,
+      SUM(type = 'calc' AND json_extract(payload, '$.mode') = 'point') AS point_calcs,
+      SUM(type = 'calc' AND json_extract(payload, '$.mode') = 'building') AS building_calcs
+    FROM events WHERE t >= ?2 AND t < ?3 GROUP BY day ORDER BY day ASC`)
+    .bind(tzOffsetMin, from, to).all<DailyCount>();
   const events: AnalyticsEvent[] = rows.results.map((row) => ({ ...JSON.parse(row.payload) as Record<string, unknown>, ...row }));
   const totals = dailyRows.results.reduce((sum, day) => ({
-    visits: sum.visits + day.visits, uniqueVisitors: 0,
-    searches: sum.searches + day.searches, calcs: sum.calcs + day.calcs,
-    exports: sum.exports + day.exports, snapshots: sum.snapshots + day.snapshots,
+    visits: sum.visits + (day.visits || 0), uniqueVisitors: 0,
+    searches: sum.searches + (day.searches || 0), calcs: sum.calcs + (day.calcs || 0),
+    exports: sum.exports + (day.exports || 0), snapshots: sum.snapshots + (day.snapshots || 0),
   }), { visits: 0, uniqueVisitors: 0, searches: 0, calcs: 0, exports: 0, snapshots: 0 });
-  const vids = new Set<string>();
   const byDay = new Map(dailyRows.results.map((day) => [day.day,
     { day: day.day, visits: day.visits, searches: day.searches, calcs: day.calcs }]));
-  const searches = new Map<string, { count: number; found: number; example: string }>();
   const places = new Map<string, { count: number }>(), settings = new Map<string, { count: number }>();
   const profiles = new Map<string, { count: number }>(), countries = new Map<string, { count: number }>();
   const devices = new Map<string, { count: number }>();
   const modes = dailyRows.results.reduce((sum, day) => ({
-    city: sum.city + day.city_calcs, point: sum.point + day.point_calcs,
-  }), { city: 0, point: 0 });
-  const cacheHits = dailyRows.results.reduce((sum, day) => sum + day.cache_hits, 0);
-  const searchFound = dailyRows.results.reduce((sum, day) => sum + day.search_found, 0);
+    city: sum.city + (day.city_calcs || 0), point: sum.point + (day.point_calcs || 0),
+    building: sum.building + (day.building_calcs || 0),
+  }), { city: 0, point: 0, building: 0 });
+  const cacheHits = dailyRows.results.reduce((sum, day) => sum + (day.cache_hits || 0), 0);
   for (const event of events) {
-    vids.add(event.vid);
     const ua = event.user_agent || '';
     const device = /tablet|ipad/i.test(ua) ? 'tablet' : /mobile|android|iphone/i.test(ua) ? 'mobile' : 'desktop';
     if (!devices.has(device)) devices.set(device, { count: 0 }); devices.get(device)!.count++;
@@ -195,15 +204,8 @@ async function analytics(request: Request, env: Env): Promise<Response> {
       if (!countries.has(event.country)) countries.set(event.country, { count: 0 });
       countries.get(event.country)!.count++;
     }
-    if (event.type === 'visit') { /* totals come from permanent daily rollups */ }
-    else if (event.type === 'search') {
-      const query = String(event.q || '').trim();
-      if (query) {
-        const key = query.toLowerCase();
-        if (!searches.has(key)) searches.set(key, { count: 0, found: 0, example: query });
-        const item = searches.get(key)!; item.count++; if (event.found) item.found++;
-      }
-    } else if (event.type === 'calc') {
+    if (event.type === 'visit') { /* totals come from the local-day range aggregate */ }
+    else if (event.type === 'calc') {
       const place = String(event.label || event.q || 'unknown').trim();
       if (!places.has(place)) places.set(place, { count: 0 }); places.get(place)!.count++;
       if (event.profile) {
@@ -217,10 +219,10 @@ async function analytics(request: Request, env: Env): Promise<Response> {
       }
     }
   }
-  if (from === 0) {
-    const allVisitors = await env.DB.prepare('SELECT COUNT(*) AS count FROM visitors WHERE first_seen < ?1').bind(to).first<{ count: number }>();
-    totals.uniqueVisitors = allVisitors?.count || 0;
-  } else totals.uniqueVisitors = vids.size;
+  const uniqueVisitors = await env.DB.prepare(
+    'SELECT COUNT(DISTINCT vid) AS count FROM events WHERE t >= ?1 AND t < ?2')
+    .bind(from, to).first<{ count: number }>();
+  totals.uniqueVisitors = uniqueVisitors?.count || 0;
   const recent = events.slice(-120).reverse().map((event) => ({
     t: event.t, type: event.type,
     detail: event.type === 'search' ? event.q : event.type === 'calc' ? (event.label || event.q) : event.type === 'visit' ? event.page : event.format || event.action || '',
@@ -232,10 +234,15 @@ async function analytics(request: Request, env: Env): Promise<Response> {
       t: event.t, place: event.label || event.q || '', mode: event.mode,
       buildings: event.buildings, totalMs: event.ms, performance: event.performance,
     }));
-  return json({ totals, modes, cacheHits, searchFound, byDay: [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day)),
-    topSearches: topCounts(searches, 40), topPlaces: topCounts(places, 40), nonDefaultSettings: topCounts(settings, 60),
+  return json({ totals, modes, cacheHits, byDay: [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day)),
+    topPlaces: topCounts(places, 40), nonDefaultSettings: topCounts(settings, 60),
     profiles: topCounts(profiles, 10), countries: topCounts(countries, 30), devices: topCounts(devices, 10), recent, performanceReports,
     firstEventAt: events[0]?.t || null, generatedAt: Date.now(), truncated: rows.results.length === 50000 });
+}
+
+function geocodeCutoff(env: Env): number {
+  const days = Math.max(1, Number(env.GEOCODE_CACHE_DAYS) || 90);
+  return Date.now() - days * 86400000;
 }
 
 async function geocode(request: Request, env: Env): Promise<Response> {
@@ -255,7 +262,8 @@ async function geocode(request: Request, env: Env): Promise<Response> {
   const lon = hasBias ? Math.round(lonRaw * 100) / 100 : 0;
   // Prefixed like 'photon:' and 'reverse:' so a search for "photon:x" cannot overwrite another cache.
   const normalized = 'search:' + query.toLowerCase().replace(/\s+/g, ' ') + (hasBias ? `|${lat},${lon}` : '');
-  const cached = await env.DB.prepare('SELECT response FROM geocode_cache WHERE query = ?1').bind(normalized).first<{ response: string }>();
+  const cached = await env.DB.prepare('SELECT response FROM geocode_cache WHERE query = ?1 AND cached_at >= ?2')
+    .bind(normalized, geocodeCutoff(env)).first<{ response: string }>();
   if (cached) return new Response(cached.response, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } });
 
   const network = await hmacHex(env.IP_HASH_SECRET || 'local-development-only', request.headers.get('CF-Connecting-IP') || 'unknown');
@@ -294,8 +302,8 @@ async function reverseGeocode(request: Request, env: Env): Promise<Response> {
   }
 
   const cacheKey = `reverse:${lat.toFixed(5)},${lon.toFixed(5)}`;
-  const cached = await env.DB.prepare('SELECT response FROM geocode_cache WHERE query = ?1')
-    .bind(cacheKey).first<{ response: string }>();
+  const cached = await env.DB.prepare('SELECT response FROM geocode_cache WHERE query = ?1 AND cached_at >= ?2')
+    .bind(cacheKey, geocodeCutoff(env)).first<{ response: string }>();
   if (cached) {
     return new Response(cached.response, {
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' },
@@ -344,7 +352,8 @@ async function autocomplete(request: Request, env: Env): Promise<Response> {
   const lat = hasBias ? Math.round(latRaw * 100) / 100 : 0;
   const lon = hasBias ? Math.round(lonRaw * 100) / 100 : 0;
   const cacheKey = 'photon:' + query.toLowerCase().replace(/\s+/g, ' ') + (hasBias ? `|${lat},${lon}` : '');
-  const cached = await env.DB.prepare('SELECT response FROM geocode_cache WHERE query = ?1').bind(cacheKey).first<{ response: string }>();
+  const cached = await env.DB.prepare('SELECT response FROM geocode_cache WHERE query = ?1 AND cached_at >= ?2')
+    .bind(cacheKey, geocodeCutoff(env)).first<{ response: string }>();
   if (cached) return new Response(cached.response, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } });
 
   const network = await hmacHex(env.IP_HASH_SECRET || 'local-development-only', request.headers.get('CF-Connecting-IP') || 'unknown');
@@ -483,6 +492,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const email = await accessEmail(request, env);
     return submitBuildingCorrection(request, env.DB, email || `network:${network}`, !!email);
   }
+  if (url.pathname === '/api/building-corrections' && request.method === 'GET') {
+    if (!await privateAccessEmail(request, env)) return json({ error: 'Cloudflare Access authentication required' }, 403);
+    return listBuildingCorrections(env.DB);
+  }
+  const correctionReviewMatch = url.pathname.match(/^\/api\/building-corrections\/([0-9a-f-]+)$/);
+  if (correctionReviewMatch && request.method === 'PATCH') {
+    const reviewer = await privateAccessEmail(request, env);
+    if (!reviewer) return json({ error: 'Cloudflare Access authentication required' }, 403);
+    return reviewBuildingCorrection(request, correctionReviewMatch[1], env.DB, reviewer);
+  }
   if (url.pathname === '/api/registry' && request.method === 'GET') return listRegistry(env);
   if (url.pathname === '/api/registry' && request.method === 'POST') return publishRegistry(request, env);
   const registryMatch = url.pathname.match(/^\/api\/registry\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
@@ -496,6 +515,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (url.pathname === '/analytics-feedback' || url.pathname === '/analytics-feedback/') {
     const assetUrl = new URL(request.url);
     assetUrl.pathname = '/feedback';
+    return env.ASSETS.fetch(new Request(assetUrl.toString(), request));
+  }
+  if (url.pathname === '/corrections' || url.pathname === '/corrections/') {
+    const assetUrl = new URL(request.url);
+    assetUrl.pathname = '/corrections.html';
     return env.ASSETS.fetch(new Request(assetUrl.toString(), request));
   }
   return env.ASSETS.fetch(request);
@@ -542,6 +566,7 @@ export default {
     const cutoff = Date.now() - days * 86400000;
     await env.DB.batch([
       env.DB.prepare('DELETE FROM events WHERE t < ?1').bind(cutoff),
+      env.DB.prepare('DELETE FROM geocode_cache WHERE cached_at < ?1').bind(geocodeCutoff(env)),
       env.DB.prepare('DELETE FROM geocode_slots WHERE second < ?1').bind(Math.floor(Date.now() / 1000) - 120),
       env.DB.prepare('DELETE FROM building_fill_slots WHERE second < ?1').bind(Math.floor(Date.now() / 1000) - 120),
       env.DB.prepare('DELETE FROM google_map_daily_usage WHERE usage_date < ?1')

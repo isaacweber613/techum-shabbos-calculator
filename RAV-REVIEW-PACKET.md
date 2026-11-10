@@ -1,8 +1,19 @@
 # Rav review packet — Techum Shabbos Calculator
 
-Prepared 2026-07-14 for spec rev. 14. This is a decision sheet, not a psak. The detailed reasoning,
-citations, revision history, and alternatives are in `TECHUM-SPEC.md`; implementation
-evidence and known gaps are in `HALACHA-AUDIT.md`.
+Updated 2026-11-10 for spec rev. 18 (first prepared 2026-07-14 for rev. 14). This is a
+decision sheet, not a psak. The detailed reasoning, citations, revision history, and
+alternatives are in `TECHUM-SPEC.md`; implementation evidence and known gaps are in
+`HALACHA-AUDIT.md`.
+
+## What changed since the first packet
+
+- Houses of worship with living quarters and fire stations now require review (rev. 16).
+- The unfilled-bow/L boundary is measured from the houses, not the empty grid cells
+  (rev. 16–17).
+- City-status keys and the three-village/overlap passes were made deterministic; the bow
+  depth and 4,000-amah tests now measure to the houses (rev. 17).
+- A lone city's squaring label was corrected under the joint-redraw setting (rev. 18).
+- No profile default changed.
 
 ## Fast review: decisions requested
 
@@ -12,7 +23,7 @@ current software behavior may remain; it does not certify a particular city's in
 
 | Priority | Question | Current documented default | What changes if rejected |
 |---|---|---|---|
-| 1 | Which modern structures are a *beis dirah*: hotels, hospitals, schools, offices/factories, seasonal homes, trailers, airport buildings? | Tag-based inclusion with unknowns visibly flagged and manually overridable | Classification table and every affected city edge |
+| 1 | Which modern structures are a *beis dirah*: hotels, hospitals, schools, offices/factories, houses of worship with living quarters, fire stations, seasonal homes, trailers, airport buildings? | Tag-based inclusion with unknowns visibly flagged and manually overridable; houses of worship with living quarters and fire stations are review cases (rev. 16) | Classification table and every affected city edge |
 | 2 | Which independent-city basis is factually present: 3 *chatzeros* × 2 permanent houses, at least 50 residents, another attested basis, or none? How should apartments/shared entrances count? | Six roof footprints are only a provisional proxy; the UI records the reviewed basis and evidence | Cluster qualification and potentially kilometer-scale merges |
 | 3 | In the MB/Ashkenazi profile, is one 70⅔-amah karpef added after the final permitted ribua/overlap regions? | Yes; one post-ribua karpef, with no recursive karpef-generated merger | Tens of meters at each outer edge; possibly topology |
 | 4 | Does standing in a filled corner of the city's *ribua* make the person a city resident? | Yes; a physically containing dwelling takes priority, then the final profile-governed starting region; unrelated no-join candidates use their common permission | City mode versus point mode and the selected home city |
@@ -41,7 +52,7 @@ can then be tested on a city where they are concrete rather than in the abstract
   advanced choices calculate R' Shlomo Miller's joined stepped union or the expansive
   recursive joint redraw rather than treating them as a binary label.
 - A confirmed bow/L endpoint pair changes the calculation; an unconfirmed material pocket
-  remains a visibly provisional no-fill result.
+  remains a visibly provisional no-fill result measured from its houses (rev. 16–17).
 - Multi-region starting areas remain multi-region on the map and in KML/KMZ/GeoJSON.
 - R' Chaim Naeh 48 cm is the MB/Ashkenazi and Mechaber profile default; Chazon Ish is
   57.6 cm. Alternate results are labeled scenarios, not automatically lenient/stringent.

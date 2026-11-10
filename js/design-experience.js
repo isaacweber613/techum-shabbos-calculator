@@ -1,6 +1,9 @@
 (() => {
   const requestedDesign = new URLSearchParams(location.search).get('design');
-  const isDesignPreview = /^(?:[1-9]|10)$/.test(requestedDesign || '');
+  // The numbered concepts are development previews only. On the public site the
+  // live design is always 10, even if an old ?design= link is still circulating.
+  const isLocalPreview = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  const isDesignPreview = isLocalPreview && /^(?:[1-9]|10)$/.test(requestedDesign || '');
   const design = isDesignPreview ? requestedDesign : '10';
 
   const concepts = {
@@ -33,7 +36,7 @@
     const nav = document.createElement('div');
     nav.id = 'design-experience-nav';
     if (isDesignPreview) {
-      nav.innerHTML = `<a href="/designtest/${design}/" aria-label="Back to ${concept.name}">←</a><span><b>Concept ${design}</b>${concept.name}</span><button id="design-settings-button" type="button" aria-expanded="false" aria-controls="design-drawer">Review tools</button>`;
+      nav.innerHTML = `<a href="/" aria-label="Back to the calculator">←</a><span><b>Concept ${design}</b>${concept.name}</span><button id="design-settings-button" type="button" aria-expanded="false" aria-controls="design-drawer">Review tools</button>`;
     } else {
       nav.classList.add('production-review-nav');
       nav.innerHTML = '<span><b>Calculation settings</b>Profiles, layers, and review tools</span><button id="design-settings-button" type="button" aria-expanded="false" aria-controls="design-drawer">All settings</button>';
@@ -257,6 +260,14 @@
       // Keep the fixed drawer at the document root so the sidebar's stacking
       // context cannot put the full-screen backdrop in front of its controls.
       document.body.append(drawer);
+
+      // The live layout hides the old method callout with the rest of the legacy
+      // sidebar. Move its "Show calculation" control into the review drawer so the
+      // audit geometry is still reachable (spec rev. 18 behavior).
+      const methodCallout = document.querySelector('.method-callout');
+      const mapDisplayDetails = [...drawer.querySelectorAll('details')]
+        .find((details) => /map display/i.test(details.querySelector('summary')?.textContent || ''));
+      if (methodCallout && mapDisplayDetails) mapDisplayDetails.prepend(methodCallout);
 
       const backdrop = document.createElement('div');
       backdrop.id = 'design-drawer-backdrop';

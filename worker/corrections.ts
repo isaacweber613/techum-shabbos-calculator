@@ -8,6 +8,23 @@ type CorrectionRow = {
   created_at: number;
 };
 
+type ReviewCorrectionRow = {
+  id: string;
+  source_id: string | null;
+  decision: 'include' | 'exclude';
+  geometry_json: string | null;
+  south: number;
+  west: number;
+  north: number;
+  east: number;
+  note: string | null;
+  created_at: number;
+  created_by: string | null;
+};
+
+export const VALID_CORRECTION_REVIEW_STATUSES = ['accepted', 'rejected'] as const;
+export type CorrectionReviewStatus = typeof VALID_CORRECTION_REVIEW_STATUSES[number];
+
 type CorrectionInput = {
   sourceId: string | null;
   decision: 'include' | 'exclude';
@@ -82,6 +99,45 @@ export async function submitBuildingCorrection(
       input.bbox.south, input.bbox.west, input.bbox.north, input.bbox.east,
       input.note, status, now, actor, trusted ? now : null, trusted ? actor : null).run();
   return json({ id, status }, 201);
+}
+
+export async function listBuildingCorrections(db: D1Database): Promise<Response> {
+  const result = await db.prepare(`SELECT id, source_id, decision, geometry_json, south, west, north, east,
+    note, created_at, created_by
+    FROM building_corrections WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1000`)
+    .all<ReviewCorrectionRow>();
+  return json({ corrections: (result.results || []).map((row) => ({
+    id: row.id,
+    sourceId: row.source_id,
+    decision: row.decision,
+    note: row.note,
+    createdAt: row.created_at,
+    createdBy: row.created_by,
+    hasGeometry: Boolean(row.geometry_json),
+    bbox: { south: row.south, west: row.west, north: row.north, east: row.east },
+    centroid: { lat: (row.south + row.north) / 2, lon: (row.west + row.east) / 2 },
+  })) });
+}
+
+export async function reviewBuildingCorrection(
+  request: Request,
+  id: string,
+  db: D1Database,
+  reviewer: string,
+): Promise<Response> {
+  let body: unknown;
+  try { body = await request.json(); } catch { return json({ error: 'invalid JSON' }, 400); }
+  const status = body && typeof body === 'object' && !Array.isArray(body)
+    ? (body as Record<string, unknown>).status : null;
+  if (typeof status !== 'string' || !VALID_CORRECTION_REVIEW_STATUSES.includes(status as CorrectionReviewStatus)) {
+    return json({ error: 'review status must be accepted or rejected' }, 400);
+  }
+  const result = await db.prepare(`UPDATE building_corrections SET status = ?1, reviewed_at = ?2,
+    reviewed_by = ?3 WHERE id = ?4 AND status = 'pending'`)
+    .bind(status, Date.now(), reviewer, id).run();
+  return result.meta.changes
+    ? json({ ok: true, id, status })
+    : json({ error: 'correction not found or already reviewed' }, 404);
 }
 
 export async function applyAcceptedCorrections(

@@ -350,7 +350,8 @@
       south: String(bbox.south), west: String(bbox.west),
       north: String(bbox.north), east: String(bbox.east),
     });
-    if (force) params.set('force', '1');
+    let activeForce = force;
+    if (activeForce) params.set('force', '1');
     let res;
     let fillRemaining = Infinity;
     for (let attempt = 0; ; attempt++) {
@@ -361,6 +362,10 @@
       const remaining = Number(res.headers.get('X-Building-Fill-Remaining'));
       if (res.status === 429 && Number.isFinite(remaining) && remaining > 0 && remaining < fillRemaining) {
         fillRemaining = remaining;
+        // A forced refresh fills one invocation-sized group per request. Drop the
+        // force flag after the first retry so the next request reuses the group
+        // already refilled instead of starting over from that group forever.
+        if (activeForce) { activeForce = false; params.delete('force'); }
         attempt = -1;
         await new Promise((resolve) => setTimeout(resolve, 1000));
         continue;

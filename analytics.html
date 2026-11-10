@@ -101,6 +101,7 @@
     <h1>Techum Calculator — usage analytics</h1>
     <a href="index.html">← back to the calculator</a>
     <a href="/analytics-feedback">feedback inbox</a>
+    <a href="/corrections">building corrections</a>
     <a href="#" id="refresh">refresh</a>
   </header>
   <main>
@@ -141,17 +142,10 @@
       <div id="tbl-settings"></div>
     </div>
 
-    <div class="cols">
-      <div class="card">
-        <h2>Top address searches</h2>
-        <div class="sub">Every address typed into the search box.</div>
-        <div id="tbl-searches"></div>
-      </div>
-      <div class="card">
-        <h2>Top calculated places</h2>
-        <div class="sub">Where people actually ran a techum calculation.</div>
-        <div id="tbl-places"></div>
-      </div>
+    <div class="card">
+      <h2>Top calculated places</h2>
+      <div class="sub">Where people actually ran a techum calculation.</div>
+      <div id="tbl-places"></div>
     </div>
 
     <div class="cols">
@@ -236,15 +230,11 @@
       $('tiles').innerHTML =
         tile(t.visits, 'Visits', `${t.uniqueVisitors} unique visitor${t.uniqueVisitors === 1 ? '' : 's'}`) +
         tile(t.calcs, 'Techum calculations',
-          `${agg.modes.city} city · ${agg.modes.point} open-field · ${pct(agg.cacheHits, t.calcs)} from cache`) +
-        tile(t.searches, 'Address searches', `${pct(agg.searchFound, t.searches)} found`) +
-        tile(t.exports, 'Exports (KML/GeoJSON)', `${t.snapshots} snapshot save/loads`);
+          `${agg.modes.city} city · ${agg.modes.point} open-field · ${agg.modes.building || 0} building · ${pct(agg.cacheHits, t.calcs)} cached`) +
+        tile(t.exports, 'Exports (all formats)', `${t.snapshots} snapshot save/loads`);
 
       drawChart(agg, from, to);
       renderSettingsTable(agg);
-      renderTable('tbl-searches', ['Address searched', 'Times', 'Found'],
-        agg.topSearches.map((s) => [esc(s.example), s.count, s.found === s.count ? 'yes' : `${s.found}/${s.count}`]),
-        [null, 'num', 'num']);
       renderTable('tbl-places', ['Place (geocode label or pin)', 'Calcs'],
         agg.topPlaces.map((p) => [esc(p.key), p.count]), [null, 'num']);
       renderTable('tbl-countries', ['Country', 'Events'],

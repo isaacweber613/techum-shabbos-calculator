@@ -464,6 +464,7 @@
   async function calculate(forceFresh) {
     if (!state.pin) return;
     if (document.getElementById('btn-calc').getAttribute('aria-busy') === 'true') return;
+    setRetryVisible(false);
     const calculationId = ++activeCalculationId;
     const startPin = state.pin;
     // A newer run (or cancel) owns the progress UI. A pin moved without a new run means this
@@ -703,8 +704,17 @@
     setStatus(message);
   }
 
+  // A failed or cancelled run leaves the automatic design with no visible way to
+  // retry (the regular Calculate button is hidden). Reveal a dedicated retry control
+  // only for that state; a successful run hides it again.
+  function setRetryVisible(visible) {
+    const button = document.getElementById('btn-retry');
+    if (button) button.hidden = !visible;
+  }
+
   function finishCalculationProgress(succeeded) {
     const progress = document.getElementById('calc-progress');
+    setRetryVisible(!succeeded);
     const button = document.getElementById('btn-calc');
     progress.querySelectorAll('[data-stage]').forEach((el) => {
       el.classList.toggle('done', succeeded);
@@ -982,11 +992,12 @@
       state.result = null;
       render();
       setStatus('Recalculation failed: ' + error.message + ' — the previous boundary was removed. Adjust the input or recalculate.');
+      setRetryVisible(true);
       return null;
     }
     if (generation !== latestAnalysisId) return null;
     state.result = result;
-    if (!skipRender) render();
+    if (!skipRender) { render(); setRetryVisible(false); }
     return result;
   }
 
@@ -2221,6 +2232,7 @@
     document.getElementById('address').addEventListener('blur', () => setTimeout(closeSuggestions, 100));
     document.getElementById('btn-location').addEventListener('click', useMyLocation);
     document.getElementById('btn-calc').addEventListener('click', () => calculate(false));
+    document.getElementById('btn-retry').addEventListener('click', () => calculate(false));
     document.getElementById('btn-cancel-calc').addEventListener('click', cancelCalculation);
     document.getElementById('btn-fresh').addEventListener('click', () => calculate(true));
     document.getElementById('btn-kml').addEventListener('click', exportKML);
