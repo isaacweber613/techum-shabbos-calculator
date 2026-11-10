@@ -81,6 +81,10 @@ createServer(async (req, res) => {
       sendJSON(res, 201, { id: 'local-preview', status: 'pending' });
       return;
     }
+    if (path === '/api/building-corrections' && req.method === 'GET') {
+      sendJSON(res, 200, { corrections: [] });
+      return;
+    }
 
     // ---- static files ----
     if (path === '/') path = '/index.html';
@@ -88,9 +92,8 @@ createServer(async (req, res) => {
     if (path === '/about') path = '/about.html';
     if (path === '/guide') path = '/guide.html';
     if (path === '/feedback') path = '/feedback.html';
+    if (path === '/corrections') path = '/corrections.html';
     if (path === '/he' || path === '/he/') path = '/he/index.html';
-    if (path === '/designtest' || path === '/designtest/') path = '/designtest/index.html';
-    if (/^\/designtest\/(?:[1-9]|10)\/?$/.test(path)) path = path.replace(/\/$/, '') + '/index.html';
     if (path.startsWith('/data/')) { res.writeHead(403); res.end(); return; } // logged events are not public
     const file = normalize(join(root, path));
     const rel = relative(root, file);

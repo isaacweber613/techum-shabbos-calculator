@@ -35,12 +35,13 @@
   <script>
     (() => {
       const requestedDesign = new URLSearchParams(location.search).get('design');
-      document.documentElement.dataset.design = /^(?:[1-9]|10)$/.test(requestedDesign || '')
+      const localPreview = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      document.documentElement.dataset.design = localPreview && /^(?:[1-9]|10)$/.test(requestedDesign || '')
         ? requestedDesign
         : '10';
     })();
   </script>
-  <link rel="stylesheet" href="css/design-experience.css?v=20261109-1" />
+  <link rel="stylesheet" href="css/design-experience.css?v=20261110-1" />
   <link rel="stylesheet" href="css/feedback.css?v=20260722-4" />
 </head>
 <body>
@@ -68,6 +69,7 @@
       </div>
       <button id="btn-location" class="text-button location-button" type="button">◎ Use my current location</button>
       <div id="status" role="status" aria-live="polite"></div>
+      <button id="btn-retry" class="retry-button" type="button" hidden>Try again</button>
       <div id="calc-progress" class="calc-progress" hidden aria-hidden="true">
         <span data-stage="fetch">1 <b>Get map data</b></span>
         <span data-stage="analyze">2 <b>Build the city</b></span>
@@ -262,13 +264,13 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="js/track.js"></script>
-  <script src="js/geometry.js?v=20261109-1"></script>
-  <script src="js/data.js?v=20261109-1"></script>
+  <script src="js/geometry.js?v=20261110-1"></script>
+  <script src="js/data.js?v=20261110-1"></script>
   <script src="js/settings.js?v=20261109-1"></script>
   <script src="js/kml.js?v=20261109-1"></script>
   <script src="js/map-export.js?v=20261023-1"></script>
-  <script src="js/main.js?v=20261109-2"></script>
-  <script src="js/design-experience.js?v=20261023-1"></script>
+  <script src="js/main.js?v=20261110-1"></script>
+  <script src="js/design-experience.js?v=20261110-1"></script>
   <script src="js/feedback.js?v=20261109-1"></script>
 </body>
 </html>

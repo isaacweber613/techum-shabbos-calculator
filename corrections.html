@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <title>Techum Calculator — Building corrections</title>
+  <style>
+    :root { --page:#f6f7f3; --surface:#fff; --ink:#171916; --muted:#6f726b; --line:#dfe1da; --accent:#176b52; --green:#e7f3ed; --red:#b3261e; --red-soft:#fbe9e7; --warm:#fff1b9; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--page); color:var(--ink); font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 22px; border-bottom:1px solid var(--line); background:var(--surface); }
+    header h1 { margin:0; font-size:20px; } header nav { display:flex; gap:14px; font-size:12px; flex-wrap:wrap; } a { color:var(--accent); }
+    button { min-height:36px; border:1px solid #cfd2ca; border-radius:8px; background:#fff; color:var(--ink); padding:7px 12px; font:inherit; cursor:pointer; }
+    button:hover { border-color:#8d9187; } button:disabled { opacity:.55; cursor:default; }
+    main { max-width:980px; margin:0 auto; padding:18px 22px 50px; }
+    .toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    .toolbar p { margin:0; color:var(--muted); font-size:12.5px; }
+    .badge { display:inline-grid; place-items:center; min-width:22px; height:22px; margin-left:6px; padding:0 7px; border-radius:999px; background:var(--warm); color:#574000; font-size:12px; font-weight:700; }
+    #error { display:none; margin-bottom:12px; padding:10px 12px; border:1px solid #edbd73; border-radius:8px; background:#fff4d8; color:#664700; }
+    #toast { position:fixed; left:50%; bottom:22px; transform:translate(-50%,12px); opacity:0; pointer-events:none; background:var(--ink); color:#fff; border-radius:999px; padding:9px 16px; font-weight:650; transition:.18s; }
+    #toast.on { opacity:1; transform:translate(-50%,0); }
+    #list { display:grid; gap:10px; }
+    .correction { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; padding:14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
+    .correction h2 { margin:0 0 4px; font-size:15px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .decision { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+    .decision.include { background:var(--green); color:#0c513d; }
+    .decision.exclude { background:var(--red-soft); color:var(--red); }
+    .meta { color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+    .note { margin:7px 0 0; padding:8px 10px; border-radius:8px; background:#fafbf8; border:1px solid var(--line); white-space:pre-wrap; overflow-wrap:anywhere; }
+    .actions { display:flex; flex-direction:column; gap:7px; min-width:96px; }
+    .actions .accept { border-color:var(--accent); background:var(--accent); color:#fff; font-weight:700; }
+    .actions .reject { border-color:#e2b4af; color:var(--red); }
+    .empty { display:grid; place-items:center; min-height:220px; color:var(--muted); text-align:center; padding:24px; border:1px dashed var(--line); border-radius:12px; background:var(--surface); }
+    footer { margin-top:16px; color:var(--muted); font-size:12px; }
+    @media (max-width:640px) { .correction { grid-template-columns:1fr; } .actions { flex-direction:row; } .actions button { flex:1; } header { align-items:flex-start; flex-direction:column; } }
+  </style>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%23365f46%27/%3E%3Ctext x=%2732%27 y=%2746%27 font-size=%2740%27 font-family=%27serif%27 text-anchor=%27middle%27 fill=%27%23fff8e8%27%3E%D7%AA%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <header>
+    <h1>Building corrections <span class="badge" id="count">0</span></h1>
+    <nav><a href="/">Calculator</a><a href="/analytics">Analytics</a><a href="/analytics-feedback">Feedback</a><a href="#" id="refresh">Refresh</a></nav>
+  </header>
+  <main>
+    <div id="error"></div>
+    <div class="toolbar">
+      <p>Visitor corrections are saved as pending. Accept or reject each one; accepted corrections apply to new map fetches.</p>
+      <button id="refresh-top" type="button">Refresh</button>
+    </div>
+    <section id="list"><div class="empty">Loading pending corrections…</div></section>
+    <footer>This page is private and requires Cloudflare Access.</footer>
+  </main>
+  <div id="toast"></div>
+  <script>
+  (function () {
+    'use strict';
+    const $ = (id) => document.getElementById(id);
+    const state = { corrections: [] };
+    const esc = (value) => String(value == null ? '' : value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const date = (value) => new Date(value).toLocaleString();
+
+    function toast(message) {
+      const el = $('toast'); el.textContent = message; el.classList.add('on');
+      clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('on'), 2400);
+    }
+
+    async function load() {
+      $('error').style.display = 'none';
+      try {
+        const response = await fetch('/api/building-corrections', { cache:'no-store' });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+        state.corrections = payload.corrections || [];
+        render();
+      } catch (error) {
+        $('error').style.display = 'block';
+        $('error').textContent = `Could not load corrections: ${error.message} — in production, sign in through Cloudflare Access.`;
+        $('list').innerHTML = '<div class="empty">Corrections are unavailable.</div>';
+        $('count').textContent = '0';
+      }
+    }
+
+    function render() {
+      $('count').textContent = state.corrections.length;
+      if (!state.corrections.length) {
+        $('list').innerHTML = '<div class="empty">No pending corrections.</div>';
+        return;
+      }
+      $('list').innerHTML = state.corrections.map((row) => {
+        const link = `https://www.google.com/maps?q=${row.centroid.lat.toFixed(6)},${row.centroid.lon.toFixed(6)}`;
+        return `<article class="correction" data-id="${esc(row.id)}">
+          <div>
+            <h2><span class="decision ${row.decision}">${row.decision}</span>${row.sourceId ? `Overture ${esc(row.sourceId)}` : 'Drawn footprint'}</h2>
+            <div class="meta">Received ${esc(date(row.createdAt))}${row.createdBy ? ` · ${esc(row.createdBy)}` : ''} · <a href="${esc(link)}" target="_blank" rel="noopener">Open location</a></div>
+            ${row.note ? `<div class="note">${esc(row.note)}</div>` : ''}
+          </div>
+          <div class="actions">
+            <button class="accept" data-review="accepted" type="button">Accept</button>
+            <button class="reject" data-review="rejected" type="button">Reject</button>
+          </div>
+        </article>`;
+      }).join('');
+    }
+
+    async function review(id, status, button) {
+      const card = button.closest('.correction');
+      card.querySelectorAll('button').forEach((item) => { item.disabled = true; });
+      try {
+        const response = await fetch(`/api/building-corrections/${encodeURIComponent(id)}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+        state.corrections = state.corrections.filter((row) => row.id !== id);
+        render(); toast(status === 'accepted' ? 'Correction accepted' : 'Correction rejected');
+      } catch (error) {
+        toast(`Could not save: ${error.message}`);
+        card.querySelectorAll('button').forEach((item) => { item.disabled = false; });
+      }
+    }
+
+    $('list').addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-review]');
+      if (!button) return;
+      review(button.closest('.correction').dataset.id, button.dataset.review, button);
+    });
+    $('refresh').addEventListener('click', (event) => { event.preventDefault(); load(); });
+    $('refresh-top').addEventListener('click', load);
+    load();
+  })();
+  </script>
+</body>
+</html>

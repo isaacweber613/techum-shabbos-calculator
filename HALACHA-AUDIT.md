@@ -1,7 +1,21 @@
-# Halacha/spec implementation audit — 2026-07-14 (Rev. 14)
+# Halacha/spec implementation audit — 2026-11-10 (Rev. 18)
 
 Status: engineering and source-consistency review, not a psak. A rav/mumcheh must validate
 the halachic choices and any real-city result.
+
+## Changes since rev. 14 (through rev. 18)
+
+- **Rev. 15:** footprints with only a broad Overture subtype now use the existing
+  classification table. No psak default changed.
+- **Rev. 16:** the unfilled-bow/L and excluded-hole mask is measured from the houses, not
+  from the empty grid cells. Houses of worship with living quarters and fire stations moved
+  from non-dwelling to review. These are real boundary and classification changes.
+- **Rev. 17:** determinism and measurement fixes (stable city-status keys, house-based
+  4,000-amah bow test, every qualifying three-village triple, order-independent joint
+  redraw, multiple candidate cities, point-square rotation, antimeridian projection). No
+  profile default changed.
+- **Rev. 18:** a lone city under the joint-redraw setting now reports its own squaring label
+  correctly; the drawn geometry was already correct.
 
 ## Bottom line
 
@@ -45,9 +59,10 @@ Primary-source cross-checks:
    a labelled smaller no-fill geometry; supplied endpoints alter the boundary according to
    the selected sourced rule.
 3. Modern beis-dirah classification and hukaf-l'dirah facts cannot be inferred from map
-   tags. Offices, commercial/industrial structures, and factories now require review rather
-   than categorical exclusion. Per-building overrides, missing footprints, validated city
-   enclosures, and zero-house validated residential joining perimeters support that review.
+   tags. Offices, commercial/industrial structures, factories, houses of worship with living
+   quarters, and fire stations require review rather than categorical exclusion (rev. 16).
+   Per-building overrides, missing footprints, validated city enclosures, and zero-house
+   validated residential joining perimeters support that review.
 4. Ir muvla'at is destination/path-specific. The universal map detects candidate swallowed
    cities but deliberately does not invent one unsupported two-dimensional extension.
 5. The Va'ad's 2023 Woodbourne source is reproduced exactly as a published vector-output

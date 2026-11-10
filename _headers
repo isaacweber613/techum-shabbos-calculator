@@ -14,8 +14,11 @@
 /feedback
   X-Robots-Tag: noindex, nofollow, noarchive
 
+/corrections
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/corrections.html
+  X-Robots-Tag: noindex, nofollow, noarchive
+
 /TECHUM-SPEC.md
   X-Robots-Tag: noindex, nofollow, nosnippet
-
-/designtest/*
-  X-Robots-Tag: noindex, nofollow, noarchive

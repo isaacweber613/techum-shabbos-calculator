@@ -393,19 +393,6 @@
     }
   }
 
-  function clusterGap(cA, cB, buildings, upperBound) {
-    if (bboxGap(cA.bbox, cB.bbox) > upperBound) return Infinity;
-    let best = Infinity;
-    for (const i of cA.members) {
-      for (const j of cB.members) {
-        if (bboxGap(buildings[i].bbox, buildings[j].bbox) > Math.min(best, upperBound)) continue;
-        const d = ringDist(buildings[i].ring, buildings[j].ring);
-        if (d < best) best = d;
-      }
-    }
-    return best;
-  }
-
   // A city that is already rectangular keeps its own orientation, even when it is
   // diagonal to the world's directions (SA/MB OC 398:1).  These helpers find the
   // minimum-area rectangle around the settlement, then use a deliberately strict
@@ -584,16 +571,18 @@
     sets[0]);
   }
 
-  function clusterGapIndexed(cA, cB, buildings, upperBound, buildingGrid) {
+  // `gridFor(cluster)` returns a spatial index of that cluster's footprints only.
+  // Querying the smaller settlement against the target's own index avoids scanning
+  // every footprint in the district and checking target membership for each hit.
+  function clusterGapIndexed(cA, cB, buildings, upperBound, gridFor) {
     if (bboxGap(cA.bbox, cB.bbox) > upperBound) return Infinity;
     const source = cA.members.length <= cB.members.length ? cA : cB;
     const target = source === cA ? cB : cA;
-    const targetMembers = new Set(target.members);
+    const targetGrid = gridFor(target);
     let best = Infinity;
     for (const i of source.members) {
       const searchDistance = Math.min(best, upperBound);
-      for (const j of buildingGrid.query(expandRect(buildings[i].bbox, searchDistance))) {
-        if (!targetMembers.has(j)) continue;
+      for (const j of targetGrid.query(expandRect(buildings[i].bbox, searchDistance))) {
         if (bboxGap(buildings[i].bbox, buildings[j].bbox) > searchDistance) continue;
         const distance = ringDist(buildings[i].ring, buildings[j].ring);
         if (distance < best) best = distance;
@@ -603,6 +592,20 @@
     return best;
   }
 
+  // Exact minimum gap without an unbounded cross-product scan. The bbox gap is a
+  // lower bound; start just above it and double until the indexed query finds the
+  // nearest pair. Each call is exact because every pair within the bound is tested.
+  function clusterGapExact(cA, cB, buildings, gridFor) {
+    const lower = bboxGap(cA.bbox, cB.bbox);
+    let bound = Math.max(lower + 1, 25);
+    for (let tries = 0; tries < 16; tries++) {
+      const gap = clusterGapIndexed(cA, cB, buildings, bound, gridFor);
+      if (gap <= bound) return gap;
+      bound *= 2;
+    }
+    return Infinity;
+  }
+
   // ---------- Stage 2: city-to-city 141 1/3 merge (SA 398:5; reviewed city status) ----------
   function mergeCities(clusters, buildings, t2, minCityHouses) {
     const notes = [];
@@ -610,8 +613,16 @@
       ? cluster.members.length >= minCityHouses : cluster.qualifiesAsCity;
     const uf = UnionFind(clusters.length);
     const grid = GridIndex(Math.max(t2, 50));
-    const buildingGrid = GridIndex(Math.max(t2, 25));
-    buildings.forEach((building, index) => { if (building.included) buildingGrid.insert(index, building.bbox); });
+    const clusterGrids = new WeakMap();
+    const gridFor = (cluster) => {
+      let clusterGrid = clusterGrids.get(cluster);
+      if (!clusterGrid) {
+        clusterGrid = GridIndex(Math.max(t2, 25));
+        for (const index of cluster.members) if (buildings[index].included) clusterGrid.insert(index, buildings[index].bbox);
+        clusterGrids.set(cluster, clusterGrid);
+      }
+      return clusterGrid;
+    };
     clusters.forEach((cluster, index) => { if (qualifies(cluster)) grid.insert(index, cluster.bbox); });
 
     // A merge never creates a new shorter building-to-building gap: the distance from
@@ -623,7 +634,7 @@
       for (const b of grid.query(expandRect(clusters[a].bbox, t2))) {
         if (b <= a || !qualifies(clusters[b])) continue;
         if (bboxGap(clusters[a].bbox, clusters[b].bbox) > t2) continue;
-        const gap = clusterGapIndexed(clusters[a], clusters[b], buildings, t2, buildingGrid);
+        const gap = clusterGapIndexed(clusters[a], clusters[b], buildings, t2, gridFor);
         if (gap <= t2 && uf.find(a) !== uf.find(b)) {
           uf.union(a, b);
           notes.push({ type: 'city-merge', gapM: gap });
@@ -675,7 +686,8 @@
     // touches that settlement's nearby footprints instead of every footprint in the area.
     // Answers are symmetric and the cluster objects of untouched settlements persist
     // across passes, so each pair is decided once per calculation.
-    const cache = gapCache || { within: new WeakMap(), grids: new WeakMap() };
+    const cache = gapCache || { within: new WeakMap(), grids: new WeakMap(), hulls: new WeakMap() };
+    if (!cache.hulls) cache.hulls = new WeakMap();
     const clusterGrid = (cluster) => {
       let grid = cache.grids.get(cluster);
       if (!grid) {
@@ -725,13 +737,23 @@
       const cityGrid = GridIndex(Math.max(techum, 100));
       candidates.forEach(({ cl, i }) => cityGrid.insert(i, cl.bbox));
       const outerSupports = new Map(); // "a,c" -> outer support intervals on the a->c axis
+      const clusterHull = (cluster) => {
+        let hull = cache.hulls.get(cluster);
+        if (!hull) {
+          const points = [];
+          for (const i of cluster.members) for (const p of buildings[i].ring) points.push(p);
+          hull = convexHull(points);
+          cache.hulls.set(cluster, hull);
+        }
+        return hull;
+      };
+      // A polygon's projection extremes are attained on its convex hull, so the
+      // hull gives the same support interval without walking every footprint.
       const support = (cluster, nx, ny) => {
         let min = Infinity, max = -Infinity;
-        for (const i of cluster.members) {
-          for (const p of buildings[i].ring) {
-            const projected = p.x * nx + p.y * ny;
-            min = Math.min(min, projected); max = Math.max(max, projected);
-          }
+        for (const p of clusterHull(cluster)) {
+          const projected = p.x * nx + p.y * ny;
+          min = Math.min(min, projected); max = Math.max(max, projected);
         }
         return { min, max, width: max - min };
       };
@@ -802,12 +824,12 @@
           outerComponentKeys: [A.componentKeys, C.componentKeys].map((keys) => [...keys]),
           axis: { x: t.nx, y: t.ny },
           actualMiddleGapsM: {
-            toFirstOuter: clusterGap(A, B, buildings, techum),
-            toSecondOuter: clusterGap(B, C, buildings, techum),
+            toFirstOuter: clusterGapExact(A, B, buildings, clusterGrid),
+            toSecondOuter: clusterGapExact(B, C, buildings, clusterGrid),
           },
           projectedPlacementM: {
             outerGap: t.outerGap, middleWidth: t.middleWidth, leftGap: t.leftGap, rightGap: t.rightGap,
-            outerDistance: clusterGap(A, C, buildings, Infinity),
+            outerDistance: clusterGapExact(A, C, buildings, clusterGrid),
           },
         });
       }
@@ -1041,7 +1063,7 @@
     // 141⅓ and three-village mergers are applied to a fixed point. A three-village
     // merger can create a settlement that now qualifies for another 141⅓ merger.
     let changed = true, cityMergeMs = 0, threeVillagesMs = 0;
-    const threeVillageGaps = { within: new WeakMap(), grids: new WeakMap() };
+    const threeVillageGaps = { within: new WeakMap(), grids: new WeakMap(), hulls: new WeakMap() };
     while (changed) {
       const before = clusters.map((cluster) => cluster.componentKeys.slice().sort().join('|')).sort().join('::');
       let substageStarted = clock();
