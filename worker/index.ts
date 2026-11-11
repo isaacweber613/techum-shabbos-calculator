@@ -518,8 +518,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return env.ASSETS.fetch(new Request(assetUrl.toString(), request));
   }
   if (url.pathname === '/corrections' || url.pathname === '/corrections/') {
+    // Fetch the extensionless canonical path, as the feedback handler does:
+    // with html_handling "auto-trailing-slash" the asset binding redirects
+    // /corrections.html back to /corrections, which would loop forever.
     const assetUrl = new URL(request.url);
-    assetUrl.pathname = '/corrections.html';
+    assetUrl.pathname = '/corrections';
     return env.ASSETS.fetch(new Request(assetUrl.toString(), request));
   }
   return env.ASSETS.fetch(request);
