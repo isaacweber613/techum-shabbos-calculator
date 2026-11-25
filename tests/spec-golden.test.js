@@ -515,6 +515,229 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
 }
 
 // =================================================================================
+// Rev. 26 — a pin in the street between a town's houses is in that town (§1.10a)
+// =================================================================================
+{
+  // X: two rows of ten 10 m houses, 10 m apart: walls x [0, 190], y [0, 30]. 20 houses.
+  // Y: an L of houses (a row at y [200, 210] from x -190 to 20, a column at x [-190, -180] from
+  // y -100 up), so Y squares to x [-190, 20], y [-100, 210] and that square covers X's west end.
+  // Y's nearest house is 170 m from X's (> 141⅓ amos = 67.84 m): two separate no-join towns.
+  const X = [];
+  for (let i = 0; i < 10; i++) X.push(box(i * 20, 0, i * 20 + 10, 10), box(i * 20, 20, i * 20 + 10, 30));
+  const Y = [];
+  for (let x = -190; x <= 10; x += 20) Y.push(box(x, 200, x + 10, 210));
+  for (let y = -100; y <= 180; y += 20) Y.push(box(-190, y, -180, y + 10));
+  const both = X.concat(Y);
+  const homeHouses = (r) => (r.homeCluster >= 0 ? r.clusters[r.homeCluster].houseCount : 0);
+  // Pin (15, 5): in the street between X's houses [0,10] and [20,30], 5 m from each, on no
+  // footprint, and inside both towns' squares. X's own walls: techum x [0 - 960, 190 + 960].
+  const street = run(both, {}, { x: 15, y: 5 });
+  const st = span(street.techumCorners);
+  check('rev26-a', 321, 'a pin in the street between a town\'s houses (5 m from them) is in that town, even where another town\'s square covers it: 20 houses, techum x [-960, 1150], y [-960, 990]',
+    street.mode === 'city' && homeHouses(street) === 20 && !has(street, 'multiple-home-candidates') &&
+    street.homeCandidates.length === 1 && sameSpan(st, { minX: -960, maxX: 1150, minY: -960, maxY: 990 }),
+    JSON.stringify({ home: homeHouses(street), candidates: street.homeCandidates.length, st }));
+  // Karpef on (MB): X's starting area is its walls + 33.92 m, the techum that + 960 m.
+  const streetMb = run(both, { karpef: true }, { x: 15, y: 5 });
+  check('rev26-b', 321, 'the same with the Rema karpef: techum x [-993.92, 1183.92], y [-993.92, 1023.92]',
+    homeHouses(streetMb) === 20 && sameSpan(span(streetMb.techumCorners), { minX: -993.92, maxX: 1183.92, minY: -993.92, maxY: 1023.92 }),
+    JSON.stringify(span(streetMb.techumCorners)));
+  // A town's own area reaches half the 70⅔-amah gap (16.96 m) beyond its walls (§1.4: buffer each
+  // footprint by half the gap). Pin 16.96 m above X's house [0,10]x[20,30]: still X. 1 cm further:
+  // the empty overlap of the two karpef squares, so the common area of both applies as before.
+  const edge = run(both, { karpef: true }, { x: 5, y: 46.96 });
+  const beyond = run(both, { karpef: true }, { x: 5, y: 46.97 });
+  check('rev26-c', 322, 'exactly half the 70⅔-amah gap (16.96 m) from the town\'s house is still in that town; 16.97 m is the empty overlap (common area, review flag)',
+    homeHouses(edge) === 20 && !has(edge, 'multiple-home-candidates') &&
+    beyond.homeCandidates.length === 2 && has(beyond, 'multiple-home-candidates') &&
+    approx(span(beyond.techumCorners).maxX, 20 + 33.92 + 960, 1e-6),
+    JSON.stringify({ edge: homeHouses(edge), beyond: beyond.homeCandidates.length, bx: span(beyond.techumCorners).maxX }));
+  // The rule only chooses among towns whose final starting area already holds the pin; it never
+  // adds a town. Without karpef, a pin 5 m north of X's walls (y = 35) is outside X's square:
+  // it rests in Y only, as before (rev. 12: membership follows the profile's starting area).
+  const outside = run(both, {}, { x: 15, y: 35 });
+  check('rev26-d', 316, 'without karpef, a pin 5 m outside the town\'s squared walls is not made a resident of it: it is in the other town\'s square only',
+    outside.mode === 'city' && homeHouses(outside) === Y.length && sameSpan(span(outside.cityCorners), { minX: -190, maxX: 20, minY: -100, maxY: 210 }),
+    JSON.stringify({ home: homeHouses(outside), city: span(outside.cityCorners) }));
+}
+
+// =================================================================================
+// Rev. 26 — loading enough map data; one outline; a middle village wider than the gap
+// =================================================================================
+{
+  // The app's widening loop (main.js calculate) on a made-up map. Each pass loads every building
+  // whose centre is in the loaded box, runs the engine and adds the box dataFrontier asks for,
+  // until it asks for nothing. The app has no pass limit; 40 here only keeps a bug from hanging.
+  const proj = G.makeProjection(41, -74);
+  const toDegrees = (b) => {
+    const pts = [[b.minX, b.minY], [b.maxX, b.minY], [b.maxX, b.maxY], [b.minX, b.maxY]].map(([x, y]) => proj.toLatLon(x, y));
+    return { south: Math.min(...pts.map((p) => p.lat)), north: Math.max(...pts.map((p) => p.lat)),
+      west: Math.min(...pts.map((p) => p.lon)), east: Math.max(...pts.map((p) => p.lon)) };
+  };
+  const centreIn = (deg, b) => {
+    const g = proj.toLatLon((b.bbox.minX + b.bbox.maxX) / 2, (b.bbox.minY + b.bbox.maxY) / 2);
+    return g.lat >= deg.south && g.lat <= deg.north && g.lon >= deg.west && g.lon <= deg.east;
+  };
+  const widen = (world, pin, startM, settings) => {
+    let loaded = toDegrees({ minX: pin.x - startM, maxX: pin.x + startM, minY: pin.y - startM, maxY: pin.y + startM });
+    const passes = [];
+    for (let pass = 1; pass <= 40; pass++) {
+      const result = run(world.filter((b) => centreIn(loaded, b)), settings, pin);
+      passes.push(result);
+      const more = G.dataFrontier(result, proj, loaded, pin);
+      if (!more) return { result, passes };
+      loaded = { south: Math.min(loaded.south, more.south), north: Math.max(loaded.north, more.north),
+        west: Math.min(loaded.west, more.west), east: Math.max(loaded.east, more.east) };
+    }
+    return { result: null, passes };
+  };
+  const homeOf = (r) => (r && r.homeCluster >= 0 ? r.clusters[r.homeCluster].houseCount : 0);
+  const rect = (minX, minY, maxX, maxY) => [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }];
+
+  // An 8 km chain of 200 houses: house i is x [40i, 40i + 10], y [0, 10]; 30 m gaps (< 33.92 m)
+  // make one town, walls x [0, 7970], techum x [-960, 8930], y [-960, 970]. Each widening reaches
+  // about 2000 amos and 3 margins (1377 m) past the loaded town, so from the app's 1200 m start
+  // the town needs more than the old limit of 4 widenings. From 190 m the first pass holds 5
+  // houses, too few for a city, so rule 3 widens.
+  const chain = [];
+  for (let i = 0; i < 200; i++) chain.push(box(i * 40, 0, i * 40 + 10, 10));
+  const chainRuns = [190, 1200, 3000].map((startM) => widen(chain, { x: 5, y: 5 }, startM));
+  check('rev26-e', 1186, 'the result does not depend on where the search started: from 190, 1200 and 3000 m an 8 km chain ends as one 200-house town, techum x [-960, 8930], y [-960, 970]; from 1200 m it takes more than 4 widenings, and from 190 m the first pass has 5 houses',
+    chainRuns.every(({ result }) => result && result.mode === 'city' && homeOf(result) === 200 &&
+      sameSpan(span(result.techumCorners), { minX: -960, maxX: 8930, minY: -960, maxY: 970 })) &&
+    chainRuns[1].passes.length - 1 > 4 && chainRuns[0].passes[0].mode === 'building' &&
+    chainRuns[0].passes[0].clusters.some((cluster) => cluster.members.length === 5),
+    JSON.stringify(chainRuns.map(({ result, passes }) => ({ home: homeOf(result), passes: passes.length }))));
+
+  // Three villages (§1.4): A walls x [0, 50], y [0, 30]; C x [220, 270]; B x [110, 160], y [500, 530].
+  // A and C are 170 m apart (> 67.84). B is 474 m from each (<= 960); lowered onto y = 15 it
+  // leaves 60 m (<= 67.84) on each side, so all three are one town of 18 houses: walls x [0, 270],
+  // y [0, 530], techum x [-960, 1230], y [-960, 1490]. From 200 m only A is loaded, and the old
+  // look-ahead (141⅓ amos + 60 m past the town) stopped there with A's 6 houses.
+  const villages = town(0, 0).concat(town(220, 0), town(110, 500));
+  const villageRuns = [200, 600, 3000].map((startM) => widen(villages, { x: 5, y: 5 }, startM));
+  const firstPass = villageRuns[0].passes[0], fp = span(firstPass.cityCorners), look = T2 + 60;
+  const oldStopped = fp.minX - look >= -200 && fp.maxX + look <= 200 && fp.minY - look >= -200 && fp.maxY + look <= 200;
+  check('rev26-f', 1188, 'a town joined by three villages to a village 474 m away is loaded whole from any start: 18 houses, walls x [0, 270], y [0, 530], techum x [-960, 1230], y [-960, 1490]; the old look-ahead stopped at 6 houses',
+    villageRuns.every(({ result }) => result && homeOf(result) === 18 && has(result, 'three-villages') &&
+      sameSpan(span(result.cityCorners), { minX: 0, maxX: 270, minY: 0, maxY: 530 }) &&
+      sameSpan(span(result.techumCorners), { minX: -960, maxX: 1230, minY: -960, maxY: 1490 })) &&
+    homeOf(firstPass) === 6 && oldStopped,
+    JSON.stringify(villageRuns.map(({ result, passes }) => ({ home: homeOf(result), passes: passes.length }))));
+
+  // Rule 2, by hand on a result: home town of parts h, m, p, walls x [0, 950], y [0, 30]; p
+  // (x [900, 950]) joined it by three villages. Loaded: x [-1500, 2500], y [-1500, 1500], which
+  // holds the town's walls + 33.92 + 960 m with the 127.84 m margin. Town N, x [1800, 2600], is
+  // 850 m from p (<= 960) and runs past the loaded edge, so the loader must reach past 2600 m by
+  // at least the margin. Not for a first-round join, and not for a town 961 m from p.
+  const handResult = (round, nMinX) => ({
+    mode: 'city', homeCluster: 0, homeCandidates: [[0]], homeBuilding: -1,
+    thresholds: { joinM: JOIN, t2: T2, techumM: TECHUM, karpefM: JOIN },
+    clusters: [
+      { members: [0], key: 'h', componentKeys: ['h', 'm', 'p'], qualifiesAsCity: true, corners: rect(0, 0, 950, 30) },
+      { members: [1], key: 'n', componentKeys: ['n'], qualifiesAsCity: true, corners: rect(nMinX, 0, 2600, 30) },
+    ],
+    qualificationClusters: [{ key: 'h', corners: rect(0, 0, 50, 30) }, { key: 'm', corners: rect(450, 400, 500, 430) },
+      { key: 'p', corners: rect(900, 0, 950, 30) }],
+    techumRegions: [rect(-960, -960, 1910, 990)],
+    warnings: [{ type: 'three-villages', round, middleComponentKeys: ['m'], outerComponentKeys: [['h'], ['p']] }],
+  });
+  const handLoaded = toDegrees({ minX: -1500, maxX: 2500, minY: -1500, maxY: 1500 });
+  const later = G.dataFrontier(handResult(2, 1800), proj, handLoaded, { x: 5, y: 5 });
+  const eastM = later && proj.toXY(41, later.east).x;
+  check('rev26-g', 1189, 'a town 850 m from a part joined by three villages after an earlier join is loaded in full (the loader reaches 2600 m + 127.84 m or more); a first-round join, or a town 961 m away, asks for nothing',
+    later && eastM >= 2600 + look && eastM <= 2600 + 3 * look * 1.02 &&
+    G.dataFrontier(handResult(1, 1800), proj, handLoaded, { x: 5, y: 5 }) === null &&
+    G.dataFrontier(handResult(2, 1911), proj, handLoaded, { x: 5, y: 5 }) === null,
+    JSON.stringify({ eastM }));
+
+  // One outline per layer (display only). Signed area: + counter-clockwise, - a hole.
+  const area = (loop) => loop.reduce((sum, p, i) => { const q = loop[(i + 1) % loop.length]; return sum + p.x * q.y - q.x * p.y; }, 0) / 2;
+  const sameCorners = (loop, expected) => loop.length === expected.length &&
+    expected.every(([x, y]) => loop.some((p) => approx(p.x, x) && approx(p.y, y)));
+  const turn = rotate(30), turned = (ring) => ring.map((p) => { const [x, y] = turn([p.x, p.y]); return { x, y }; });
+  const Lcorners = [[0, 0], [10, 0], [10, 4], [4, 4], [4, 10], [0, 10]];
+  const Lshape = G.unionOutline([rect(0, 0, 10, 4), rect(0, 0, 4, 10)]);
+  const Lturned = G.unionOutline([turned(rect(0, 0, 10, 4)), turned(rect(0, 0, 4, 10))]);
+  const frame = G.unionOutline([rect(0, 0, 9, 3), rect(0, 6, 9, 9), rect(0, 0, 3, 9), rect(6, 0, 9, 9)]);
+  const outer = frame.find((loop) => area(loop) > 0), hole = frame.find((loop) => area(loop) < 0);
+  const diagonal = G.unionOutline([rect(0, 0, 1, 1), rect(1, 1, 2, 2)]);
+  const triangle = [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 0, y: 5 }];
+  const mixed = G.unionOutline([rect(0, 0, 2, 2), turned(rect(0, 0, 2, 2)), triangle]);
+  check('rev26-h', 1221, 'one outline: an L of two overlapping rectangles has 6 corners and 64 m² (also turned 30°); a ring of four has a 9 × 9 outer edge (81 m²) and a 3 × 3 hole; corner-touching squares stay two; another direction and a triangle are drawn as they are',
+    Lshape.length === 1 && sameCorners(Lshape[0], Lcorners) && approx(area(Lshape[0]), 64) &&
+    Lturned.length === 1 && sameCorners(Lturned[0], Lcorners.map(turn)) && approx(area(Lturned[0]), 64) &&
+    frame.length === 2 && sameCorners(outer, [[0, 0], [9, 0], [9, 9], [0, 9]]) && approx(area(outer), 81) &&
+    sameCorners(hole, [[3, 3], [6, 3], [6, 6], [3, 6]]) && approx(area(hole), -9) &&
+    diagonal.length === 2 && diagonal.every((loop) => loop.length === 4 && approx(area(loop), 1)) &&
+    mixed.length === 3 && mixed.includes(triangle),
+    JSON.stringify({ L: Lshape.map((l) => l.length), frame: frame.map(area), diagonal: diagonal.length, mixed: mixed.length }));
+  // An unfilled U town (amah 1 cm, as in 1.6-b): its techum pieces overlap. The outline's area
+  // equals their union's, summed strip by strip here, so it adds and removes nothing. Corners are
+  // rounded to a micrometre, so on this ~700 m outline the areas agree to 0.001 m².
+  const unionArea = (rings) => {
+    const boxes = rings.map(span), xs = [...new Set(boxes.flatMap((b) => [b.minX, b.maxX]))].sort((a, b) => a - b);
+    let total = 0;
+    for (let i = 0; i + 1 < xs.length; i++) {
+      const mid = (xs[i] + xs[i + 1]) / 2;
+      let covered = 0, top = -Infinity;
+      for (const [lo, hi] of boxes.filter((b) => b.minX < mid && b.maxX > mid).map((b) => [b.minY, b.maxY]).sort((a, b) => a[0] - b[0])) {
+        if (hi > top) { covered += hi - Math.max(lo, top); top = hi; }
+      }
+      total += covered * (xs[i + 1] - xs[i]);
+    }
+    return total;
+  };
+  const uTown = [];
+  for (let n = 0; n <= 10; n++) { uTown.push(house(0, n * 10), house(100, n * 10)); if (n > 0 && n < 10) uTown.push(house(n * 10, 0)); }
+  const u = run(uTown, { amahM: 0.01, karpef: true }, { x: 0, y: 50 });
+  const uLoops = G.unionOutline(u.techumRegions);
+  const uArea = uLoops.reduce((sum, loop) => sum + area(loop), 0);
+  check('rev26-h2', 1221, 'the outline of an unfilled bow town\'s overlapping techum pieces is one loop with their union\'s area (to 0.001 m²)',
+    u.calculationStatus === 'provisional-no-fill' && u.techumRegions.length > 1 && uLoops.length === 1 &&
+    approx(uArea, unionArea(u.techumRegions), 1e-3),
+    JSON.stringify({ pieces: u.techumRegions.length, loops: uLoops.length, uArea, union: unionArea(u.techumRegions) }));
+
+  // A middle village wider than the gap (Part 7 Q19). A: x [0, 50]; C: x [150, 200], 100 m apart.
+  // B: two rows of 8 houses, x [25, 175], y [400, 430], 370 m from each. Lowered onto y = 15 it is
+  // 150 m wide in a 100 m gap and overlaps each by 25 m: as §1.4 words the rule it does not fit, so
+  // the home town is A alone (6 houses) and the case is listed for review. With 4 houses a row,
+  // x [60, 130], B leaves 10 m and 20 m and fits: one town of 20 houses, walls x [0, 200], y [0, 430].
+  const rows = (x0, n, y0) => {
+    const out = [];
+    for (let k = 0; k < n; k++) out.push(box(x0 + k * 20, y0, x0 + k * 20 + 10, y0 + 10), box(x0 + k * 20, y0 + 20, x0 + k * 20 + 10, y0 + 30));
+    return out;
+  };
+  const wideB = run(town(0, 0).concat(town(150, 0), rows(25, 8, 400)), {}, { x: 5, y: 5 });
+  const narrowB = run(town(0, 0).concat(town(150, 0), rows(60, 4, 400)), {}, { x: 5, y: 5 });
+  const flag = wideB.warnings.find((w) => w.type === 'three-villages-wider-middle');
+  const placed = flag && flag.projectedPlacementM;
+  check('rev26-i', 1213, 'a middle village 150 m wide in a 100 m gap does not join (6 houses, walls x [0, 50]) and is flagged with gaps of -25 m; 70 m wide, it joins: 20 houses, walls x [0, 200], y [0, 430]',
+    homeOf(wideB) === 6 && sameSpan(span(wideB.cityCorners), { minX: 0, maxX: 50, minY: 0, maxY: 30 }) &&
+    !has(wideB, 'three-villages') && placed && approx(placed.outerGap, 100) && approx(placed.middleWidth, 150) &&
+    approx(placed.leftGap, -25) && approx(placed.rightGap, -25) &&
+    homeOf(narrowB) === 20 && has(narrowB, 'three-villages') && !has(narrowB, 'three-villages-wider-middle') &&
+    sameSpan(span(narrowB.cityCorners), { minX: 0, maxX: 200, minY: 0, maxY: 430 }),
+    JSON.stringify({ wide: homeOf(wideB), placed, narrow: homeOf(narrowB) }));
+  pend('rev26-q19', 1464, 'Three villages: does a middle village wider than the gap between the outer two (or reaching over an outer village once lowered) still join them? The engine keeps the stricter reading and lists each case for review.');
+
+  // The app: no widening limit, the incomplete answer, the dashed line, one outline, the review note.
+  const appMain = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const appDesign = fs.readFileSync(path.join(__dirname, '..', 'js', 'design-experience.js'), 'utf8');
+  check('rev26-j', 1194, 'the app widens until dataFrontier asks for nothing, with only the building-count limit; when that is reached the answer says incomplete, larger or smaller, and draws the pink line dashed',
+    /const needed = G\.dataFrontier\(state\.result, state\.proj, bbox, state\.proj\.toXY\(state\.pin\.lat, state\.pin\.lon\)\);\s*if \(!needed\) break;/.test(appMain) &&
+    !/maxExpandIterations|neededExpansion/.test(appMain) && !('maxExpandIterations' in SET.DEFAULTS) &&
+    /class="warn accuracy-status data-limit"><b>Incomplete: the map data ran out<\/b>/.test(appMain) &&
+    /could be larger or smaller/.test(appMain) && !/inner \(machmir\) bound|is an inner bound/.test(appMain) &&
+    /state\.dataCapHit \? \{ dashArray: '10 7' \} : \{\}/.test(appMain) &&
+    /classList\.contains\('data-limit'\)/.test(appDesign) && /'This result is incomplete'/.test(appDesign));
+  check('rev26-k', 1221, 'the map draws each layer\'s stepped regions as one outline with the even-odd fill; the provisional note and the wider-village review note are shown',
+    /G\.unionOutline\(list\)/.test(appMain) && /fillRule: 'evenodd'/.test(appMain) &&
+    /<div class="warn accuracy-status"><b>Provisional smaller boundary<\/b>/.test(appMain) &&
+    /if \(w\.type === 'three-villages-wider-middle'\) \{[\s\S]{0,260}homeComponentKeys\.has\(key\)/.test(appMain));
+}
+
+// =================================================================================
 // §1.4 — ibur ha'ir: the 70⅔-amah chain
 // =================================================================================
 {

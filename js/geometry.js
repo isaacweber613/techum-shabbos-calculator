@@ -1025,6 +1025,10 @@
     let acted = true;
     while (acted) {
       acted = false;
+      // Rounds are counted across the whole calculation (the cache persists between the
+      // fixed-point passes). A join made in a later round rests on earlier joins, which a
+      // partly loaded neighbour can change (rev. 26: dataFrontier).
+      cache.round = (cache.round || 0) + 1;
       // Only bona-fide cities can participate. Iterating every isolated footprint made
       // this O(all clusters^3), freezing dense-city pages even though almost all of
       // those clusters could never satisfy the rule.
@@ -1056,7 +1060,7 @@
         }
         return { min, max, width: max - min };
       };
-      const found = [];
+      const found = [], wider = [];
       for (const { i: b } of candidates) {
         const nearby = [];
         for (const i of cityGrid.query(expandRect(clusters[b].bbox, techum))) {
@@ -1105,12 +1109,33 @@
             if (bSupport.width <= outerGap &&
                 leftGap >= 0 && rightGap >= 0 && leftGap <= t2 && rightGap <= t2) {
               found.push({ a, b, c, nx, ny, outerGap, middleWidth: bSupport.width, leftGap, rightGap });
+            } else if (leftGap <= t2 && rightGap <= t2 && bSupport.max > aSupport.max && bSupport.min < cSupport.min) {
+              // Lowered, the middle village spans the gap and reaches over an outer village's
+              // span, so as written it does not "fit" and nothing joins. Whether a village wider
+              // than the gap still joins is open (Part 7 Q19); the result is flagged, not changed.
+              wider.push({ a, b, c, nx, ny, outerGap, middleWidth: bSupport.width, leftGap, rightGap });
             }
           }
         }
       }
-      if (!found.length) break;
       const tripleKey = (t) => [clusters[t.b].key, clusters[t.a].key, clusters[t.c].key].join('|');
+      if (!cache.widerSeen) cache.widerSeen = new Set();
+      wider.sort((x, y) => byKey(tripleKey(x), tripleKey(y)));
+      for (const t of wider) {
+        const key = tripleKey(t);
+        if (cache.widerSeen.has(key)) continue;
+        cache.widerSeen.add(key);
+        warnings.push({
+          type: 'three-villages-wider-middle',
+          text: 'Three-villages rule (SA HaRav 398:12): a middle village within 2000 amos of two towns is wider than the gap between them once lowered onto their axis, so as the spec words the rule it does not fit and the towns stay apart. Whether such a village still joins them is an open question for rav review (spec Part 7 Q19). If it does, the town is larger; the boundary shown is the stricter one.',
+          middleComponentKeys: [...clusters[t.b].componentKeys],
+          outerComponentKeys: [clusters[t.a].componentKeys, clusters[t.c].componentKeys].map((keys) => [...keys]),
+          round: cache.round,
+          axis: { x: t.nx, y: t.ny },
+          projectedPlacementM: { outerGap: t.outerGap, middleWidth: t.middleWidth, leftGap: t.leftGap, rightGap: t.rightGap },
+        });
+      }
+      if (!found.length) break;
       found.sort((x, y) => byKey(tripleKey(x), tripleKey(y)));
       const uf = UnionFind(clusters.length);
       for (const t of found) {
@@ -1121,6 +1146,7 @@
           text: 'Three-villages rule (SA HaRav 398:12) merged three settlements using the disclosed outer-center lowering axis; confirm the axis if an irregular outline makes another placement material.',
           middleComponentKeys: [...B.componentKeys],
           outerComponentKeys: [A.componentKeys, C.componentKeys].map((keys) => [...keys]),
+          round: cache.round,
           axis: { x: t.nx, y: t.ny },
           actualMiddleGapsM: {
             toFirstOuter: clusterGapExact(A, B, buildings, clusterGrid),
@@ -1602,6 +1628,22 @@
         return false;
       });
     }
+    // §1.10a priority (1): when several starting areas hold a pin that is in none of their houses,
+    // the town whose own 70⅔-amah component physically holds the pin governs. A component's
+    // physical area is its footprints and validated perimeters, each grown by half the 70⅔-amah
+    // gap (§1.4: buffer each footprint by half the gap, union, dissolve), so a pin in the street
+    // between a town's houses is in that town. Two towns' areas never overlap: footprints within
+    // 70⅔ amos of each other are one component. The rule only chooses among towns whose final
+    // starting area already holds the pin (rev. 12); only a pin in none of their areas, the empty
+    // overlap, keeps the common area of every candidate (rev. 26).
+    if (physicalCityModel < 0 && !perimeterActive && selectedClosures.length > 1) {
+      const half = joinM / 2;
+      const pinBox = { minX: workPin.x, maxX: workPin.x, minY: workPin.y, maxY: workPin.y };
+      const holding = selectedClosures.filter((closure) => closure.indices.some((index) =>
+        cityModels[index].cluster.members.some((member) => bboxGap(pinBox, work[member].bbox) <= half &&
+          ringDistToPoint(workPin, work[member].ring) <= half)));
+      if (holding.length === 1) selectedClosures = holding;
+    }
     const mode = perimeterActive || selectedClosures.length ? 'city' : homeBuilding >= 0 ? 'building' : 'point';
     let home = selectedClosures.length === 1 ? cityModels[selectedClosures[0].indices[0]].clusterIndex : -1;
     markStage('homeSelection');
@@ -1773,8 +1815,171 @@
     return result;
   }
 
+  // ---------- One outline for a union of regions (map display only; spec rev. 26) ----------
+  // A multi-region result stays separate regions in the data and every export (§1.5), but a map
+  // that strokes every piece shows dozens of overlapping edges inside the permitted area, where
+  // the area has no edge. Rectangles that share one direction are merged into the loops that bound
+  // their union, holes included (draw them with the even-odd fill rule). Any other region is
+  // returned unchanged. No area is added or removed.
+  function rectUnionLoops(rects) {
+    const snap = (v) => Math.round(v * 1e6) / 1e6; // a micrometre: frame round-off, not geometry
+    const boxes = rects.map((r) => ({ minX: snap(r.minX), maxX: snap(r.maxX), minY: snap(r.minY), maxY: snap(r.maxY) }))
+      .filter((r) => r.maxX > r.minX && r.maxY > r.minY);
+    const xs = [...new Set(boxes.flatMap((r) => [r.minX, r.maxX]))].sort((a, b) => a - b);
+    const ys = [...new Set(boxes.flatMap((r) => [r.minY, r.maxY]))].sort((a, b) => a - b);
+    const nx = xs.length - 1, ny = ys.length - 1;
+    if (nx < 1 || ny < 1) return [];
+    const xi = new Map(xs.map((v, i) => [v, i])), yi = new Map(ys.map((v, i) => [v, i]));
+    const covered = new Uint8Array(nx * ny);
+    for (const r of boxes) {
+      const x0 = xi.get(r.minX), x1 = xi.get(r.maxX);
+      for (let j = yi.get(r.minY); j < yi.get(r.maxY); j++) covered.fill(1, j * nx + x0, j * nx + x1);
+    }
+    const at = (i, j) => i >= 0 && j >= 0 && i < nx && j < ny && covered[j * nx + i] === 1;
+    // Boundary edges keep the covered cell on their left: outer loops run counter-clockwise.
+    const edges = [], from = new Map();
+    const add = (i0, j0, i1, j1) => {
+      const edge = { i0, j0, i1, j1, used: false }, key = i0 + ',' + j0;
+      edges.push(edge);
+      if (!from.has(key)) from.set(key, []);
+      from.get(key).push(edge);
+    };
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      if (!at(i, j)) continue;
+      if (!at(i, j - 1)) add(i, j, i + 1, j);
+      if (!at(i + 1, j)) add(i + 1, j, i + 1, j + 1);
+      if (!at(i, j + 1)) add(i + 1, j + 1, i, j + 1);
+      if (!at(i - 1, j)) add(i, j + 1, i, j);
+    }
+    const loops = [];
+    for (const start of edges) {
+      if (start.used) continue;
+      const loop = [];
+      let edge = start;
+      while (edge && !edge.used) {
+        edge.used = true;
+        loop.push([edge.i0, edge.j0]);
+        const dx = edge.i1 - edge.i0, dy = edge.j1 - edge.j0;
+        // Where two cells meet only at a corner, turn left so each keeps its own loop.
+        const turn = (e) => dx * (e.j1 - e.j0) - dy * (e.i1 - e.i0); // > 0: a left turn
+        const next = (from.get(edge.i1 + ',' + edge.j1) || []).filter((e) => !e.used)
+          .sort((a, b) => turn(b) - turn(a));
+        edge = next[0] || null;
+      }
+      // Drop the corners where a straight side merely passes a grid line.
+      const points = loop.filter((p, k) => {
+        const a = loop[(k + loop.length - 1) % loop.length], b = loop[(k + 1) % loop.length];
+        return (p[0] - a[0]) * (b[1] - p[1]) !== (p[1] - a[1]) * (b[0] - p[0]);
+      });
+      if (points.length >= 4) loops.push(points.map(([i, j]) => ({ x: xs[i], y: ys[j] })));
+    }
+    return loops;
+  }
+  function unionOutline(regions) {
+    const groups = new Map(), loops = [];
+    for (const ring of regions || []) {
+      if (!Array.isArray(ring) || ring.length < 3) continue;
+      const angle = normalizeRectAngle(Math.atan2(ring[1].y - ring[0].y, ring[1].x - ring[0].x));
+      const framed = ring.map((point) => toOrientedFrame(point, angle)), box = bboxOfRing(framed);
+      const near = (a, b) => Math.abs(a - b) <= 1e-6;
+      const isRect = ring.length === 4 && framed.every((p) =>
+        (near(p.x, box.minX) || near(p.x, box.maxX)) && (near(p.y, box.minY) || near(p.y, box.maxY)));
+      if (!isRect) { loops.push(ring); continue; }
+      const key = angle.toFixed(9);
+      if (!groups.has(key)) groups.set(key, { angle, rects: [] });
+      groups.get(key).rects.push(box);
+    }
+    for (const { angle, rects } of groups.values()) {
+      for (const loop of rectUnionLoops(rects)) loops.push(loop.map((point) => fromOrientedFrame(point, angle)));
+    }
+    return loops;
+  }
+
+  // ---------- How much map data a result needs (spec rev. 26) ----------
+  // The engine applies its rules only to the buildings it is given, so the app widens the loaded
+  // area until a result needs nothing outside it. With a margin of 141⅓ amos plus 60 m of
+  // footprint error, the loaded area must hold:
+  //   1. the whole techum of every town whose squared area could hold the pin: the three-villages
+  //      rule reaches 2000 amos (SA HaRav 398:12), and a swallowed city lies inside the techum;
+  //   2. in full, every town within 2000 amos of a settlement the three-villages rule joined to
+  //      such a town in a later round (after an earlier join): with the rest of that neighbour,
+  //      an earlier round could join it to the settlement first and the later join could fail,
+  //      so a partly loaded neighbour can make the town too large. (A join in the first round
+  //      cannot be undone that way; a missing neighbour can only leave a town smaller.)
+  //   3. the houses joined to the pin's building, while too few are loaded to make a city.
+  // `loaded` is a {south, west, north, east} box in degrees; `pin` is in the result's local
+  // meters. Returns the box to add, or null when the result needs nothing more. There is no
+  // limit on the number of widenings: the caller's building-count data limit is the only stop.
+  function dataFrontier(result, proj, loaded, pin) {
+    if (!result || !Array.isArray(result.clusters)) return null;
+    const { t2, techumM, karpefM } = result.thresholds;
+    const margin = t2 + 60;
+    const dLat = margin / proj.mPerDegLat;
+    const dLon = margin / (proj.mPerDegLat * Math.cos((proj.lat0 * Math.PI) / 180));
+    const toDegrees = (box) => {
+      const corners = [[box.minX, box.minY], [box.maxX, box.minY], [box.maxX, box.maxY], [box.minX, box.maxY]]
+        .map(([x, y]) => proj.toLatLon(x, y));
+      return { south: Math.min(...corners.map((p) => p.lat)), north: Math.max(...corners.map((p) => p.lat)),
+        west: Math.min(...corners.map((p) => p.lon)), east: Math.max(...corners.map((p) => p.lon)) };
+    };
+    const grow = (box, k) => ({ south: box.south - k * dLat, north: box.north + k * dLat,
+      west: box.west - k * dLon, east: box.east + k * dLon });
+    const holds = (box) => box.south >= loaded.south && box.north <= loaded.north &&
+      box.west >= loaded.west && box.east <= loaded.east;
+    let want = null;
+    const need = (localBox) => {
+      const box = toDegrees(localBox);
+      if (holds(grow(box, 1))) return;
+      const wider = grow(box, 3);
+      want = want ? { south: Math.min(want.south, wider.south), north: Math.max(want.north, wider.north),
+        west: Math.min(want.west, wider.west), east: Math.max(want.east, wider.east) } : wider;
+    };
+    const boxOf = (corners) => bboxOfRing(corners);
+    // 1. The home town, every candidate of a shared overlap, and, for a pin left outside every
+    //    town, each town whose square with the karpef holds it (its unfilled pocket held the pin).
+    const towns = new Set(result.homeCluster >= 0 ? [result.homeCluster] : []);
+    for (const group of result.homeCandidates || []) for (const index of group) towns.add(index);
+    if (result.mode !== 'city' && pin) {
+      result.clusters.forEach((cluster, index) => {
+        if (cluster.qualifiesAsCity && pointInOrOnRing(pin, rectCornersInFrame(expandRect(boxOf(cluster.corners), karpefM), 0))) towns.add(index);
+      });
+    }
+    // The houses joined to the pin's building, while too few of them are loaded to make a city: a
+    // town cut by the edge of the loaded area can look like a few lone houses.
+    if (result.homeBuilding >= 0) {
+      const own = result.clusters.find((cluster) => !cluster.qualifiesAsCity && cluster.members.includes(result.homeBuilding));
+      if (own) need(boxOf(own.corners));
+    }
+    if (!towns.size) return want;
+    const townKeys = new Set();
+    for (const index of towns) {
+      const cluster = result.clusters[index];
+      need(expandRect(boxOf(cluster.corners), karpefM + techumM));
+      for (const key of cluster.componentKeys || [cluster.key]) townKeys.add(key);
+    }
+    for (const ring of result.techumRegions || []) need(boxOf(ring));
+    // 2. Towns within 2000 amos of a settlement joined to one of those towns by three villages
+    //    in a later round.
+    const partnerKeys = new Set();
+    for (const warning of result.warnings || []) {
+      if (warning.type !== 'three-villages' || !(warning.round > 1)) continue;
+      const keys = [...(warning.middleComponentKeys || []), ...(warning.outerComponentKeys || []).flat()];
+      if (keys.some((key) => townKeys.has(key))) keys.forEach((key) => partnerKeys.add(key));
+    }
+    if (partnerKeys.size) {
+      const partners = (result.qualificationClusters || []).filter((cluster) => partnerKeys.has(cluster.key))
+        .map((cluster) => boxOf(cluster.corners));
+      for (const cluster of result.clusters) {
+        if (!cluster.qualifiesAsCity) continue;
+        const box = boxOf(cluster.corners);
+        if (partners.some((partner) => bboxGap(partner, box) <= techumM)) need(box);
+      }
+    }
+    return want;
+  }
+
   return {
-    AMOS, makeProjection, runPipeline, bufferRing, dwellingSize,
+    AMOS, makeProjection, runPipeline, bufferRing, dwellingSize, dataFrontier, unionOutline,
     // exported for tests
     _internals: {
       bboxOfRing, bboxGap, expandRect, ringDist,

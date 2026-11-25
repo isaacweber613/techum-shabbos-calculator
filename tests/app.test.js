@@ -440,7 +440,7 @@ test('snapshots record and restore the shared-correction count used in the audit
   assert.match(main, /state\.correctionsApplied = Number\(snap\.correctionsApplied\) \|\| 0/);
 });
 
-test('a failed wider expansion pass keeps the completed pass as a flagged inner bound', () => {
+test('a failed wider expansion pass keeps the completed pass, flagged as incomplete (spec rev. 26)', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
   assert.match(main, /if \(iteration > 0 && state\.result\) \{[\s\S]{0,400}state\.dataCapHit = true;/);
 });

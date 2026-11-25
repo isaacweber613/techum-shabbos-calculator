@@ -366,6 +366,8 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 - **No halachic maximum metro size** — Peninei Halakha states the chain can extend "even a
   distance of days' walk" as long as each gap qualifies. Any cap in the app is a **data
   limit** and must be labeled as such (techum shown as an inner/machmir bound when hit).
+  **Rev. 26:** a result cut off by the data limit is not an inner bound. It can be too large
+  as well as too small, so it is shown as incomplete (see Rev. 26).
 - **Karpef is denomination-sensitive** — MB 398:36 records the Rema's single-city karpef
   (70⅔ before the 2000). So "off" is a Mechaber/Sefardi default, **on** is the honest
   MB/Ashkenazi default. Moved into the profile system.
@@ -1166,6 +1168,66 @@ high on what the texts say and medium on which profile follows which.
 Golden tests in `tests/spec-golden.test.js` (ids `rev25-*`) cover each item with expected
 values worked out by hand.
 
+### Rev. 26 — 2026-11-25 (four doubted results; three engine fixes; no psak default changes)
+
+Isaac doubted four results of the live calculator. Each was reproduced on a local copy and in
+Node with saved map data. No halachic default changed.
+
+- **The search for map data stopped after 4 widenings (Monsey, default settings).** The app
+  loads the buildings around the pin, runs the engine, and loads a wider area while the town
+  reaches the edge. Rev. 2 allowed 4 widenings and looked only 141⅓ amos plus 60 m past the
+  town. Neither is a halachic rule (no halachic maximum, Part 2). Both made the result depend
+  on where the search started: Monsey stopped after 4 widenings with 6,401 buildings loaded,
+  though the data limit is 40,000, and the three-villages rule (§1.4) joins towns up to 2000
+  amos apart, far past that look-ahead. A town cut off this way is not an inner bound, as rev. 2
+  said: a neighbour cut by the edge can make a three-villages join come out either way. Cut off,
+  the Monsey town reached 479 m too far south and stopped 500 m short in the west (2,787
+  houses from a 1200 m start, 2,818 from 3000 m).
+- **Now:** the number of widenings has no limit; the building-count data limit (40,000 by
+  default) is the only stop. The loaded area must hold, with a margin of 141⅓ amos plus 60 m:
+  (1) the whole techum of every town whose starting area could hold the pin; (2) in full, every
+  town within 2000 amos of a part joined to such a town by three villages after an earlier
+  join, because with the rest of that town an earlier join can pre-empt the later one (a first-
+  round join cannot be undone that way); (3) the houses joined to the pin's building while too
+  few are loaded to make a city. From 600, 1200 and 3000 m starts the results were identical at
+  Kiryas Joel and Monsey (in both profiles), New Square, Monroe, South Fallsburg and two
+  Woodbourne pins, in at most 7 passes, and none reached the data limit. When the limit is reached, the
+  answer says the result is incomplete, could be larger or smaller and could belong to another
+  town, and the pink line is dashed.
+- **A pin in the street between a town's houses was outside the town (Woodbourne, pin on the
+  village centre).** §1.10a gives priority to "the qualifying dwelling/perimeter component
+  physically containing the pin". The engine checked only whether the pin was inside a
+  footprint, so a pin in the street fell through to the empty-overlap rule: the common area of
+  the overlapping squared towns, with 0 houses. A component's physical area is its houses with
+  half the 70⅔-amah gap around each, the area §1.4 unions to join them, so a pin within 16.96 m
+  of a house (at 48 cm) is in that town. Woodbourne now gives 92 houses with the pin on the
+  centre, as it did 3.8 m away on a building. The rule only chooses among towns whose final
+  starting area holds the pin; it never makes a resident of a pin outside them all.
+- **"Parts" under the Chazon Ish profile (Monsey).** A part is one group of houses joined house
+  to house within 70⅔ amos; parts join each other by 141⅓ amos or three villages. With the
+  57.6 cm amah, 70⅔ amos is 40.70 m, not 33.92 m, so more houses join directly into fewer,
+  larger parts. The town did not get smaller. With all the data it needs, the Chazon Ish home
+  town is 6,415 houses in 178 parts, against 2,818 houses in 54 parts for the Mishna Berurah
+  profile on the same data, and it holds every one of those houses. The live 53-to-17 drop
+  compared two results cut off by the widening limit; the Chazon Ish one was cut off far more.
+- **Found on the way (Part 7 Q19).** §1.4 joins three villages only when the lowered middle
+  village fits inside the outer gap. A middle village wider than the gap never joins, so a
+  village that grows can stop joining two towns. The engine keeps the rule as written, the
+  stricter result, and lists each case that could add a town to the home town as a review note.
+- **Many overlapping rectangles (Kiryas Joel).** The houses do join: the home town is 27 parts,
+  1,224 houses. It has a bow-shaped gap with an opening of at least 4000 amos and no
+  reviewer-confirmed ends, so §1.5 step 5 gives the provisional smaller result: 174 stepped
+  pieces, each with its own karpef and 2000 amos (§1.6.2), and those overlap. The map stroked
+  every piece. It now draws each layer as the outline of their union (the techum is one outline
+  of 52 corners); the pieces stay separate in the result and every export. The provisional note
+  is in the answer card in plain words. 96% of the buildings loaded there have unknown use and
+  are included by default; that is not the cause.
+- **Replay note.** A snapshot whose pin is in a street between houses can give a larger result
+  than when it was saved. Engine version 1.7.1.
+
+Golden tests in `tests/spec-golden.test.js` (ids `rev26-*`) cover each item with expected
+values worked out by hand.
+
 ## Part 3 — Product spec
 
 ### 3.0 Scope & users
@@ -1399,6 +1461,15 @@ the UI for building-level review is the bulk of the work.
 18. **The Chazon Ish on the shape of a 4×4 dwelling (rev. 25)** — the Chazon Ish profile
     follows the Mishna Berurah profile's square rule. The Chazon Ish's own words on whether 16
     square amos must hold a real 4×4 square were not read; they are not on Sefaria.
+19. **A middle village wider than the gap (rev. 26)** — §1.4 joins three villages when the
+    middle one, lowered onto the line between the outer two, fits inside their gap with at
+    most 141⅓ amos left on each side. A middle village wider than the gap, or one that reaches
+    over an outer village's span once lowered, does not fit, so nothing joins, though it would
+    close the gap completely. A village that grows (under a larger amah, or as more houses are
+    mapped) can therefore stop joining two towns. Does such a village still join them? The
+    engine keeps the rule as written, which gives the stricter result, and lists each case
+    that could add a town to the home town as a review note. The case is common: 342 such
+    cases touch the Monsey home town in the Mishna Berurah profile.
 
 **Validation benchmarks:** the tool is city-agnostic; these are continuing cross-checks,
 not scope or release blockers:

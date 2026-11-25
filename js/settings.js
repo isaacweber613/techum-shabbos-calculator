@@ -61,8 +61,7 @@
     concavityReviews: {},   // review key -> reviewer-confirmed endpoints and application state
     useValidatedPerimeter: false, // explicit rav-supplied hukaf-l'dira alternative; never inferred
     fetchRadiusM: 1200,
-    maxBuildings: 40000,
-    maxExpandIterations: 4,
+    maxBuildings: 40000,    // the only stop on widening the loaded area (spec rev. 26)
     dataSourceVersion: 2,   // migrates prior OSM-era display defaults once
     profileRevision: 20,    // spec rev. 20: Chazon Ish profile overlap default join-redraw -> no-join
   };

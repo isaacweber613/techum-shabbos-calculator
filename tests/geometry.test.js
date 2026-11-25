@@ -281,7 +281,14 @@ function rectSpan(corners) {
   const res2 = G.runPipeline(A.concat(B), { ...S, overlapPolicy: 'join-redraw' }, { x: 0, y: 0 });
   assert('expansive overlap joins and redraws one rectangle',
     res2.warnings.some((w) => w.type === 'overlap-merge-redraw') && res2.cityRegions.length === 1);
-  const emptyOverlap = G.runPipeline(A.concat(B), S, { x: 120, y: 160 });
+  // Spec rev. 26: (120, 160) was used here as an "empty" overlap, but it lies 5 m from four of
+  // B's houses, in the street between them, so §1.10a priority (1) gives it to B. The empty
+  // overlap is 20 m below B's houses, inside B's Rema karpef and A's square.
+  const inStreet = G.runPipeline(A.concat(B), S, { x: 120, y: 160 });
+  assert('a pin in the street between the inner city\'s houses belongs to that city, not the intersection',
+    inStreet.homeCandidates.length === 1 && !inStreet.warnings.some((w) => w.type === 'multiple-home-candidates') &&
+      inStreet.clusters[inStreet.homeCluster].houseCount === 6);
+  const emptyOverlap = G.runPipeline(A.concat(B), { ...S, karpef: true }, { x: 120, y: 125 });
   assert('empty overlap of unrelated no-join cities uses the conservative candidate intersection',
     emptyOverlap.homeBuilding === -1 && emptyOverlap.homeCandidates.length > 1 &&
       emptyOverlap.squaring.method === 'candidate-intersection' &&
