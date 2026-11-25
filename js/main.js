@@ -498,13 +498,26 @@
     let iteration = 0;
     let expansionError = null;
     while (true) {
-      setCalculationStage('fetch', `Getting map buildings${iteration ? ` (area pass ${iteration + 1})` : ''}…`);
+      const fetchLabel = `Getting map buildings${iteration ? ` (area pass ${iteration + 1})` : ''}`;
+      setCalculationStage('fetch', `${fetchLabel}…`);
       await nextPaint();
       if (isStale()) return;
       const fetchStarted = performance.now();
       let fetched;
+      // A first visit to a new area can take 20 seconds while the server loads it. Show how far
+      // along it is and how long it has been, so the wait never looks frozen.
+      let fetchPart = '';
+      const showFetchStage = () => {
+        if (calculationId !== activeCalculationId) return;
+        const seconds = Math.round((performance.now() - fetchStarted) / 1000);
+        setCalculationStage('fetch', `${fetchLabel}${fetchPart}…${seconds >= 3 ? ` ${seconds} s` : ''}`);
+      };
+      const fetchTicker = setInterval(showFetchStage, 1000);
       try {
-        fetched = await D.fetchBuildingsCached(bbox, { force: !!forceFresh });
+        fetched = await D.fetchBuildingsCached(bbox, { force: !!forceFresh, onProgress: (done, total) => {
+          fetchPart = total > 1 ? `: part ${done + 1} of ${total}` : '';
+          showFetchStage();
+        } });
         if (isStale()) return;
       } catch (e) {
         if (isStale()) return;
@@ -519,9 +532,11 @@
             prepMs: 0, engineMs: 0, engineStages: null, failed: true });
           break;
         }
-        setStatus('Map-data error: ' + e.message + ' — try again in a minute.');
+        setStatus('Map-data error: ' + String(e.message).replace(/^map-data error:\s*/i, '') + ' — try again in a minute.');
         finishCalculationProgress(false);
         return;
+      } finally {
+        clearInterval(fetchTicker);
       }
       const fetchMs = performance.now() - fetchStarted;
       // Do not start an unexpectedly oversized expansion pass. Keep the last complete
@@ -1483,7 +1498,9 @@
       lines.push('<div class="warn"><b>Provisional smaller boundary:</b> a material bow/L pocket has not yet received reviewer-confirmed endpoints. The app has not filled that pocket.</div>');
     }
     if (state.pinReview) {
-      lines.push(`<div class="warn pin-confirmation"><b>Confirm your starting place</b><span>The address pin is ${state.pinReview.distanceM.toFixed(1)} m from a mapped ${escapeHtml(state.pinReview.klass)} footprint (${escapeHtml(state.pinReview.reason)}). The calculator has <b>not moved it</b>.</span><span class="pin-confirm-actions"><button type="button" id="btn-use-mapped-pin">Use mapped building</button><button type="button" id="btn-keep-exact-pin">Keep exact pin</button></span></div>`);
+      const pinBuildingWords = { dwelling: 'home', unknown: 'building whose use is not known',
+        review: 'building that needs a rav’s review', non: 'non-dwelling building' }[state.pinReview.klass] || 'building';
+      lines.push(`<div class="warn pin-confirmation"><b>Confirm your starting place</b><span title="${escapeHtml(state.pinReview.reason)}">The address pin is ${state.pinReview.distanceM.toFixed(1)} m from a mapped ${escapeHtml(pinBuildingWords)}. The calculator has <b>not moved it</b>.</span><span class="pin-confirm-actions"><button type="button" id="btn-use-mapped-pin">Use mapped building</button><button type="button" id="btn-keep-exact-pin">Keep exact pin</button></span></div>`);
     } else if (state.snapInfo) {
       if (state.snapInfo.confirmedMapped) lines.push(`<div class="note"><b>Starting building confirmed</b> — you moved the pin ${state.snapInfo.distanceM.toFixed(1)} m to the mapped ${escapeHtml(state.snapInfo.klass)} footprint.</div>`);
       else if (state.snapInfo.alreadyInside) lines.push(`<div class="note"><b>Pin check:</b> the pin is inside a mapped ${escapeHtml(state.snapInfo.klass)} footprint (${escapeHtml(state.snapInfo.reason)}).</div>`);
@@ -1538,8 +1555,16 @@
       `city-merge 141⅓ = ${(141.333 * amahM).toFixed(1)} m · techum 2000 = ${(2000 * amahM).toFixed(0)} m` +
       (settings.karpef ? ` · karpef +${(70.667 * amahM).toFixed(1)} m` : '') + `</div>`);
     const seenWarnings = new Map();
+    // A big town merges dozens of settlement pairs, each with its own gap. One line per gap
+    // buried every other warning (about 100 lines for Monsey), so list them as one range.
+    const mergeGaps = res.warnings.filter((w) => w.type === 'city-merge')
+      .map((w) => Number((/gap ([\d.]+) m/.exec(w.text) || [])[1])).filter(Number.isFinite);
+    const mergeSummary = mergeGaps.length > 1
+      ? `${mergeGaps.length} pairs of settlements merged (gaps ${Math.min(...mergeGaps).toFixed(1)}–${Math.max(...mergeGaps).toFixed(1)} m, each within 141⅓ amos).`
+      : null;
     for (const w of res.warnings) {
-      const key = w.type + '|' + w.text;
+      const key = w.type + '|' + (mergeSummary && w.type === 'city-merge' ? mergeSummary : w.text);
+      if (mergeSummary && w.type === 'city-merge' && seenWarnings.has(key)) continue;
       seenWarnings.set(key, (seenWarnings.get(key) || 0) + 1);
     }
     for (const [key, count] of seenWarnings) {
@@ -2184,7 +2209,8 @@
         `\n\nMAP-DATA REVIEW\n${confidence.needsReview} of ${confidence.total} fetched footprints need classification review. ` +
         'This does not measure whether every real building is mapped.\n\nACTIVE CONFIGURATION AND AUDIT RECORD\n' + configText();
       const pdfSafeReport = report
-        .replace(/⅔/g, '2/3').replace(/⅓/g, '1/3').replace(/×/g, 'x')
+        // "70⅔" must print as "70 2/3", not "702/3".
+        .replace(/(\d)([⅓⅔])/g, '$1 $2').replace(/⅔/g, '2/3').replace(/⅓/g, '1/3').replace(/×/g, 'x')
         .replace(/[—–]/g, '-').replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/·/g, '-')
         .replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/…/g, '...')
         .normalize('NFKD').replace(/[^\x20-\x7E\n]/g, '');

@@ -425,9 +425,13 @@
   // Returns the fused Overture footprint set. force=true bypasses browser and R2 caches.
   // Areas wider than one Worker request are fetched block by block (sequentially, so cold
   // fills do not contend for the Worker's global fill slot) and merged by footprint id.
-  async function fetchBuildingsCached(bbox, { force = false } = {}) {
+  async function fetchBuildingsCached(bbox, { force = false, onProgress = null } = {}) {
     const parts = [];
-    for (const part of splitServerBBox(bbox)) parts.push(await fetchPartCached(part, force));
+    const blocks = splitServerBBox(bbox);
+    for (const part of blocks) {
+      if (onProgress) onProgress(parts.length, blocks.length);
+      parts.push(await fetchPartCached(part, force));
+    }
     return mergeServerResponses(parts);
   }
 
