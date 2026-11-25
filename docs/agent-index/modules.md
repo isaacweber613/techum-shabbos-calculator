@@ -53,6 +53,7 @@ Top-level exports from application, library, hook, context, and worker modules.
 | `VALID_FEEDBACK_STATUSES` | `inferred` | `worker/feedback.ts` |
 | `DEFAULT_GOOGLE_MAPS_DAILY_CAP` | `inferred` | `worker/map-config.ts` |
 | `GoogleMapConfigEnv` | `interface` | `worker/map-config.ts` |
+| `googleQuotaDay` | `(now = new Date()` | `worker/map-config.ts` |
 | `issueGoogleMapConfig` | `(request: Request, env: GoogleMapConfigEnv): Promise<Response>` | `worker/map-config.ts` |
 | `isTrustedMapConfigRequest` | `(request: Request): boolean` | `worker/map-config.ts` |
 | `normalizeGoogleMapsBrowserKey` | `(value?: string): string` | `worker/map-config.ts` |
