@@ -635,4 +635,11 @@ const pendingTests = [];
     .catch((e) => { console.error('FAIL  ' + name + ' — ' + e.message); process.exitCode = 1; }));
 }
 
+test('typed coordinates go to that point, not to a street named after the numbers', () => {
+  const point = D.parseCoordinates('39.5, -117.0');
+  assert.deepEqual([point.lat, point.lon], [39.5, -117]);
+  assert.deepEqual([D.parseCoordinates('41.117991 -74.059432').lon], [-74.059432]);
+  for (const text of ['117 Main Street', '95, 20', '12, 200', 'Monsey']) assert.equal(D.parseCoordinates(text), null, text);
+});
+
 Promise.all(pendingTests).then(() => console.log(`\n${passed} app tests passed`));
