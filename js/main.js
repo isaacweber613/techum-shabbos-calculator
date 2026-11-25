@@ -1917,6 +1917,10 @@
   }
   // The feedback screenshot (js/feedback.js) uses the same lazily loaded html2canvas.
   window.TechumLoadExportLibrary = loadExportLibrary;
+  window.TechumNormalizeMapClone = (clonedDocument) => {
+    const clonedMap = clonedDocument.getElementById('map');
+    if (clonedMap) normalizeLeafletCloneOverlays(clonedMap);
+  };
 
   function exportCaptionLines() {
     const eff = S.effectiveProfile(settings);
@@ -2047,6 +2051,12 @@
       });
       clonedMap.appendChild(caption);
     }
+    normalizeLeafletCloneOverlays(clonedMap);
+  }
+
+  // html2canvas ignores the transform Leaflet uses to place the boundary layer, so the
+  // shapes land up and to the left of the map. Used by exports and the feedback screenshot.
+  function normalizeLeafletCloneOverlays(clonedMap) {
     clonedMap.querySelectorAll('.leaflet-proxy').forEach((element) => { element.style.display = 'none'; });
     clonedMap.querySelectorAll('.leaflet-tile-loaded').forEach((tile) => { tile.style.opacity = '1'; });
     clonedMap.querySelectorAll('.leaflet-overlay-pane > svg.leaflet-zoom-animated').forEach((svg) => {
