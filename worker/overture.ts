@@ -32,7 +32,11 @@ async function archiveExists(release: string, fetchImpl: FetchLike): Promise<boo
 
 /** Latest release named by Overture's STAC catalog (validated release-name format). */
 export async function latestOvertureRelease(fetchImpl: FetchLike = fetch): Promise<string> {
-  const response = await fetchImpl(OVERTURE_STAC_CATALOG, { headers: { Accept: 'application/json' } });
+  // The catalog's CDN answers 403 to requests without a User-Agent, and a Worker's fetch
+  // sends none by default (seen 2026-11-25: every cold fill failed once the pin was deleted).
+  const response = await fetchImpl(OVERTURE_STAC_CATALOG, {
+    headers: { Accept: 'application/json', 'User-Agent': 'TechumShabbosCalculator/1.0' },
+  });
   if (!response.ok) throw new Error(`Overture release catalog HTTP ${response.status}`);
   const catalog = await response.json() as { latest?: unknown };
   if (typeof catalog.latest !== 'string' || !RELEASE_PATTERN.test(catalog.latest)) {
