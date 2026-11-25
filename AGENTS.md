@@ -11,6 +11,11 @@ derivation (ibur ha'ir chaining at 70⅔ amos, 141⅓ city merges, three-village
 ribua (shape-aware squared rectangle) → 2000-amos techum with square corners. Browser app
 plus one Cloudflare Worker (D1 + R2); `npm run build` copies the static files to `dist/`.
 One secret, `GOOGLE_MAPS_BROWSER_KEY`. v1 built + live-verified 2026-07-10.
+Google Maps (2026-11-25): the key lives in its own Google Cloud project `tchum-shabbos-maps`
+(Techum only), restricted to Maps JavaScript + Maps Static and to tchumshabbos.com, www and
+localhost:4173. Google daily quotas: 10 map loads, 10 static-map requests (30-day peaks were 9
+and 1), 0 3D map loads. `GOOGLE_MAPS_DAILY_CAP` (10) matches, counted on Google's Pacific-time
+day, so the app switches to the free map before Google refuses.
 
 - Run: `node serve.mjs` → http://localhost:4173 (or preview_start name `tchum-calculator`
   — config in this project's `.claude/launch.json`)

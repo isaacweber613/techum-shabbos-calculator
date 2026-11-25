@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import type { GoogleMapConfigEnv } from '../worker/map-config.ts';
 import {
   DEFAULT_GOOGLE_MAPS_DAILY_CAP,
+  googleQuotaDay,
   issueGoogleMapConfig,
   isTrustedMapConfigRequest,
   normalizeGoogleMapsBrowserKey,
@@ -10,6 +11,9 @@ import {
 
 assert.equal(parseGoogleMapsDailyCap(), DEFAULT_GOOGLE_MAPS_DAILY_CAP);
 assert.equal(parseGoogleMapsDailyCap('300'), 300);
+assert.equal(googleQuotaDay(new Date('2026-11-26T07:59:00Z')), '2026-11-25');
+assert.equal(googleQuotaDay(new Date('2026-11-26T08:00:00Z')), '2026-11-26');
+assert.equal(googleQuotaDay(new Date('2026-07-01T06:59:00Z')), '2026-06-30');
 assert.equal(parseGoogleMapsDailyCap('0'), 1);
 assert.equal(parseGoogleMapsDailyCap('20000'), 10_000);
 assert.equal(parseGoogleMapsDailyCap('not-a-number'), DEFAULT_GOOGLE_MAPS_DAILY_CAP);
