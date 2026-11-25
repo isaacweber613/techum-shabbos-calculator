@@ -152,9 +152,8 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   for (const b of ['garage', 'shed', 'barn', 'stable', 'warehouse', 'greenhouse', 'carport', 'shrine', 'retail', 'silo']) {
     check('1.3-b', 73, `building=${b} is not a dwelling`, k({ building: b }) === 'non', k({ building: b }));
   }
-  // Rev. 21 left tents and shipping containers pending. Tents are answered in rev. 23 (block
-  // below); containers stay pending here.
-  pend('1.3-b2', 73, 'The table classifies building=container as not a dwelling; the spec does not cover it. (Part 7 Q14)');
+  // Rev. 21 left tents and shipping containers pending (Part 7 Q14); rev. 23 answered tents
+  // and rev. 24 containers (blocks below).
   // Lines 65-71, 76-81, rev 14/16: counts only with facts the map cannot show -> review.
   for (const b of ['synagogue', 'church', 'mosque', 'ruins', 'guardhouse', 'hotel', 'hospital', 'school', 'office', 'factory', 'industrial', 'commercial', 'fire_station', 'monastery']) {
     check('1.3-c', 76, `building=${b} needs beis-dirah review`, k({ building: b }) === 'review', k({ building: b }));
@@ -292,7 +291,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
     tentOut === false && isIncluded(tentB) === true);
   check('rev23-e', 1042, 'the app includes a yurt by default', isIncluded(gerB) === true);
   check('rev23-f', 1046, 'a footprint left out by default (tent, houseboat) is not offered as the starting building unless a rav included it',
-    /if \(b\.excludeByDefault && state\.overrides\.get\(b\.id\) !== 'include'\) return;/.test(main));
+    /if \(\(b\.klass === 'non' \|\| b\.excludeByDefault\) && state\.overrides\.get\(b\.id\) !== 'include'\) return;/.test(main));
   check('rev23-g', 1028, 'the app carries the kind of each uncounted structure into the engine, including the background worker',
     /noCityCountKind: cls\.noCityCountKind \|\| null/.test(main) &&
     /function workerSafeBuildings[\s\S]{0,300}noCityCountKind: b\.noCityCountKind \|\| null/.test(main));
@@ -351,6 +350,68 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('rev23-n', 1029, 'four houses + a static caravan + a tent: not a town by count; caravan and tent each get their own flags',
     mr.mode === 'building' && has(mr, 'caravan-site') && has(mr, 'tent-site') && has(mr, 'static-caravan') && has(mr, 'fixed-tent'),
     JSON.stringify(mr.warnings.map((w) => w.type)));
+}
+
+// =================================================================================
+// Rev. 24 — shipping containers (lines 77, 393, 1055-1097; Part 7 Q14, Q17)
+// =================================================================================
+{
+  const cls = (building) => D.classify({ building });
+  const crate = cls('container');
+  check('rev24-a', 1062, 'building=container stays a non-dwelling (not in review, never flagged by default) and carries the lived-in-container treatment for a rav\'s include',
+    crate.klass === 'non' && !crate.excludeByDefault && crate.noCityCount === true && crate.noCityCountKind === 'lived-in-container' &&
+    !cls('shed').noCityCount && !cls('warehouse').noCityCount, JSON.stringify(crate));
+  check('rev24-b', 1069, 'the container text says it is not a dwelling and a rav may include one people live in',
+    /not a dwelling/.test(crate.reason) && /a rav may include it/.test(crate.reason) && /SA OC 398:6/.test(crate.reason), crate.reason);
+
+  // The app's inclusion rule (main.js isIncluded) with ambiguous structures included (the default).
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const src = main.slice(main.indexOf('  function isIncluded('), main.indexOf('  // Verified-only scenario'));
+  const overrides = new Map();
+  const isIncluded = require('node:vm').runInNewContext(`(${src})`,
+    { state: { overrides }, isTooSmall: () => false, sizeVerdict: () => 'ok', settings: { includeReview: true, includeUnknown: true } });
+  const crateB = { id: 'crate', ...crate };
+  const crateOut = isIncluded(crateB);
+  overrides.set('crate', 'include');
+  check('rev24-c', 1081, 'the app leaves a container out by default, even with ambiguous structures included, and queues only review and unknown structures; a rav\'s include brings it in',
+    crateOut === false && isIncluded(crateB) === true &&
+    /building\.klass === 'unknown' \|\| building\.klass === 'review'\)/.test(main));
+  check('rev24-d', 1084, 'a footprint a reviewer included, such as a lived-in container, can be offered as the starting building',
+    /if \(\(b\.klass === 'non' \|\| b\.excludeByDefault\) && state\.overrides\.get\(b\.id\) !== 'include'\) return;/.test(main) &&
+    !/if \(b\.klass === 'non'\) return;/.test(main));
+
+  // Engine runs with the flags the table gives, so the old table (an included container
+  // counted as a full house) fails each of these.
+  const asCrate = (b) => ({ ...b, noCityCount: !!crate.noCityCount, noCityCountKind: crate.noCityCountKind });
+  // Town: six 10 m houses, walls x [0,50], y [0,30]. A container at x [80,90]: 30 m < 33.92 m.
+  const left = run(town(0, 0).concat(asCrate(box(80, 0, 90, 10, { included: false }))), {}, { x: 5, y: 5 });
+  check('rev24-e', 1062, 'a storage container, left out by default, does not join: the town ends at x = 50, the techum at 1010, no container flag',
+    left.mode === 'city' && approx(span(left.cityCorners).maxX, 50) && approx(span(left.techumCorners).maxX, 1010) &&
+    !has(left, 'lived-in-container') && !has(left, 'container-site'), JSON.stringify(left.warnings.map((w) => w.type)));
+  const lived = run(town(0, 0).concat(asCrate(box(80, 0, 90, 10))), {}, { x: 5, y: 5 });
+  check('rev24-f', 1076, 'a lived-in container a rav included chains on like a static caravan: town to x = 90, techum to 1050, count stays 6, container flag only',
+    lived.mode === 'city' && approx(span(lived.cityCorners).maxX, 90) && approx(span(lived.techumCorners).maxX, 1050) &&
+    lived.clusters[0].houseCount === 6 && has(lived, 'lived-in-container') && !has(lived, 'container-site'),
+    JSON.stringify({ t: span(lived.techumCorners), n: lived.clusters[0].houseCount, w: lived.warnings.map((w) => w.type) }));
+  // Five houses and an included container in place of the sixth (x [40,50], y [20,30]).
+  const five = town(0, 0); five[5] = asCrate(five[5]);
+  const fr = run(five, {}, { x: 5, y: 5 });
+  check('rev24-g', 1077, 'five houses + one lived-in container is not a town by count: building mode from the pin\'s house (techum x [-960, 970]), with both flags',
+    fr.mode === 'building' && fr.clusters[0].houseCount === 5 &&
+    sameSpan(span(fr.techumCorners), { minX: -960, maxX: 970, minY: -960, maxY: 970 }) &&
+    has(fr, 'container-site') && has(fr, 'lived-in-container'), JSON.stringify({ mode: fr.mode, w: fr.warnings.map((w) => w.type) }));
+  const frKey = fr.qualificationClusters[0].key;
+  const frRuled = run(five, { cityQualificationOverrides: { [frKey]: true } }, { x: 5, y: 5 });
+  check('rev24-h', 1079, 'once a rav records that settlement as a town, it squares as one: techum x [-960, 1010], no site flag',
+    frRuled.mode === 'city' && approx(span(frRuled.techumCorners).minX, -960) && approx(span(frRuled.techumCorners).maxX, 1010) &&
+    !has(frRuled, 'container-site'), JSON.stringify(span(frRuled.techumCorners)));
+  // Same in every profile (line 1088): the Chazon Ish amah with the karpef, and the Mechaber profile.
+  const six = town(0, 0).concat(asCrate(box(80, 0, 90, 10)));
+  const profiles = [{ amahM: CI, karpef: true }, { karpef: false, bowPolicy: 'mechaber-curve' }];
+  check('rev24-i', 1088, 'the same in every profile: six houses + a lived-in container is a town and five houses + one is not, with the same flags',
+    profiles.every((p) => { const a = run(six, p, { x: 5, y: 5 }), b = run(five, p, { x: 5, y: 5 });
+      return a.mode === 'city' && a.clusters[0].houseCount === 6 && has(a, 'lived-in-container') && !has(a, 'container-site') &&
+        b.mode === 'building' && has(b, 'container-site'); }));
 }
 
 // =================================================================================
@@ -870,8 +931,8 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('2-12mil', 391, 'the 12-mil ring and second-shita line are hidden by default', SET.DEFAULTS.show12mil === false && SET.DEFAULTS.secondAmahCm === 0);
 }
 
-pend('7-q11', 1242, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
-pend('7-q12', 1245, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
+pend('7-q11', 1287, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
+pend('7-q12', 1290, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
 
 console.log(`\n${passed} passed, ${failed} failed, ${pending.length} pending`);
 for (const p of pending) console.log('  PENDING ' + p);

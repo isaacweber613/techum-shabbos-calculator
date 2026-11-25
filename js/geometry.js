@@ -333,7 +333,7 @@
   // town (building.noCityCount). Each kind raises its own pair of flags: `joined` when it
   // chains onto a settlement with houses, `site` when a settlement would be a town only by
   // counting it. A noCityCount footprint without a known kind is a static caravan, the only
-  // kind before rev. 23.
+  // kind before rev. 23. A container reaches here only when a reviewer included it (rev. 24).
   const UNCOUNTED_KINDS = {
     'static-caravan': { // spec rev. 20
       siteType: 'caravan-site',
@@ -346,6 +346,12 @@
       site: (n) => `${n === 1 ? 'A settlement' : n + ' settlements'} would be a town only by counting tents or yurts. Tents are not counted toward the minimum that forms a town: tents have no town status (SA OC 398:10), and whether tents fixed in one place make one is disputed (Magen Avraham 398:15 and Mishnah Berurah 398:49 against the Levush as read by Eliyah Rabbah 398:14). Three courtyards of two permanent houses each make the whole camp a town. A rav may record its town status.`,
       joinedType: 'fixed-tent',
       joined: (n) => `${n} tent${n === 1 ? '' : 's'} or yurt${n === 1 ? '' : 's'} joined the chain of houses. A tent counts only when it is fixed in one place (Magen Avraham 398:15), and how long makes it fixed is unsettled (Eshel Avraham 398:15: one summer or 30 days; Kaf HaChaim 398:66: 30 days). The map cannot show this; a rav should confirm.`,
+    },
+    'lived-in-container': { // spec rev. 24
+      siteType: 'container-site',
+      site: (n) => `${n === 1 ? 'A settlement' : n + ' settlements'} would be a town only by counting containers a reviewer included. A container people live in is treated like a static caravan and is not counted toward the minimum that forms a town, because whether movable dwellings fixed on a site make a town by themselves is disputed (Magen Avraham 398:15 and Mishnah Berurah 398:49 against Eliyah Rabbah 398:14). No posek we found discusses containers by name. A rav may record its town status.`,
+      joinedType: 'lived-in-container',
+      joined: (n) => `${n} container${n === 1 ? '' : 's'} a reviewer included joined the chain of houses. A storage container is not a dwelling (SA OC 398:6); one people live in, fixed in place, joins the town like any building lived in (Shulchan Aruch HaRav 398:8) but is not counted toward the minimum that forms one, like a static caravan. No posek we found discusses containers by name; a rav should confirm.`,
     },
   };
   function uncountedKindOf(building) {
@@ -1116,8 +1122,8 @@
       qualificationEvidence: cluster.qualificationEvidence,
       qualificationProvisional: cluster.qualificationProvisional,
     }));
-    // Static caravans (spec rev. 20) and fixed tents or yurts (rev. 23) chain onto a town but
-    // never make one by count. A settlement that would be a town only by counting them is
+    // Static caravans (spec rev. 20), fixed tents or yurts (rev. 23) and lived-in containers
+    // (rev. 24) chain onto a town but never make one by count. A settlement that would be a town only by counting them is
     // flagged once for each kind it holds.
     const uncountedSites = clusters.filter((cluster) => cluster.uncountedCount > 0 && cluster.qualificationProvisional &&
       cluster.houseCount < settings.minCityHouses && cluster.houseCount + cluster.uncountedCount >= settings.minCityHouses);

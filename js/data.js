@@ -34,7 +34,7 @@
     'train_station', 'transportation', 'parking', 'service', 'transformer_tower',
     'water_tower', 'storage_tank', 'silo', 'bunker', 'construction', 'grandstand',
     'stadium', 'sports_hall', 'sports_centre', 'pavilion', 'toilets', 'hangar',
-    'digester', 'slurry_tank', 'container', 'gazebo', 'bridge', // tent: special rules (rev. 23)
+    'digester', 'slurry_tank', 'gazebo', 'bridge', // tent, container: special rules (revs. 23, 24)
     // Rev. 20: a touring caravan is like the house on a ship (SA OC 398:6) — not counted.
     'caravan', 'touring_caravan',
   ]);
@@ -72,11 +72,14 @@
   };
   const SUBTYPE_REVIEW_TAGS = new Set(['farm_unclassified']);
 
-  // Special rules (spec rev. 20 and 23 notes). All go to review so they are always flagged.
+  // Special rules (spec rev. 20, 23 and 24 notes). Each goes to review, so it is always
+  // flagged, unless the rule gives another class.
+  //   klass: the class when it is not review (a container stays a non-dwelling, rev. 24).
   //   excludeByDefault: left out unless a reviewer includes the building.
   //   noCityCount: joins a town in the 70⅔ chain but adds 0 to the count that forms a town.
-  //   noCityCountKind: which flag the engine raises for it ('static-caravan', 'fixed-tent').
-  const SPECIAL_REVIEW_TAGS = {
+  //   noCityCountKind: which flag the engine raises for it ('static-caravan', 'fixed-tent',
+  //   'lived-in-container').
+  const SPECIAL_TAGS = {
     // A dwelling on a ship does not join the town (Eruvin 55b; Rambam Shabbos 28:4; SA OC
     // 398:6). Whether a boat that never leaves its berth is different is disputed.
     houseboat: {
@@ -115,6 +118,20 @@
       noCityCount: true,
       noCityCountKind: 'fixed-tent',
     },
+    // Rev. 24. A storage or shipping container is a storehouse with no dwelling in it, which does
+    // not join the town (Eruvin 55b; Rambam Shabbos 28:4; SA OC 398:6; MB 398:27). One people
+    // live in, fixed in place, joins like any building lived in (SA HaRav 398:8) and is treated
+    // like a static caravan. No posek discusses containers by name. It stays a non-dwelling,
+    // never flagged by default; a rav's include gives it the static-caravan treatment, and only
+    // then is it flagged.
+    container: {
+      klass: 'non',
+      reason: 'building=container — a storage or shipping container is not a dwelling and does not join the town ' +
+        '(SA OC 398:6: a storehouse joins only with a dwelling in it). If people live in it and it is fixed in place, ' +
+        'a rav may include it: it then joins an existing town but is not counted toward the minimum that forms one.',
+      noCityCount: true,
+      noCityCountKind: 'lived-in-container',
+    },
   };
 
   function classify(tags) {
@@ -129,9 +146,9 @@
       const cls = classify(Object.assign({}, tags, { building: mapped, overture_subtype: undefined }));
       return { klass: cls.klass, reason: 'Overture subtype=' + subtype + ' → ' + cls.reason };
     }
-    if (Object.prototype.hasOwnProperty.call(SPECIAL_REVIEW_TAGS, b)) {
-      const rule = SPECIAL_REVIEW_TAGS[b];
-      return { klass: 'review', reason: rule.reason,
+    if (Object.prototype.hasOwnProperty.call(SPECIAL_TAGS, b)) {
+      const rule = SPECIAL_TAGS[b];
+      return { klass: rule.klass || 'review', reason: rule.reason,
         excludeByDefault: !!rule.excludeByDefault, noCityCount: !!rule.noCityCount,
         noCityCountKind: rule.noCityCountKind || null };
     }

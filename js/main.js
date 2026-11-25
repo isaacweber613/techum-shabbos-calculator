@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.6.3 (2026-11-25)';
+  const ENGINE_VERSION = '1.6.4 (2026-11-25)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -1209,10 +1209,10 @@
     const p = state.proj.toXY(original.lat, original.lon);
     let best = null;
     state.buildings.forEach((b) => {
-      if (b.klass === 'non') return;
-      // A footprint left out by default (a houseboat, a tent: spec rev. 20, 23) is not offered
-      // as the starting building unless a reviewer included it.
-      if (b.excludeByDefault && state.overrides.get(b.id) !== 'include') return;
+      // A non-dwelling, or a footprint left out by default (a houseboat, a tent: spec rev. 20,
+      // 23), is not offered as the starting building unless a reviewer included it (a lived-in
+      // container, rev. 24).
+      if ((b.klass === 'non' || b.excludeByDefault) && state.overrides.get(b.id) !== 'include') return;
       const inside = G._internals.pointInRing(p, b.ring);
       const near = inside ? { point: p, distanceM: 0 } : closestPointOnRing(p, b.ring);
       if (!best || near.distanceM < best.distanceM) best = { ...near, building: b };
@@ -1283,10 +1283,10 @@
       const isHome = index === res.homeCluster;
       const color = isHome ? '#00e676' : `hsl(${(index * 137.508) % 360}, 75%, 48%)`;
       const houses = cluster.houseCount == null ? cluster.members.length : cluster.houseCount;
-      // Validated join perimeters, static caravans (spec rev. 20) and fixed tents or yurts
-      // (rev. 23) chain but are not counted.
+      // Validated join perimeters, static caravans (spec rev. 20), fixed tents or yurts (rev. 23)
+      // and lived-in containers (rev. 24) chain but are not counted.
       const notCounted = cluster.members.length - houses;
-      const label = `Settlement #${index + 1}: ${houses} counted house${houses === 1 ? '' : 's'}; ${notCounted} joined but not counted (validated join perimeters, static caravans, tents or yurts)` +
+      const label = `Settlement #${index + 1}: ${houses} counted house${houses === 1 ? '' : 's'}; ${notCounted} joined but not counted (validated join perimeters, static caravans, tents, yurts or lived-in containers)` +
         (isHome ? '<br><b>This is the selected home city.</b>' : '') +
         `<br>Dashed box is its derived outer rectangle after 70⅔-amah chaining and settlement merges.`;
       L.polygon(cornersToLatLngs(cluster.corners), {

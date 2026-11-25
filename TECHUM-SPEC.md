@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 23, 2026-11-25) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 24, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -74,7 +74,8 @@ under a roof.
   pits, dovecotes; a bare shul or other house of worship, warehouse, or barn with no
   resident; open cemeteries; a dwelling on a ship (a moored houseboat by default, rev. 20); a flimsy seasonal watchman's hut in a
   theft/flood-prone area; a pitched tent (a tent or yurt fixed in one place joins an existing
-  town but adds nothing toward forming one, rev. 23).
+  town but adds nothing toward forming one, rev. 23); a storage or shipping container (one
+  people live in, fixed in place, is treated like a static caravan, rev. 24).
 - **Modern commercial/industrial structures are disputed, not categorically excluded.**
   Chazon Ish OC 110:28 (citation questioned, Part 7 Q12) and Shevet HaLevi 1:59 are cited for counting at least some factories
   containing offices and a workers' lunch room; Kiryat Ariel ch. 4, Machazeh Eliyahu 79,
@@ -389,7 +390,7 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 | Bow/L/gamma | **Rema-majority:** fill when confirmed chord <4000 or depth <2000; otherwise no-fill; unresolved endpoints use provisional no-fill | same default; reviewer may select another sourced shita | **Mechaber/Rambam:** narrow chord fills; wide remainder follows inhabited/curved edge; reviewer endpoints required |
 | Wholly enclosed ≥4000×4000-amah hole | **include + mandatory warning** (Beit Yitzchok / R' Shulem Weiss); strict exclusion available | same | same |
 | Unknown-use buildings | include, flagged for review (all profiles — data policy, not psak) | ” | ” |
-| Static caravans (rev. 20), fixed tents and yurts (rev. 23) | join an existing town, add 0 to the count that forms one, flagged; building=tent is left out unless a rav includes it | ” | ” |
+| Static caravans (rev. 20), fixed tents and yurts (rev. 23), lived-in containers (rev. 24) | join an existing town, add 0 to the count that forms one, flagged; building=tent is left out unless a rav includes it; building=container is a non-dwelling, not flagged, until a rav includes it | ” | ” |
 | Eruv-enclosure-as-city | **off unless rav-validated** — selected practice/data-confidence default, not settled consensus; validated *hukaf l'dirah* perimeter available | same | same |
 | 12-mil ring / second-shita comparison line | hidden / off (available in all profiles); the ring is 24,000 amos from the town's own squared edge, without the karpef (rev. 22) | ” | ” |
 
@@ -1051,6 +1052,50 @@ and medium for fixed tents.
 Golden tests in `tests/spec-golden.test.js` (ids `rev23-*`) cover each item with expected
 values worked out by hand.
 
+### Rev. 24 — 2026-11-25 (researched answer: shipping containers; one default change)
+
+From research Isaac ordered, not from a posek. The research found no posek who discusses
+containers by name, so this applies the rules for storehouses and caravans to them. Every
+place cited below was checked on Sefaria on 2026-11-25. The research put its confidence high
+for storage containers and medium for lived-in ones.
+
+- **A storage or shipping container is not a dwelling and does not join a town, in every
+  profile; the table was right (Part 7 Q14).** The baraita in Eruvin 55b, Rambam Shabbos
+  28:3–4 and SA OC 398:6 count storehouses only when there is a dwelling in them, and list
+  storehouses without one among the structures that do not join. Rashi there and Mishnah
+  Berurah 398:27: storehouses for grain, wine and oil are not dwellings, so they need a
+  dwelling for watchmen. Aruch HaShulchan 398:14 says the same of storehouses of "other
+  merchandise": the storehouse itself is not a dwelling.
+- **A container people live in, fixed in place, gets rev. 20's static-caravan treatment.** A
+  building not made for living in joins the town once people live in it (Shulchan Aruch
+  HaRav 398:8). A container is made to be moved, and a house on a ship does not join because
+  it is not fixed in one place (Rashi on Eruvin 55b; Mishnah Berurah 398:34). Whether movable
+  dwellings fixed on a site make a town by themselves is the caravan and tent dispute (Magen
+  Avraham 398:15 and Mishnah Berurah 398:49 against Eliyah Rabbah 398:14). So a lived-in,
+  fixed container chains in the 70⅔-amah join onto an existing town, adds 0 to the count
+  that forms a town, and is flagged: a `lived-in-container` warning when it joins a
+  settlement with houses, and a `container-site` warning when a settlement would be a town
+  only by counting such containers. A rav may record that settlement's town status through
+  the existing city-status review.
+- **Map classes.** The map data cannot tell a lived-in container from a storage one.
+  building=container stays a non-dwelling: left out, not in the review queue and never
+  flagged by default. Before, a reviewer's per-building include counted it as a full house;
+  now the include gives it the static-caravan treatment, and only that case is flagged. Any
+  footprint a reviewer included, such as a lived-in container, can now be offered as the
+  starting building when the pin is placed near it; before, a non-dwelling never was.
+  Overture's building classes (checked 2026-11-25) have no `container`, so
+  building=container reaches the calculator only from a snapshot saved from the older
+  OpenStreetMap source. The same rules apply in every profile.
+- **Still open (Part 7 Q17).** The same baraita counts "the house in the sea", which Rav Papa
+  explains as a house made for unloading a ship's goods, and Mishnah Berurah 398:30 says that
+  is why it counts as a dwelling. Whether that reaches a port warehouse, or containers on a
+  quay, was not part of the research. The calculator counts neither.
+- **Replay note.** A snapshot holding a container a reviewer included can now give a different
+  boundary than when it was saved. Engine version 1.6.4.
+
+Golden tests in `tests/spec-golden.test.js` (ids `rev24-*`) cover each item with expected
+values worked out by hand.
+
 ## Part 3 — Product spec
 
 ### 3.0 Scope & users
@@ -1260,7 +1305,9 @@ the UI for building-level review is the bulk of the work.
     non-dwellings. Which of these is a beis dirah? **Rev. 23 answered tents (from research,
     not a posek):** a pitched tent is not a dwelling; a tent or yurt fixed in one place joins
     an existing town but adds 0 toward forming one, with flags; building=tent stays out unless
-    a rav includes it.
+    a rav includes it. **Rev. 24 answered containers (from research, not a posek):** a storage
+    or shipping container is not a dwelling; one people live in, fixed in place, gets the
+    static-caravan treatment once a rav includes it. The other classes stay open.
 15. **The 12-mil comparison ring (rev. 21)** — the engine draws the 24,000-amah ring beyond the
     Rema karpef, like the 2000. Is the d'oraisa 12 mil measured from the karpef or from the
     city's own edge? The ring is off by default. **Rev. 22 answered (from research, not a
@@ -1270,6 +1317,11 @@ the UI for building-level review is the bulk of the work.
     edge. Minchas Chinuch 24 asks in general whether the rabbinic techum rules and leniencies
     carry over to the Torah measure, which would include squaring the town, but he does not
     discuss squaring directly. The Chazon Ish's own words on the 12 mil were not read.
+17. **A house built in the water for a ship's goods (rev. 24)** — Eruvin 55b counts "the house
+    in the sea"; Rav Papa explains it as a house made for unloading a ship's goods, and
+    Mishnah Berurah 398:30 says that is why it counts as a dwelling (when it has 4×4 amos and
+    stands within 70⅔ amos of the town). Does this reach a port warehouse or containers on a
+    quay? Both stay non-dwellings.
 
 **Validation benchmarks:** the tool is city-agnostic; these are continuing cross-checks,
 not scope or release blockers:
