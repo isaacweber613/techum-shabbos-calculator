@@ -554,7 +554,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const common = { minX: -993.92, maxX: 1013.92, minY: -993.92, maxY: 1023.92 };
   const strip = [40, 46.96].map((y) => run(both, { karpef: true }, { x: 5, y }));
   const beyond = run(both, { karpef: true }, { x: 5, y: 46.97 });
-  check('rev27-d', 1269, 'a pin 10 m and 16.96 m outside a town\'s squared walls, in its karpef and in another town\'s square, gets the common area of both (x [-993.92, 1013.92], y [-993.92, 1023.92]) with a review note; 16.97 m gets it without the note',
+  check('rev27-d', 1276, 'a pin 10 m and 16.96 m outside a town\'s squared walls, in its karpef and in another town\'s square, gets the common area of both (x [-993.92, 1013.92], y [-993.92, 1023.92]) with a review note; 16.97 m gets it without the note',
     strip.every((r) => r.mode === 'city' && r.homeCandidates.length === 2 && has(r, 'multiple-home-candidates') &&
       has(r, 'pin-beside-town') && sameSpan(span(r.techumCorners), common)) &&
     beyond.homeCandidates.length === 2 && has(beyond, 'multiple-home-candidates') && !has(beyond, 'pin-beside-town') &&
@@ -562,10 +562,10 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
     JSON.stringify({ strip: strip.map((r) => [r.homeCandidates.length, has(r, 'pin-beside-town'), span(r.techumCorners)]), beyond: beyond.homeCandidates.length }));
   // Inside X's walls the street rule stands: a pin at (5, 15), between X's two rows and 5 m from each.
   const between = run(both, { karpef: true }, { x: 5, y: 15 });
-  check('rev27-d2', 1269, 'a pin in the street between a town\'s two rows, inside its squared walls, is in that town: 20 houses, techum x [-993.92, 1183.92]',
+  check('rev27-d2', 1276, 'a pin in the street between a town\'s two rows, inside its squared walls, is in that town: 20 houses, techum x [-993.92, 1183.92]',
     homeHouses(between) === 20 && !has(between, 'pin-beside-town') && approx(span(between.techumCorners).maxX, 1183.92, 1e-6),
     JSON.stringify({ home: homeHouses(between) }));
-  pend('rev27-q20', 1533, 'Is a person within half of 70⅔ amos of a town\'s outermost house, outside its squared walls but in its karpef, and inside another town\'s squared area, resting in the first town? The engine gives the common area of both and a review note.');
+  pend('rev27-q20', 1539, 'Is a person within half of 70⅔ amos of a town\'s outermost house, outside its squared walls but in its karpef, and inside another town\'s squared area, resting in the first town? The engine gives the common area of both and a review note.');
   // The rule only chooses among towns whose final starting area already holds the pin; it never
   // adds a town. Without karpef, a pin 5 m north of X's walls (y = 35) is outside X's square:
   // it rests in Y only, as before (rev. 12: membership follows the profile's starting area).
@@ -677,7 +677,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   longB.push(...town(2500, 0));
   const longRun = widen(longB, { x: 5, y: 5 }, 3000);
   const allSpan = (regions) => span(regions.flat());
-  check('rev27-a', 1251, 'a middle village 872 m from the town whose far end is 872 m from a town 2.5 km away: from 3000 m one 71-house town, walls x [0, 2550], y [0, 910], techum x [-960, 3510], y [-960, 1870]',
+  check('rev27-a', 1244, 'a middle village 872 m from the town whose far end is 872 m from a town 2.5 km away: from 3000 m one 71-house town, walls x [0, 2550], y [0, 910], techum x [-960, 3510], y [-960, 1870]',
     longRun.result && homeOf(longRun.result) === 71 && has(longRun.result, 'three-villages') &&
       sameSpan(allSpan(longRun.result.cityRegions), { minX: 0, maxX: 2550, minY: 0, maxY: 910 }) &&
       sameSpan(allSpan(longRun.result.techumRegions), { minX: -960, maxX: 3510, minY: -960, maxY: 1870 }),
@@ -752,7 +752,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
     homeOf(narrowB) === 20 && has(narrowB, 'three-villages') && !has(narrowB, 'three-villages-wider-middle') &&
     sameSpan(span(narrowB.cityCorners), { minX: 0, maxX: 200, minY: 0, maxY: 430 }),
     JSON.stringify({ wide: homeOf(wideB), placed, narrow: homeOf(narrowB) }));
-  pend('rev26-q19', 1524, 'Three villages: does a middle village wider than the gap between the outer two (or reaching over an outer village once lowered) still join them? The engine keeps the stricter reading and lists each case for review.');
+  pend('rev26-q19', 1530, 'Three villages: does a middle village wider than the gap between the outer two (or reaching over an outer village once lowered) still join them? The engine keeps the stricter reading and lists each case for review.');
 
   // The app: no widening limit, the incomplete answer, the dashed line, one outline, the review note.
   const appMain = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
@@ -800,7 +800,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   // Rev. 27: a snapshot that does not say which area its buildings cover cannot be checked, so it is
   // marked incomplete (before, the check was skipped and its saved flag, often "complete", stood).
   asyncChecks.push(replay({ more: null, fromSnapshot: true, fetchBBox: null }).then((unknown) => {
-    check('rev27-g', 1278, 'a snapshot with no recorded loaded area is marked incomplete and not refetched',
+    check('rev27-g', 1285, 'a snapshot with no recorded loaded area is marked incomplete and not refetched',
       unknown.calculate === 0 && unknown.render === 1 && unknown.dataCapHit === true && unknown.reason === 'snapshot-area-unknown',
       JSON.stringify(unknown));
   }));
@@ -808,7 +808,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   // Rev. 27: the comparison-amah line and the verified-dwellings line are separate results on the same
   // loaded buildings. A larger amah makes a larger town, so either can need map data the main result
   // did not load; it is then labelled incomplete on the map and in the answer, never drawn as finished.
-  check('rev27-e', 1278, 'the comparison and verified-dwellings lines are checked with dataFrontier and labelled incomplete on the map and in the answer when the loaded data does not cover them',
+  check('rev27-e', 1285, 'the comparison and verified-dwellings lines are checked with dataFrontier and labelled incomplete on the map and in the answer when the loaded data does not cover them',
     /const res2Incomplete = scenarioIncomplete\(res2\)/.test(appMain) && /const resVIncomplete = scenarioIncomplete\(resV\)/.test(appMain) &&
     /G\.dataFrontier\(scenario, state\.proj, state\.fetchBBox/.test(appMain) &&
     /Comparison line incomplete/.test(appMain) && /Verified-dwellings line incomplete/.test(appMain) &&
@@ -817,7 +817,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const mapExport = require('../js/map-export.js');
   const plainCaption = mapExport.exportCaptionLines({ label: 'Town', profileLabel: 'Mishna Berurah', amahCm: 48 });
   const cutCaption = mapExport.exportCaptionLines({ label: 'Town', profileLabel: 'Mishna Berurah', amahCm: 48, incomplete: true });
-  check('rev27-f', 1278, 'an exported PNG of an incomplete result says so in its caption; a complete one keeps its three lines',
+  check('rev27-f', 1285, 'an exported PNG of an incomplete result says so in its caption; a complete one keeps its three lines',
     plainCaption.length === 3 && !plainCaption.some((line) => /INCOMPLETE/.test(line)) &&
     cutCaption.length === 4 && /^INCOMPLETE/.test(cutCaption[2]) && /incomplete: state\.dataCapHit/.test(appMain),
     JSON.stringify(cutCaption));
@@ -1340,8 +1340,8 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('2-12mil', 401, 'the 12-mil ring and second-shita line are hidden by default', SET.DEFAULTS.show12mil === false && SET.DEFAULTS.secondAmahCm === 0);
 }
 
-pend('7-q11', 1479, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
-pend('7-q12', 1482, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
+pend('7-q11', 1485, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
+pend('7-q12', 1488, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
 
 Promise.all(asyncChecks).catch((error) => { failed++; console.error('FAIL  an async check threw: ' + error.message); }).then(() => {
   console.log(`\n${passed} passed, ${failed} failed, ${pending.length} pending`);
