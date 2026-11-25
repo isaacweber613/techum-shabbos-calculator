@@ -64,7 +64,8 @@
     "RAW_RETENTION_DAYS": "365",
     "GEOCODE_CACHE_DAYS": "90",
     "GEOCODER_CONTACT": "https://tchumshabbos.com/about",
-    "GOOGLE_MAPS_DAILY_CAP": "10",
+    "GOOGLE_MAPS_DAILY_CAP": "30",
+    "GOOGLE_STATIC_MAPS_DAILY_CAP": "10",
     "ACCESS_TEAM_DOMAIN": "bolt-n3l-pages.cloudflareaccess.com",
     "ACCESS_AUD": "4930a02c7927e58f369a77e011ac5ba642c098981ce69c84507845e95d24a9fb"
   },

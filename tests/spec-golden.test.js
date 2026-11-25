@@ -638,6 +638,12 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
       sameSpan(span(result.techumCorners), { minX: -960, maxX: 1230, minY: -960, maxY: 1490 })) &&
     homeOf(firstPass) === 6 && oldStopped,
     JSON.stringify(villageRuns.map(({ result, passes }) => ({ home: homeOf(result), passes: passes.length }))));
+  // The three villages above join in one step with no earlier join, so each three-villages note
+  // records round 1; rule 2 (later rounds) does not apply to them.
+  const villageJoins = villageRuns[2].result.warnings.filter((w) => w.type === 'three-villages');
+  check('rev26-f2', 1189, 'each three-villages join records the round it was made in: the villages above join in round 1',
+    villageJoins.length > 0 && villageJoins.every((w) => w.round === 1),
+    JSON.stringify(villageJoins.map((w) => w.round)));
 
   // Rule 2, by hand on a result: home town of parts h, m, p, walls x [0, 950], y [0, 30]; p
   // (x [900, 950]) joined it by three villages. Loaded: x [-1500, 2500], y [-1500, 1500], which

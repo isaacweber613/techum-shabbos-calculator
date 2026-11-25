@@ -13,6 +13,7 @@ Objects declared by tracked SQL migrations. This is a migration map, not a subst
 | table | `feedback_reports` | `migrations/0008_feedback_reports.sql` |
 | table | `geocode_cache` | `migrations/0001_analytics.sql` |
 | table | `geocode_slots` | `migrations/0001_analytics.sql` |
+| table | `google_limit_alerts` | `migrations/0009_google_static_usage_and_alerts.sql` |
 | table | `google_map_daily_usage` | `migrations/0007_google_map_daily_usage.sql` |
 | table | `reviewed_snapshots` | `migrations/0004_reviewed_snapshot_registry.sql` |
 | table | `visitors` | `migrations/0001_analytics.sql` |

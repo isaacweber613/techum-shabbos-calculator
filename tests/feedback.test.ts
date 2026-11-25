@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   buildCodexFeedbackPrompt,
+  feedbackTelegramMessage,
+  submitFeedback,
   MAX_FEEDBACK_DESCRIPTION_LENGTH,
   MAX_FEEDBACK_SCREENSHOT_BYTES,
   parseFeedbackForm,
@@ -50,6 +52,39 @@ assert.match(prompt, /feedback-123/);
 assert.match(prompt, /reproduce/i);
 assert.match(prompt, /test/i);
 assert.match(prompt, /ship/i);
+
+if (valid.ok) {
+  const message = feedbackTelegramMessage(valid.value, 'https://tchumshabbos.com/analytics-feedback');
+  assert.match(message, /The map controls overlap/);
+  assert.match(message, /Page: https:\/\/tchumshabbos\.com\/\?design=10/);
+  assert.match(message, /Email: reviewer@example\.com/);
+  const long = feedbackTelegramMessage({ ...valid.value, description: 'x'.repeat(5_000), reporterEmail: null }, 'https://x/');
+  assert.ok(long.length < 4_096);
+  assert.match(long, /Email: not given/);
+}
+
+// A saved report sends one Telegram message after the response; a Telegram failure never breaks the save.
+for (const telegramWorks of [true, false]) {
+  const sent: string[] = [];
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    sent.push((JSON.parse(String(init.body)) as { text: string }).text);
+    if (!telegramWorks) throw new Error('network down');
+    return Response.json({ ok: true, result: { message_id: 1 } });
+  }) as typeof fetch;
+  const env = {
+    TELEGRAM_BOT_TOKEN: 'TEST-TOKEN', TELEGRAM_CHAT_ID: '12345',
+    BUILDINGS: { put: async () => undefined, delete: async () => undefined },
+    DB: { prepare: () => ({ bind: () => ({ run: async () => ({ meta: { changes: 1 } }) }) }) },
+  } as unknown as Parameters<typeof submitFeedback>[1];
+  const background: Promise<unknown>[] = [];
+  const saved = await submitFeedback(new Request('https://tchumshabbos.com/api/feedback', { method: 'POST', body: form() }),
+    env, (work) => background.push(work));
+  assert.equal(saved.status, 201);
+  await Promise.all(background);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /New Techum feedback/);
+  assert.match(sent[0], /Inbox: https:\/\/tchumshabbos\.com\/analytics-feedback/);
+}
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const appHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');

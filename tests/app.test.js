@@ -256,7 +256,7 @@ test('Google Maps is preferred with a metered same-site config and original-map 
   assert.match(main, /leaflet-overlay-pane > svg\.leaflet-zoom-animated/);
   assert.doesNotMatch(main, /\/api\/map-export-tile/);
   assert.match(worker, /issueGoogleMapConfig/);
-  assert.match(config, /DEFAULT_GOOGLE_MAPS_DAILY_CAP = 10;/);
+  assert.match(config, /DEFAULT_GOOGLE_MAPS_DAILY_CAP = 30;/);
   assert.match(config, /ON CONFLICT\(usage_date\) DO UPDATE/);
   assert.match(config, /MAP_CONFIG_RATE_LIMITER\.limit/);
 });
@@ -442,7 +442,8 @@ test('snapshots record and restore the shared-correction count used in the audit
 
 test('a failed wider expansion pass keeps the completed pass, flagged as incomplete (spec rev. 26)', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
-  assert.match(main, /if \(iteration > 0 && state\.result\) \{[\s\S]{0,400}state\.dataCapHit = true;/);
+  assert.match(main, /if \(iteration > 0 && state\.result\) \{[\s\S]{0,400}state\.dataCapHit = true;\s*state\.dataCapReason = 'failed';/);
+  assert.doesNotMatch(main, /the boundary is an inner bound/);
 });
 
 test('background engine loads the same geometry.js build as the page', () => {

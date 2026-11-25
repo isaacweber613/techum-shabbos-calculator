@@ -2104,6 +2104,9 @@
     const zoom = map.getZoom();
     const plan = window.TechumMapExport.staticMapPlan({ zoom, width: size.x, height: size.y });
     if (!plan) throw new Error('This zoom level is too low to export the complete Google map view. Zoom in and try again.');
+    // The Worker counts Static Maps requests so exports switch to the free map before Google's daily quota refuses.
+    const slot = await fetch('/api/map-export-slot', { method: 'POST', headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!slot.ok) throw new Error(slot.status === 429 ? "Today's Google export allowance is used up." : 'Google map export is unavailable right now.');
     const container = document.createElement('div');
     container.className = 'google-static-export-underlay';
     container.setAttribute('aria-hidden', 'true');
