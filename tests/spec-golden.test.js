@@ -13,6 +13,7 @@ const path = require('node:path');
 
 let passed = 0, failed = 0;
 const pending = [];
+const asyncChecks = []; // checks that await something; the summary waits for them
 function check(id, specLine, name, cond, detail) {
   const label = `[${id} · TECHUM-SPEC.md:${specLine}] ${name}`;
   if (cond) { passed++; console.log('  ok  ' + label); }
@@ -89,51 +90,51 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   {
     const ring = (r) => span(r.mil12Corners);
     const onTown = run(town(0, 0), { karpef: true }, { x: 5, y: 5 });
-    check('rev22-a', 982, 'karpef on (MB): the 12-mil ring is the squared town + 11,520 m on every side, not + 11,553.92 m',
+    check('rev22-a', 984, 'karpef on (MB): the 12-mil ring is the squared town + 11,520 m on every side, not + 11,553.92 m',
       onTown.mode === 'city' && sameSpan(ring(onTown), { minX: -11520, maxX: 50 + 11520, minY: -11520, maxY: 30 + 11520 }),
       JSON.stringify(ring(onTown)));
-    check('rev22-b', 987, 'the 2000-amah techum still keeps its karpef: walls ± (33.92 + 960) m',
+    check('rev22-b', 989, 'the 2000-amah techum still keeps its karpef: walls ± (33.92 + 960) m',
       sameSpan(span(onTown.techumCorners), { minX: -993.92, maxX: 1043.92, minY: -993.92, maxY: 1023.92 }),
       JSON.stringify(span(onTown.techumCorners)));
     // Chazon Ish amah: 24,000 · 0.576 = 13,824 m (before: + 40.704 = 13,864.704 m).
     const ciTown = run(town(0, 0), { amahM: CI, karpef: true }, { x: 5, y: 5 });
-    check('rev22-c', 985, 'Chazon Ish amah (57.6 cm) with karpef: ring = squared town + 13,824 m',
+    check('rev22-c', 987, 'Chazon Ish amah (57.6 cm) with karpef: ring = squared town + 13,824 m',
       sameSpan(ring(ciTown), { minX: -13824, maxX: 50 + 13824, minY: -13824, maxY: 30 + 13824 }), JSON.stringify(ring(ciTown)));
     // Two towns exactly 141⅓ amos (67.84 m) apart are one town: walls x [0, 167.84].
     const joined = run(town(0, 0).concat(town(50 + T2, 0)), { karpef: true }, { x: 5, y: 5 });
-    check('rev22-d', 986, 'two towns joined at 141⅓ amos: the ring is measured from the merged town: x [-11,520, 11,687.84]',
+    check('rev22-d', 988, 'two towns joined at 141⅓ amos: the ring is measured from the merged town: x [-11,520, 11,687.84]',
       joined.clusters.length === 1 && sameSpan(ring(joined), { minX: -11520, maxX: 167.84 + 11520, minY: -11520, maxY: 30 + 11520 }),
       JSON.stringify(ring(joined)));
     const mech = run(town(0, 0), { karpef: false, bowPolicy: 'mechaber-curve' }, { x: 5, y: 5 });
-    check('rev22-e', 994, 'Mechaber (karpef off): ring = squared town + 11,520 m, unchanged',
+    check('rev22-e', 996, 'Mechaber (karpef off): ring = squared town + 11,520 m, unchanged',
       sameSpan(ring(mech), { minX: -11520, maxX: 50 + 11520, minY: -11520, maxY: 30 + 11520 }));
-    check('rev22-f', 985, 'with karpef on and off the ring is identical (it never depends on the karpef)',
+    check('rev22-f', 987, 'with karpef on and off the ring is identical (it never depends on the karpef)',
       regionSig(onTown.mil12Regions) === regionSig(mech.mil12Regions));
     // A rav-validated enclosure x [-10,60], y [-10,40] is the town's edge (§3.2 line 1019).
     const enclosure = [{ x: -10, y: -10 }, { x: 60, y: -10 }, { x: 60, y: 40 }, { x: -10, y: 40 }];
     const enc = run(town(0, 0), { karpef: true, validatedCityPerimeter: enclosure }, { x: 5, y: 5 });
-    check('rev22-g', 985, 'validated enclosure with karpef: ring = enclosure + 11,520 m: x [-11,530, 11,580]',
+    check('rev22-g', 987, 'validated enclosure with karpef: ring = enclosure + 11,520 m: x [-11,530, 11,580]',
       enc.validatedPerimeterActive && sameSpan(ring(enc), { minX: -11530, maxX: 11580, minY: -11530, maxY: 11560 }), JSON.stringify(ring(enc)));
     // A lone house never had a karpef: walls x [0,10] -> ring x [-11,520, 11,530].
     const lone = run([box(0, 0, 10, 10)], { karpef: true }, { x: 5, y: 5 });
-    check('rev22-h', 985, 'building mode: ring = the house walls + 11,520 m',
+    check('rev22-h', 987, 'building mode: ring = the house walls + 11,520 m',
       lone.mode === 'building' && sameSpan(ring(lone), { minX: -11520, maxX: 11530, minY: -11520, maxY: 11530 }));
     // A town split into regions by an unfilled pocket: each region gets 24,000 amos, no karpef.
     // Tiny amah 0.01 m: 24,000 amos = 240 m, karpef 0.70667 m.
     const deepU = [];
     for (let n = 0; n <= 10; n++) { deepU.push(house(0, n * 10), house(100, n * 10)); if (n > 0 && n < 10) deepU.push(house(n * 10, 0)); }
     const multi = run(deepU, { amahM: 0.01, karpef: true }, { x: 0, y: 50 });
-    check('rev22-i', 985, 'a town of several regions: each region\'s ring is that region + 240 m (24,000 amos at 1 cm), no karpef',
+    check('rev22-i', 987, 'a town of several regions: each region\'s ring is that region + 240 m (24,000 amos at 1 cm), no karpef',
       multi.cityRegions.length > 1 && multi.mil12Regions.length === multi.cityRegions.length &&
       multi.cityRegions.every((region, i) => { const c = span(region), m = span(multi.mil12Regions[i]);
         return approx(m.minX, c.minX - 240) && approx(m.maxX, c.maxX + 240) && approx(m.minY, c.minY - 240) && approx(m.maxY, c.maxY + 240); }),
       `regions=${multi.cityRegions.length}`);
     const mainJs = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
-    check('rev22-j', 995, 'when the ring is shown, the panel adds the rav note and the ring\'s label says "without the karpef"',
+    check('rev22-j', 997, 'when the ring is shown, the panel adds the rav note and the ring\'s label says "without the karpef"',
       /settings\.show12mil && \(res\.mil12Regions/.test(mainJs) && /12-mil ring:<\/b> drawn 24,000 amos from the town’s own squared edge, without the 70⅔-amah karpef/.test(mainJs) &&
       /'12 mil \(d’oraisa shita\) — 24,000 amos from the town’s own squared edge, without the karpef/.test(mainJs));
   }
-  pend('1.1-c', 998, 'Is the Torah-law 12 mil measured from the squared town at all, or from the houses themselves? Minchas Chinuch 24 doubts in general whether rabbinic techum leniencies reach the Torah measure. (Part 7 Q16)');
+  pend('1.1-c', 1000, 'Is the Torah-law 12 mil measured from the squared town at all, or from the houses themselves? Minchas Chinuch 24 doubts in general whether rabbinic techum leniencies reach the Torah measure. (Part 7 Q16)');
 
   check('1.2-e', 54, 'default amah is 48 cm with the second comparison line off',
     SET.DEFAULTS.amahCm === 48 && SET.DEFAULTS.secondAmahCm === 0);
@@ -166,11 +167,11 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const sub = (overture_subtype) => k({ building: 'yes', overture_subtype });
   for (const [s, want] of [['civic', 'non'], ['service', 'non'], ['transportation', 'non'], ['commercial', 'review'],
     ['religious', 'review'], ['education', 'review'], ['medical', 'review'], ['agricultural', 'review'], ['military', 'unknown']]) {
-    check('rev15-a', 745, `Overture subtype ${s} -> ${want}`, sub(s) === want, sub(s));
+    check('rev15-a', 747, `Overture subtype ${s} -> ${want}`, sub(s) === want, sub(s));
   }
-  check('rev15-b', 750, 'an explicit class always wins over the subtype', k({ building: 'warehouse', overture_subtype: 'residential' }) === 'non');
+  check('rev15-b', 752, 'an explicit class always wins over the subtype', k({ building: 'warehouse', overture_subtype: 'residential' }) === 'non');
   // Part 2 table line 389: unknown-use included by default, flagged; review likewise (rev 15 line 744).
-  check('2-unknown', 395, 'unknown-use and review structures are included by default',
+  check('2-unknown', 397, 'unknown-use and review structures are included by default',
     SET.DEFAULTS.includeUnknown === true && SET.DEFAULTS.includeReview === true);
 
   // Lines 60-67: the 4×4-amah minimum. Rev. 19 measured it by the outline's narrowest width;
@@ -196,17 +197,17 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
 {
   const cls = (building) => D.classify({ building });
   const boat = cls('houseboat'), van = cls('static_caravan');
-  check('rev20-a', 875, 'building=houseboat goes to review, left out by default, and still counts as a house if a rav includes it',
+  check('rev20-a', 877, 'building=houseboat goes to review, left out by default, and still counts as a house if a rav includes it',
     boat.klass === 'review' && boat.excludeByDefault === true && !boat.noCityCount, JSON.stringify(boat));
-  check('rev20-b', 875, 'the houseboat review text tells the rav how to see the town with it counted',
+  check('rev20-b', 877, 'the houseboat review text tells the rav how to see the town with it counted',
     /include it to see the town with it counted/.test(boat.reason), boat.reason);
-  check('rev20-c', 900, 'building=cabin is a full dwelling (SA 398:10, "of boards")',
+  check('rev20-c', 902, 'building=cabin is a full dwelling (SA 398:10, "of boards")',
     cls('cabin').klass === 'dwelling' && !cls('cabin').noCityCount);
-  check('rev20-d', 900, 'seasonal cottages arrive as house/bungalow and count as dwellings all year',
+  check('rev20-d', 902, 'seasonal cottages arrive as house/bungalow and count as dwellings all year',
     cls('house').klass === 'dwelling' && cls('bungalow').klass === 'dwelling');
-  check('rev20-e', 901, 'building=static_caravan goes to review, included by default, adding 0 to the town count',
+  check('rev20-e', 903, 'building=static_caravan goes to review, included by default, adding 0 to the town count',
     van.klass === 'review' && van.noCityCount === true && !van.excludeByDefault, JSON.stringify(van));
-  check('rev20-f', 907, 'building=caravan and building=touring_caravan are not counted',
+  check('rev20-f', 909, 'building=caravan and building=touring_caravan are not counted',
     cls('caravan').klass === 'non' && cls('touring_caravan').klass === 'non');
 
   // The app's inclusion rule (main.js isIncluded) with ambiguous structures included (the default).
@@ -217,11 +218,11 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
     { state: { overrides }, isTooSmall: () => false, sizeVerdict: () => 'ok', settings: { includeReview: true, includeUnknown: true } });
   const boatB = { id: 'boat', klass: 'review', excludeByDefault: true };
   const vanB = { id: 'van', klass: 'review', noCityCount: true };
-  check('rev20-g', 886, 'the app leaves a houseboat out by default even with ambiguous structures included', isIncluded(boatB) === false);
+  check('rev20-g', 888, 'the app leaves a houseboat out by default even with ambiguous structures included', isIncluded(boatB) === false);
   overrides.set('boat', 'include');
-  check('rev20-h', 886, 'a reviewer include override counts the houseboat', isIncluded(boatB) === true);
-  check('rev20-i', 901, 'the app includes a static caravan by default', isIncluded(vanB) === true);
-  check('rev20-j', 901, 'the app carries both flags from the table into the engine input',
+  check('rev20-h', 888, 'a reviewer include override counts the houseboat', isIncluded(boatB) === true);
+  check('rev20-i', 903, 'the app includes a static caravan by default', isIncluded(vanB) === true);
+  check('rev20-j', 903, 'the app carries both flags from the table into the engine input',
     /excludeByDefault: !!cls\.excludeByDefault, noCityCount: !!cls\.noCityCount/.test(main) &&
     /function workerSafeBuildings[\s\S]{0,250}noCityCount: !!b\.noCityCount/.test(main));
 
@@ -229,34 +230,34 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const extra = (flags) => box(80, 0, 90, 10, flags);
   const out = run(town(0, 0).concat(extra({ included: false })), {}, { x: 5, y: 5 });
   const inn = run(town(0, 0).concat(extra()), {}, { x: 5, y: 5 });
-  check('rev20-k', 875, 'houseboat left out: the town ends at x = 50 and the techum at 50 + 960 = 1010',
+  check('rev20-k', 877, 'houseboat left out: the town ends at x = 50 and the techum at 50 + 960 = 1010',
     out.mode === 'city' && approx(span(out.cityCorners).maxX, 50) && approx(span(out.techumCorners).maxX, 1010),
     JSON.stringify(span(out.techumCorners)));
-  check('rev20-l', 886, 'houseboat included by a rav: the town reaches x = 90 and the techum 90 + 960 = 1050',
+  check('rev20-l', 888, 'houseboat included by a rav: the town reaches x = 90 and the techum 90 + 960 = 1050',
     inn.mode === 'city' && approx(span(inn.cityCorners).maxX, 90) && approx(span(inn.techumCorners).maxX, 1050),
     JSON.stringify(span(inn.techumCorners)));
 
   const chained = run(town(0, 0).concat(extra({ noCityCount: true })), {}, { x: 5, y: 5 });
-  check('rev20-m', 901, 'a static caravan 30 m from a six-house town chains on: town to x = 90, techum to 1050, count stays 6',
+  check('rev20-m', 903, 'a static caravan 30 m from a six-house town chains on: town to x = 90, techum to 1050, count stays 6',
     chained.mode === 'city' && approx(span(chained.cityCorners).maxX, 90) && approx(span(chained.techumCorners).maxX, 1050) &&
     chained.clusters[0].houseCount === 6, JSON.stringify({ t: span(chained.techumCorners), n: chained.clusters[0].houseCount }));
-  check('rev20-n', 905, 'a caravan joined to a town raises the seasonal-caravan flag, not the caravan-site flag',
+  check('rev20-n', 907, 'a caravan joined to a town raises the seasonal-caravan flag, not the caravan-site flag',
     has(chained, 'static-caravan') && !has(chained, 'caravan-site'));
 
   const fivePlusVan = town(0, 0); fivePlusVan[5] = { ...fivePlusVan[5], noCityCount: true };
   const fpv = run(fivePlusVan, {}, { x: 5, y: 5 });
   const fpvT = span(fpv.techumCorners);
-  check('rev20-o', 901, 'five houses + one static caravan is not a town: building mode from the pin\'s 10 m house, techum x [-960, 970]',
+  check('rev20-o', 903, 'five houses + one static caravan is not a town: building mode from the pin\'s 10 m house, techum x [-960, 970]',
     fpv.mode === 'building' && approx(fpvT.minX, -960) && approx(fpvT.maxX, 970) && has(fpv, 'caravan-site'),
     JSON.stringify({ mode: fpv.mode, fpvT }));
 
   const vans = town(0, 0).map((b) => ({ ...b, noCityCount: true }));
   const site = run(vans, {}, { x: 5, y: 5 });
-  check('rev20-p', 905, 'a site of six static caravans only does not form a town by count; it is flagged for a rav',
+  check('rev20-p', 907, 'a site of six static caravans only does not form a town by count; it is flagged for a rav',
     site.mode === 'building' && site.clusters[0].houseCount === 0 && has(site, 'caravan-site') && !has(site, 'static-caravan'));
   const key = site.qualificationClusters[0].key;
   const ruled = run(vans, { cityQualificationOverrides: { [key]: true } }, { x: 5, y: 5 });
-  check('rev20-q', 906, 'once a rav records the caravan site as a town, it squares as one: town x [0,50], techum x [-960, 1010]',
+  check('rev20-q', 908, 'once a rav records the caravan site as a town, it squares as one: town x [0,50], techum x [-960, 1010]',
     ruled.mode === 'city' && approx(span(ruled.techumCorners).minX, -960) && approx(span(ruled.techumCorners).maxX, 1010) &&
     !has(ruled, 'caravan-site'), JSON.stringify(span(ruled.techumCorners)));
 }
@@ -267,11 +268,11 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
 {
   const cls = (building) => D.classify({ building });
   const tent = cls('tent'), ger = cls('ger');
-  check('rev23-a', 1043, 'building=tent goes to review (always flagged), is left out by default, and gets the fixed-tent treatment if a rav includes it',
+  check('rev23-a', 1045, 'building=tent goes to review (always flagged), is left out by default, and gets the fixed-tent treatment if a rav includes it',
     tent.klass === 'review' && tent.excludeByDefault === true && tent.noCityCount === true && tent.noCityCountKind === 'fixed-tent', JSON.stringify(tent));
-  check('rev23-b', 1046, 'building=ger (a yurt) goes to review, is included by default, and adds 0 to the town count',
+  check('rev23-b', 1048, 'building=ger (a yurt) goes to review, is included by default, and adds 0 to the town count',
     ger.klass === 'review' && !ger.excludeByDefault && ger.noCityCount === true && ger.noCityCountKind === 'fixed-tent', JSON.stringify(ger));
-  check('rev23-c', 1043, 'the tent review text says a pitched tent is left out and a rav may include a fixed one',
+  check('rev23-c', 1045, 'the tent review text says a pitched tent is left out and a rav may include a fixed one',
     /pitched tent is not a dwelling/.test(tent.reason) && /a rav may include it/.test(tent.reason), tent.reason);
 
   // The app's inclusion rule (main.js isIncluded) with ambiguous structures included (the default).
@@ -283,12 +284,12 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const tentB = { id: 'tent', ...tent }, gerB = { id: 'ger', ...ger };
   const tentOut = isIncluded(tentB);
   overrides.set('tent', 'include');
-  check('rev23-d', 1044, 'the app leaves a tent out by default even with ambiguous structures included; a rav\'s include counts it',
+  check('rev23-d', 1046, 'the app leaves a tent out by default even with ambiguous structures included; a rav\'s include counts it',
     tentOut === false && isIncluded(tentB) === true);
-  check('rev23-e', 1047, 'the app includes a yurt by default', isIncluded(gerB) === true);
-  check('rev23-f', 1051, 'a footprint left out by default (tent, houseboat) is not offered as the starting building unless a rav included it',
+  check('rev23-e', 1049, 'the app includes a yurt by default', isIncluded(gerB) === true);
+  check('rev23-f', 1053, 'a footprint left out by default (tent, houseboat) is not offered as the starting building unless a rav included it',
     /if \(\(b\.klass === 'non' \|\| b\.excludeByDefault\) && state\.overrides\.get\(b\.id\) !== 'include'\) return;/.test(main));
-  check('rev23-g', 1033, 'the app carries the kind of each uncounted structure into the engine, including the background worker',
+  check('rev23-g', 1035, 'the app carries the kind of each uncounted structure into the engine, including the background worker',
     /noCityCountKind: cls\.noCityCountKind \|\| null/.test(main) &&
     /function workerSafeBuildings[\s\S]{0,300}noCityCountKind: b\.noCityCountKind \|\| null/.test(main));
 
@@ -298,20 +299,20 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const asTent = flags(tent), asGer = flags(ger);
   // Town: six 10 m houses, walls x [0,50], y [0,30]. A tent a rav included at x [80,90]: 30 m < 33.92 m.
   const withTent = run(town(0, 0).concat(asTent(box(80, 0, 90, 10))), {}, { x: 5, y: 5 });
-  check('rev23-h', 1028, 'a fixed tent 30 m from a six-house town chains on: town to x = 90, techum to 1050, count stays 6, fixed-tent flag only',
+  check('rev23-h', 1030, 'a fixed tent 30 m from a six-house town chains on: town to x = 90, techum to 1050, count stays 6, fixed-tent flag only',
     withTent.mode === 'city' && approx(span(withTent.cityCorners).maxX, 90) && approx(span(withTent.techumCorners).maxX, 1050) &&
     withTent.clusters[0].houseCount === 6 && has(withTent, 'fixed-tent') && !has(withTent, 'tent-site'),
     JSON.stringify({ t: span(withTent.techumCorners), n: withTent.clusters[0].houseCount, w: withTent.warnings.map((w) => w.type) }));
   // Six yurts alone, in the same layout: no town by count.
   const yurts = town(0, 0).map(asGer);
   const ys = run(yurts, {}, { x: 5, y: 5 });
-  check('rev23-i', 1034, 'six yurts alone are not a town by count: building mode from the pin\'s yurt (techum x [-960, 970]), flagged for a rav',
+  check('rev23-i', 1036, 'six yurts alone are not a town by count: building mode from the pin\'s yurt (techum x [-960, 970]), flagged for a rav',
     ys.mode === 'building' && ys.clusters[0].houseCount === 0 && approx(span(ys.techumCorners).minX, -960) &&
     approx(span(ys.techumCorners).maxX, 970) && has(ys, 'tent-site') && !has(ys, 'fixed-tent'),
     JSON.stringify({ mode: ys.mode, w: ys.warnings.map((w) => w.type) }));
   const ysKey = ys.qualificationClusters[0].key;
   const ysRuled = run(yurts, { cityQualificationOverrides: { [ysKey]: true } }, { x: 5, y: 5 });
-  check('rev23-j', 1035, 'once a rav records the yurt site as a town, it squares as one: techum x [-960, 1010], no site flag',
+  check('rev23-j', 1037, 'once a rav records the yurt site as a town, it squares as one: techum x [-960, 1010], no site flag',
     ysRuled.mode === 'city' && approx(span(ysRuled.techumCorners).minX, -960) && approx(span(ysRuled.techumCorners).maxX, 1010) &&
     !has(ysRuled, 'tent-site'), JSON.stringify(span(ysRuled.techumCorners)));
   // A camp: three courtyards of two permanent houses (the six-house town) and four tents around
@@ -320,7 +321,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const tents = [box(80, 0, 90, 10), box(110, 0, 120, 10), box(0, 50, 10, 60), box(40, 50, 50, 60)].map(asTent);
   const camp = town(0, 0).concat(tents);
   const cr = run(camp, {}, { x: 5, y: 5 });
-  check('rev23-k', 1037, 'a camp with three courtyards of two houses each is a town, tents and all: town x [0,120], y [0,60]; techum x [-960, 1080]',
+  check('rev23-k', 1039, 'a camp with three courtyards of two houses each is a town, tents and all: town x [0,120], y [0,60]; techum x [-960, 1080]',
     cr.mode === 'city' && cr.clusters.length === 1 && cr.clusters[0].houseCount === 6 &&
     sameSpan(span(cr.cityCorners), { minX: 0, maxX: 120, minY: 0, maxY: 60 }) && approx(span(cr.techumCorners).minX, -960) &&
     approx(span(cr.techumCorners).maxX, 1080) && has(cr, 'fixed-tent') && !has(cr, 'tent-site'),
@@ -329,21 +330,21 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   // would be 9 by count, but tents add 0, so it is not a town.
   const fiveCamp = camp.filter((b, i) => i !== 5);
   const fr = run(fiveCamp, {}, { x: 5, y: 5 });
-  check('rev23-l', 1041, 'with five permanent houses the same tents do not make a town: building mode from the pin\'s house (techum x [-960, 970]), with both flags',
+  check('rev23-l', 1043, 'with five permanent houses the same tents do not make a town: building mode from the pin\'s house (techum x [-960, 970]), with both flags',
     fr.mode === 'building' && fr.clusters.length === 1 && fr.clusters[0].houseCount === 5 &&
     sameSpan(span(fr.techumCorners), { minX: -960, maxX: 970, minY: -960, maxY: 970 }) && has(fr, 'tent-site') && has(fr, 'fixed-tent'),
     JSON.stringify({ mode: fr.mode, w: fr.warnings.map((w) => w.type) }));
   // Same in every profile (line 1047): the Chazon Ish amah (40.704 m join) and the Mechaber
   // profile (no karpef) give the same town status and flags for both camps.
   const profiles = [{ amahM: CI, karpef: true }, { karpef: false, bowPolicy: 'mechaber-curve' }];
-  check('rev23-m', 1052, 'the same in every profile: six houses + tents is a town and five houses + tents is not, with the same flags',
+  check('rev23-m', 1054, 'the same in every profile: six houses + tents is a town and five houses + tents is not, with the same flags',
     profiles.every((p) => { const a = run(camp, p, { x: 5, y: 5 }), b = run(fiveCamp, p, { x: 5, y: 5 });
       return a.mode === 'city' && !has(a, 'tent-site') && has(a, 'fixed-tent') && b.mode === 'building' && has(b, 'tent-site'); }));
   // A static caravan and a tent in one site raise each kind's own site flag (line 1029). Four
   // houses (walls x [0,30]), a caravan at x [50,60] and a tent at x [80,90], 20 m apart.
   const mixed = town(0, 0).slice(0, 4).concat(flags(cls('static_caravan'))(box(50, 0, 60, 10)), asTent(box(80, 0, 90, 10)));
   const mr = run(mixed, {}, { x: 5, y: 5 });
-  check('rev23-n', 1034, 'four houses + a static caravan + a tent: not a town by count; caravan and tent each get their own flags',
+  check('rev23-n', 1036, 'four houses + a static caravan + a tent: not a town by count; caravan and tent each get their own flags',
     mr.mode === 'building' && has(mr, 'caravan-site') && has(mr, 'tent-site') && has(mr, 'static-caravan') && has(mr, 'fixed-tent'),
     JSON.stringify(mr.warnings.map((w) => w.type)));
 }
@@ -354,10 +355,10 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
 {
   const cls = (building) => D.classify({ building });
   const crate = cls('container');
-  check('rev24-a', 1066, 'building=container stays a non-dwelling (not in review, never flagged by default) and carries the lived-in-container treatment for a rav\'s include',
+  check('rev24-a', 1068, 'building=container stays a non-dwelling (not in review, never flagged by default) and carries the lived-in-container treatment for a rav\'s include',
     crate.klass === 'non' && !crate.excludeByDefault && crate.noCityCount === true && crate.noCityCountKind === 'lived-in-container' &&
     !cls('shed').noCityCount && !cls('warehouse').noCityCount, JSON.stringify(crate));
-  check('rev24-b', 1073, 'the container text says it is not a dwelling and a rav may include one people live in',
+  check('rev24-b', 1075, 'the container text says it is not a dwelling and a rav may include one people live in',
     /not a dwelling/.test(crate.reason) && /a rav may include it/.test(crate.reason) && /SA OC 398:6/.test(crate.reason), crate.reason);
 
   // The app's inclusion rule (main.js isIncluded) with ambiguous structures included (the default).
@@ -369,10 +370,10 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const crateB = { id: 'crate', ...crate };
   const crateOut = isIncluded(crateB);
   overrides.set('crate', 'include');
-  check('rev24-c', 1085, 'the app leaves a container out by default, even with ambiguous structures included, and never queues a non-dwelling for review; a rav\'s include brings it in',
+  check('rev24-c', 1087, 'the app leaves a container out by default, even with ambiguous structures included, and never queues a non-dwelling for review; a rav\'s include brings it in',
     crateOut === false && isIncluded(crateB) === true &&
     /building\.klass === 'unknown' \|\| building\.klass === 'review' \|\|\s*\(building\.klass === 'dwelling' && sizeVerdict\(building\) === 'no-square'\)\)/.test(main));
-  check('rev24-d', 1088, 'a footprint a reviewer included, such as a lived-in container, can be offered as the starting building',
+  check('rev24-d', 1090, 'a footprint a reviewer included, such as a lived-in container, can be offered as the starting building',
     /if \(\(b\.klass === 'non' \|\| b\.excludeByDefault\) && state\.overrides\.get\(b\.id\) !== 'include'\) return;/.test(main) &&
     !/if \(b\.klass === 'non'\) return;/.test(main));
 
@@ -381,30 +382,30 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const asCrate = (b) => ({ ...b, noCityCount: !!crate.noCityCount, noCityCountKind: crate.noCityCountKind });
   // Town: six 10 m houses, walls x [0,50], y [0,30]. A container at x [80,90]: 30 m < 33.92 m.
   const left = run(town(0, 0).concat(asCrate(box(80, 0, 90, 10, { included: false }))), {}, { x: 5, y: 5 });
-  check('rev24-e', 1066, 'a storage container, left out by default, does not join: the town ends at x = 50, the techum at 1010, no container flag',
+  check('rev24-e', 1068, 'a storage container, left out by default, does not join: the town ends at x = 50, the techum at 1010, no container flag',
     left.mode === 'city' && approx(span(left.cityCorners).maxX, 50) && approx(span(left.techumCorners).maxX, 1010) &&
     !has(left, 'lived-in-container') && !has(left, 'container-site'), JSON.stringify(left.warnings.map((w) => w.type)));
   const lived = run(town(0, 0).concat(asCrate(box(80, 0, 90, 10))), {}, { x: 5, y: 5 });
-  check('rev24-f', 1080, 'a lived-in container a rav included chains on like a static caravan: town to x = 90, techum to 1050, count stays 6, container flag only',
+  check('rev24-f', 1082, 'a lived-in container a rav included chains on like a static caravan: town to x = 90, techum to 1050, count stays 6, container flag only',
     lived.mode === 'city' && approx(span(lived.cityCorners).maxX, 90) && approx(span(lived.techumCorners).maxX, 1050) &&
     lived.clusters[0].houseCount === 6 && has(lived, 'lived-in-container') && !has(lived, 'container-site'),
     JSON.stringify({ t: span(lived.techumCorners), n: lived.clusters[0].houseCount, w: lived.warnings.map((w) => w.type) }));
   // Five houses and an included container in place of the sixth (x [40,50], y [20,30]).
   const five = town(0, 0); five[5] = asCrate(five[5]);
   const fr = run(five, {}, { x: 5, y: 5 });
-  check('rev24-g', 1081, 'five houses + one lived-in container is not a town by count: building mode from the pin\'s house (techum x [-960, 970]), with both flags',
+  check('rev24-g', 1083, 'five houses + one lived-in container is not a town by count: building mode from the pin\'s house (techum x [-960, 970]), with both flags',
     fr.mode === 'building' && fr.clusters[0].houseCount === 5 &&
     sameSpan(span(fr.techumCorners), { minX: -960, maxX: 970, minY: -960, maxY: 970 }) &&
     has(fr, 'container-site') && has(fr, 'lived-in-container'), JSON.stringify({ mode: fr.mode, w: fr.warnings.map((w) => w.type) }));
   const frKey = fr.qualificationClusters[0].key;
   const frRuled = run(five, { cityQualificationOverrides: { [frKey]: true } }, { x: 5, y: 5 });
-  check('rev24-h', 1083, 'once a rav records that settlement as a town, it squares as one: techum x [-960, 1010], no site flag',
+  check('rev24-h', 1085, 'once a rav records that settlement as a town, it squares as one: techum x [-960, 1010], no site flag',
     frRuled.mode === 'city' && approx(span(frRuled.techumCorners).minX, -960) && approx(span(frRuled.techumCorners).maxX, 1010) &&
     !has(frRuled, 'container-site'), JSON.stringify(span(frRuled.techumCorners)));
   // Same in every profile (line 1088): the Chazon Ish amah with the karpef, and the Mechaber profile.
   const six = town(0, 0).concat(asCrate(box(80, 0, 90, 10)));
   const profiles = [{ amahM: CI, karpef: true }, { karpef: false, bowPolicy: 'mechaber-curve' }];
-  check('rev24-i', 1092, 'the same in every profile: six houses + a lived-in container is a town and five houses + one is not, with the same flags',
+  check('rev24-i', 1094, 'the same in every profile: six houses + a lived-in container is a town and five houses + one is not, with the same flags',
     profiles.every((p) => { const a = run(six, p, { x: 5, y: 5 }), b = run(five, p, { x: 5, y: 5 });
       return a.mode === 'city' && a.clusters[0].houseCount === 6 && has(a, 'lived-in-container') && !has(a, 'container-site') &&
         b.mode === 'building' && has(b, 'container-site'); }));
@@ -427,28 +428,28 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const triangle = (a, deg) => turned([[0, 0], [a, 0], [a / 2, a * Math.sqrt(3) / 2]], deg);
 
   // 16 square amos at 48 cm is 16 × 0.2304 = 3.6864 m².
-  check('rev25-a', 1112, 'under 16 square amos is never a dwelling, under either rule: 1.9 × 1.9 m (3.61 m²) and 1 × 3.686 m are out; 1 × 3.6864 m is exactly 16 square amos and counts by area',
+  check('rev25-a', 1114, 'under 16 square amos is never a dwelling, under either rule: 1.9 × 1.9 m (3.61 m²) and 1 × 3.686 m are out; 1 × 3.6864 m is exactly 16 square amos and counts by area',
     both(rect(1.9, 1.9)).every((v) => v === 'small') && both(rect(1, 3.686)).every((v) => v === 'small') &&
     size(rect(1, 3.6864), RCN, 'area') === 'ok', JSON.stringify([both(rect(1.9, 1.9)), both(rect(1, 3.686))]));
   // A regular 64-gon of radius 1.1 m has 32 · 1.1² · sin(2π/64) = 3.795 m².
-  check('rev25-b', 1116, 'Mechaber (area rule): a 1.5 × 50 m structure turned 45°, a 1.91 × 100 m one, a round one of 3.8 m² and an L with 1.5 m arms all count',
+  check('rev25-b', 1118, 'Mechaber (area rule): a 1.5 × 50 m structure turned 45°, a 1.91 × 100 m one, a round one of 3.8 m² and an L with 1.5 m arms all count',
     [rect(1.5, 50, 45), rect(1.91, 100), circle(1.1, 64), L(1.5)].every((r) => size(r, RCN, 'area') === 'ok'));
-  check('rev25-c', 1121, 'the reversal is for the Mechaber profile only: under the square rule the same 1.5 × 50 m and 1.91 × 100 m structures go to review, as no 1.92 m square fits',
+  check('rev25-c', 1123, 'the reversal is for the Mechaber profile only: under the square rule the same 1.5 × 50 m and 1.91 × 100 m structures go to review, as no 1.92 m square fits',
     size(rect(1.5, 50, 45), RCN, 'square') === 'no-square' && size(rect(1.91, 100), RCN, 'square') === 'no-square');
   // The largest circle in the corner of an L with arms w wide touches both outer walls and the
   // inner corner: radius w·√2/(1+√2), 0.879 m for w = 1.5, under the 0.96 m a 1.92 m square
   // holds. The largest square in an equilateral triangle of side a has side a·√3/(2+√3):
   // 1.949 m for a = 4.2 and 1.903 m for a = 4.1.
-  check('rev25-d', 1122, 'square rule, any rotation: an L with 2 m arms counts, an L or U with 1.5 m arms goes to review; an equilateral triangle of side 4.2 m counts and of 4.1 m goes to review',
+  check('rev25-d', 1124, 'square rule, any rotation: an L with 2 m arms counts, an L or U with 1.5 m arms goes to review; an equilateral triangle of side 4.2 m counts and of 4.1 m goes to review',
     size(L(2, 33), RCN, 'square') === 'ok' && size(L(1.5, 33), RCN, 'square') === 'no-square' && size(U(1.5), RCN, 'square') === 'no-square' &&
     size(triangle(4.2, 17), RCN, 'square') === 'ok' && size(triangle(4.1, 17), RCN, 'square') === 'no-square',
     JSON.stringify([size(L(2, 33), RCN, 'square'), size(L(1.5, 33), RCN, 'square'), size(U(1.5), RCN, 'square'), size(triangle(4.2, 17), RCN, 'square'), size(triangle(4.1, 17), RCN, 'square')]));
-  check('rev25-e', 1142, 'at the limit: a strip exactly 4 amos wide turned 37° holds the square, 1 mm narrower does not; exactly 4×4 amos at 57.6 cm counts',
+  check('rev25-e', 1144, 'at the limit: a strip exactly 4 amos wide turned 37° holds the square, 1 mm narrower does not; exactly 4×4 amos at 57.6 cm counts',
     size(rect(1.92, 10, 37), RCN, 'square') === 'ok' && size(rect(1.919, 10, 37), RCN, 'square') === 'no-square' &&
     size(rect(2.304, 2.304, 37), CI, 'square') === 'ok');
   // A 6 × 6 m outline with a 3 × 3 m courtyard in the middle: each corner is an L with 1.5 m arms.
   const frame = (wall) => [rect(6, 6), [ring([[wall, wall], [wall, 6 - wall], [6 - wall, 6 - wall], [6 - wall, wall]])]];
-  check('rev25-f', 1140, 'holes count: 6 × 6 m around a 3 × 3 m courtyard goes to review, the same outline without it counts, and with 2 m walls the square fits',
+  check('rev25-f', 1142, 'holes count: 6 × 6 m around a 3 × 3 m courtyard goes to review, the same outline without it counts, and with 2 m walls the square fits',
     size(frame(1.5)[0], RCN, 'square', frame(1.5)[1]) === 'no-square' && size(rect(6, 6), RCN, 'square') === 'ok' &&
     size(frame(2)[0], RCN, 'square', frame(2)[1]) === 'ok');
   // At 57.6 cm the square has 2.304 m sides and 16 square amos is 5.3084 m².
@@ -473,19 +474,19 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const unknownNoSquare = isIncluded(house('no-square', 'unknown'));
   appSettings.includeUnknown = true;
   ctx.state.overrides.set('dwelling-small', 'include');
-  check('rev25-h', 1137, 'the app treats a house with no 4×4 square like an ambiguous building: in by default, out when ambiguous buildings are off, out of the verified-dwellings line; under 16 square amos is out unless a rav includes it',
+  check('rev25-h', 1139, 'the app treats a house with no 4×4 square like an ambiguous building: in by default, out when ambiguous buildings are off, out of the verified-dwellings line; under 16 square amos is out unless a rav includes it',
     withReview === true && withoutReview === false && unknownNoSquare === false && isIncluded(house('ok')) === true &&
     isVerified(house('no-square')) === false && isVerified(house('ok')) === true && isIncluded(house('small')) === true &&
     (ctx.state.overrides.clear(), isIncluded(house('small')) === false),
     JSON.stringify({ withReview, withoutReview, unknownNoSquare }));
-  check('rev25-i', 1137, 'such a house is listed in the review queue, drawn in the review colour and explained on the map',
+  check('rev25-i', 1139, 'such a house is listed in the review queue, drawn in the review colour and explained on the map',
     /building\.klass === 'dwelling' && sizeVerdict\(building\) === 'no-square'/.test(main) &&
     /KLASS_STYLE\[noSquare \? 'review' : b\.klass\]/.test(main) && /noSquare \? `<br><b>Size:<\/b> \$\{NO_SQUARE_REASON\}`/.test(main));
 
   // Profiles and saved settings (Part 2 line 396; rev. 25 lines 1154-1159).
   const mb = SET.PROFILES['mishna-berura'], ci = SET.PROFILES['chazon-ish'], mech = SET.PROFILES.mechaber;
   const mechNow = SET.applyProfile({ ...SET.DEFAULTS }, 'mechaber');
-  check('rev25-j', 396, 'profiles: Mishna Berurah and Chazon Ish use the square rule, Mechaber the area rule; choosing the other rule makes the profile Custom',
+  check('rev25-j', 398, 'profiles: Mishna Berurah and Chazon Ish use the square rule, Mechaber the area rule; choosing the other rule makes the profile Custom',
     mb.sizeRule === 'square' && ci.sizeRule === 'square' && mech.sizeRule === 'area' && SET.DEFAULTS.sizeRule === 'square' &&
     mechNow.sizeRule === 'area' && SET.effectiveProfile(mechNow) === 'mechaber' &&
     SET.effectiveProfile({ ...mechNow, sizeRule: 'square' }) === 'custom');
@@ -497,19 +498,19 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   // A save from before rev. 25: its profile's values and no size rule.
   const oldSave = (profile) => { const s = { ...SET.DEFAULTS, profile, ...SET.PROFILES[profile] }; delete s.sizeRule; return s; };
   const oldMech = loadWith({ ...oldSave('mechaber'), minSizeFilter: false });
-  check('rev25-k', 1157, 'a save from before rev. 25 takes its own profile\'s rule: an unchanged Mechaber save moves to the area rule and still shows as Mechaber; Mishna Berurah and Chazon Ish saves get the square rule; the size filter switch keeps its saved value',
+  check('rev25-k', 1159, 'a save from before rev. 25 takes its own profile\'s rule: an unchanged Mechaber save moves to the area rule and still shows as Mechaber; Mishna Berurah and Chazon Ish saves get the square rule; the size filter switch keeps its saved value',
     oldMech.sizeRule === 'area' && SET.effectiveProfile(oldMech) === 'mechaber' && oldMech.minSizeFilter === false &&
     loadWith(oldSave('mishna-berura')).sizeRule === 'square' && loadWith(oldSave('chazon-ish')).sizeRule === 'square',
     JSON.stringify({ rule: oldMech.sizeRule, profile: SET.effectiveProfile(oldMech) }));
-  check('rev25-l', 1159, 'a rule a user chose is kept: a Mechaber save with the square rule keeps it and shows as Custom',
+  check('rev25-l', 1161, 'a rule a user chose is kept: a Mechaber save with the square rule keeps it and shows as Custom',
     (() => { const l = loadWith({ ...oldSave('mechaber'), sizeRule: 'square' }); return l.sizeRule === 'square' && SET.effectiveProfile(l) === 'custom'; })());
   delete globalThis.localStorage;
-  check('rev25-m', 1162, 'the app runs the engine\'s test with the amah and the rule, and an older snapshot\'s settings take its profile\'s rule when loaded',
+  check('rev25-m', 1164, 'the app runs the engine\'s test with the amah and the rule, and an older snapshot\'s settings take its profile\'s rule when loaded',
     /function sizeVerdict[\s\S]{0,300}G\.dwellingSize\(b\.ring, settings\.amahCm \/ 100, settings\.sizeRule\)/.test(main) &&
     /settings = S\.normalize\(snap\.settings\)/.test(main) &&
     SET.normalize({ profile: 'mechaber', amahCm: 48 }).sizeRule === 'area' && SET.normalize({ profile: 'chazon-ish' }).sizeRule === 'square');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  check('rev25-n', 1154, 'the settings show the size rule with both choices, and the app wires it',
+  check('rev25-n', 1156, 'the settings show the size rule with both choices, and the app wires it',
     /<select id="size-rule">[\s\S]*value="square"[\s\S]*value="area"/.test(html) &&
     /\$\('size-rule'\)\.value = settings\.sizeRule/.test(main) && /\$\('size-rule'\)\.addEventListener\('change'/.test(main));
 }
@@ -664,7 +665,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const diagonal = G.unionOutline([rect(0, 0, 1, 1), rect(1, 1, 2, 2)]);
   const triangle = [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 0, y: 5 }];
   const mixed = G.unionOutline([rect(0, 0, 2, 2), turned(rect(0, 0, 2, 2)), triangle]);
-  check('rev26-h', 1221, 'one outline: an L of two overlapping rectangles has 6 corners and 64 m² (also turned 30°); a ring of four has a 9 × 9 outer edge (81 m²) and a 3 × 3 hole; corner-touching squares stay two; another direction and a triangle are drawn as they are',
+  check('rev26-h', 1228, 'one outline: an L of two overlapping rectangles has 6 corners and 64 m² (also turned 30°); a ring of four has a 9 × 9 outer edge (81 m²) and a 3 × 3 hole; corner-touching squares stay two; another direction and a triangle are drawn as they are',
     Lshape.length === 1 && sameCorners(Lshape[0], Lcorners) && approx(area(Lshape[0]), 64) &&
     Lturned.length === 1 && sameCorners(Lturned[0], Lcorners.map(turn)) && approx(area(Lturned[0]), 64) &&
     frame.length === 2 && sameCorners(outer, [[0, 0], [9, 0], [9, 9], [0, 9]]) && approx(area(outer), 81) &&
@@ -693,7 +694,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const u = run(uTown, { amahM: 0.01, karpef: true }, { x: 0, y: 50 });
   const uLoops = G.unionOutline(u.techumRegions);
   const uArea = uLoops.reduce((sum, loop) => sum + area(loop), 0);
-  check('rev26-h2', 1221, 'the outline of an unfilled bow town\'s overlapping techum pieces is one loop with their union\'s area (to 0.001 m²)',
+  check('rev26-h2', 1228, 'the outline of an unfilled bow town\'s overlapping techum pieces is one loop with their union\'s area (to 0.001 m²)',
     u.calculationStatus === 'provisional-no-fill' && u.techumRegions.length > 1 && uLoops.length === 1 &&
     approx(uArea, unionArea(u.techumRegions), 1e-3),
     JSON.stringify({ pieces: u.techumRegions.length, loops: uLoops.length, uArea, union: unionArea(u.techumRegions) }));
@@ -712,29 +713,58 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const narrowB = run(town(0, 0).concat(town(150, 0), rows(60, 4, 400)), {}, { x: 5, y: 5 });
   const flag = wideB.warnings.find((w) => w.type === 'three-villages-wider-middle');
   const placed = flag && flag.projectedPlacementM;
-  check('rev26-i', 1213, 'a middle village 150 m wide in a 100 m gap does not join (6 houses, walls x [0, 50]) and is flagged with gaps of -25 m; 70 m wide, it joins: 20 houses, walls x [0, 200], y [0, 430]',
+  check('rev26-i', 1220, 'a middle village 150 m wide in a 100 m gap does not join (6 houses, walls x [0, 50]) and is flagged with gaps of -25 m; 70 m wide, it joins: 20 houses, walls x [0, 200], y [0, 430]',
     homeOf(wideB) === 6 && sameSpan(span(wideB.cityCorners), { minX: 0, maxX: 50, minY: 0, maxY: 30 }) &&
     !has(wideB, 'three-villages') && placed && approx(placed.outerGap, 100) && approx(placed.middleWidth, 150) &&
     approx(placed.leftGap, -25) && approx(placed.rightGap, -25) &&
     homeOf(narrowB) === 20 && has(narrowB, 'three-villages') && !has(narrowB, 'three-villages-wider-middle') &&
     sameSpan(span(narrowB.cityCorners), { minX: 0, maxX: 200, minY: 0, maxY: 430 }),
     JSON.stringify({ wide: homeOf(wideB), placed, narrow: homeOf(narrowB) }));
-  pend('rev26-q19', 1464, 'Three villages: does a middle village wider than the gap between the outer two (or reaching over an outer village once lowered) still join them? The engine keeps the stricter reading and lists each case for review.');
+  pend('rev26-q19', 1471, 'Three villages: does a middle village wider than the gap between the outer two (or reaching over an outer village once lowered) still join them? The engine keeps the stricter reading and lists each case for review.');
 
   // The app: no widening limit, the incomplete answer, the dashed line, one outline, the review note.
   const appMain = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
   const appDesign = fs.readFileSync(path.join(__dirname, '..', 'js', 'design-experience.js'), 'utf8');
-  check('rev26-j', 1194, 'the app widens until dataFrontier asks for nothing, with only the building-count limit; when that is reached the answer says incomplete, larger or smaller, and draws the pink line dashed',
+  check('rev26-j', 1195, 'the app widens until dataFrontier asks for nothing, with only the building-count limit; when that is reached the answer says incomplete, larger or smaller, and draws the pink line dashed',
     /const needed = G\.dataFrontier\(state\.result, state\.proj, bbox, state\.proj\.toXY\(state\.pin\.lat, state\.pin\.lon\)\);\s*if \(!needed\) break;/.test(appMain) &&
     !/maxExpandIterations|neededExpansion/.test(appMain) && !('maxExpandIterations' in SET.DEFAULTS) &&
     /class="warn accuracy-status data-limit"><b>Incomplete: the map data ran out<\/b>/.test(appMain) &&
     /could be larger or smaller/.test(appMain) && !/inner \(machmir\) bound|is an inner bound/.test(appMain) &&
     /state\.dataCapHit \? \{ dashArray: '10 7' \} : \{\}/.test(appMain) &&
     /classList\.contains\('data-limit'\)/.test(appDesign) && /'This result is incomplete'/.test(appDesign));
-  check('rev26-k', 1221, 'the map draws each layer\'s stepped regions as one outline with the even-odd fill; the provisional note and the wider-village review note are shown',
+  check('rev26-k', 1228, 'the map draws each layer\'s stepped regions as one outline with the even-odd fill; the provisional note and the wider-village review note are shown',
     /G\.unionOutline\(list\)/.test(appMain) && /fillRule: 'evenodd'/.test(appMain) &&
     /<div class="warn accuracy-status"><b>Provisional smaller boundary<\/b>/.test(appMain) &&
     /if \(w\.type === 'three-villages-wider-middle'\) \{[\s\S]{0,260}homeComponentKeys\.has\(key\)/.test(appMain));
+
+  // A re-analysis of the loaded buildings (a changed setting or profile) runs main.js recompute
+  // with the engine and calculate stubbed: when dataFrontier asks for more, a live result runs the
+  // whole search again; a snapshot is marked incomplete and never refetched; a result that was
+  // already stopped at the data limit stays marked; a result that needs nothing more is complete.
+  const vmRecompute = require('node:vm');
+  const recomputeSource = appMain.slice(appMain.indexOf('  async function recompute(skipRender) {'), appMain.indexOf('  function cornersToLatLngs(corners) {'));
+  const replay = async ({ more, fromSnapshot = false, dataCapHit = false }) => {
+    const calls = { calculate: 0, render: 0 };
+    const ctx = {
+      state: { pin: { lat: 41, lon: -74 }, proj: { toXY: () => ({ x: 0, y: 0 }) }, buildings: [], fetchBBox: { south: 0, west: 0, north: 1, east: 1 },
+        fromSnapshot, dataCapHit, dataCapReason: dataCapHit ? 'buildings' : null, result: null },
+      latestAnalysisId: 0, isIncluded: () => true, geometrySettings: () => ({}),
+      runPipelineAsync: async () => ({ mode: 'city' }), G: { dataFrontier: () => more },
+      calculate: () => { calls.calculate++; }, render: () => { calls.render++; }, setRetryVisible: () => {}, setStatus: () => {},
+    };
+    await vmRecompute.runInNewContext(`(${recomputeSource.trim()})()`, ctx);
+    return { ...calls, dataCapHit: ctx.state.dataCapHit, reason: ctx.state.dataCapReason };
+  };
+  const wider = { south: -1, west: -1, north: 2, east: 2 };
+  asyncChecks.push(Promise.all([replay({ more: wider }), replay({ more: wider, fromSnapshot: true }), replay({ more: wider, dataCapHit: true }), replay({ more: null, dataCapHit: true })])
+    .then(([live, snapshot, capped, complete]) => {
+      check('rev26-l', 1197, 'after a changed setting needs more map data, a live result searches again, a snapshot is marked incomplete without refetching, a result already at the data limit stays marked, and one needing nothing more is complete',
+        live.calculate === 1 && live.render === 0 &&
+        snapshot.calculate === 0 && snapshot.render === 1 && snapshot.dataCapHit === true && snapshot.reason === 'snapshot' &&
+        capped.calculate === 0 && capped.render === 1 && capped.dataCapHit === true &&
+        complete.calculate === 0 && complete.render === 1 && complete.dataCapHit === false,
+        JSON.stringify({ live, snapshot, capped, complete }));
+    }));
 }
 
 // =================================================================================
@@ -840,9 +870,9 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   // Part 2 table line 386 / rev 2 line 354: three villages is a city-level rule.
   {
     const A = town(-50, 0), C = town(130, 0), hamlet = [box(40, 300, 50, 310), box(60, 300, 70, 310), box(80, 300, 90, 310)];
-    check('2-three-hamlet', 392, 'a 3-house middle hamlet cannot be the middle village', !has(run(A.concat(C, hamlet), {}, { x: -45, y: 5 }), 'three-villages'));
+    check('2-three-hamlet', 394, 'a 3-house middle hamlet cannot be the middle village', !has(run(A.concat(C, hamlet), {}, { x: -45, y: 5 }), 'three-villages'));
     const smallOuter = [box(130, 0, 140, 10), box(150, 0, 160, 10)];
-    check('2-three-outer', 392, 'a 2-house outer hamlet cannot be an outer village', !has(run(A.concat(smallOuter, town(40, 300)), {}, { x: -45, y: 5 }), 'three-villages'));
+    check('2-three-outer', 394, 'a 2-house outer hamlet cannot be an outer village', !has(run(A.concat(smallOuter, town(40, 300)), {}, { x: -45, y: 5 }), 'three-villages'));
   }
 }
 
@@ -857,7 +887,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
       r.clusters[0].qualificationSource === 'provisional-six-footprint-proxy'; })());
   const oneExcluded = town(0, 0); oneExcluded[5] = { ...oneExcluded[5], included: false };
   check('1.4-t', 130, 'an excluded footprint does not count toward the six', run(oneExcluded, {}, { x: 5, y: 5 }).mode === 'building');
-  check('2-six-all', 392, 'every profile uses the same six-footprint fallback',
+  check('2-six-all', 394, 'every profile uses the same six-footprint fallback',
     Object.values(SET.PROFILES).every((p) => p.minCityHouses === 6));
   const base = run(five, {}, { x: 5, y: 5 });
   const fifty = run(five, { cityQualificationOverrides: { [base.qualificationClusters[0].key]: { decision: true, basis: 'fifty-residents', evidence: 'census 2026', memberIds: base.qualificationClusters[0].memberIds } } }, { x: 5, y: 5 });
@@ -878,7 +908,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
     approx(t.minY, -960, 1e-9) && approx(t.maxY, 970, 1e-9), JSON.stringify(t));
   check('1.4-w', 128, 'a pin exactly on the house wall counts as resting in it', run(lone, {}, { x: 10, y: 5 }).mode === 'building');
   const yard = [box(0, 0, 40, 40, { joinOnly: true })];
-  check('rev13-a', 683, 'a validated yard alone is join geometry, not a house: a pin in it stays in point mode', run(yard, {}, { x: 20, y: 20 }).mode === 'point');
+  check('rev13-a', 685, 'a validated yard alone is join geometry, not a house: a pin in it stays in point mode', run(yard, {}, { x: 20, y: 20 }).mode === 'point');
   // A rotated rectangular footprint is already squared in its own orientation (§1.5 line 155).
   const rot = polygonHouse([[0, 0], [20, 0], [20, 10], [0, 10]].map(rotate(30)));
   const rr = run([rot], {}, rotate(30)([10, 5]).reduce((p, v, i) => (i ? { ...p, y: v } : { x: v }), {}));
@@ -1038,7 +1068,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const reach = run(ringTown(100, 50), { amahM: tiny }, { x: 0, y: 0 });
   check('1.9a-d', 305, 'a hole of 9000 × exactly 4000 amos triggers the mandatory review warning but stays included',
     has(reach, 'large-interior-hole') && reach.cityRegions.length === 1, JSON.stringify(reach.warnings.map((w) => w.type)));
-  check('2-hole', 394, 'every profile includes a large hole by default',
+  check('2-hole', 396, 'every profile includes a large hole by default',
     Object.values(SET.PROFILES).every((p) => p.largeHolePolicy === 'include-with-warning'));
 }
 
@@ -1076,23 +1106,23 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('1.10a-a', 321, 'a pin inside a house picks that house\'s city first, not the rectangle it sits in',
     inB.homeCandidates.length === 1 && !has(inB, 'multiple-home-candidates') &&
     sameSpan(span(inB.cityCorners), { minX: 95, maxX: 145, minY: 145, maxY: 175 }), JSON.stringify(span(inB.cityCorners)));
-  check('2-overlap', 391, 'MB and Mechaber default to no join', SET.PROFILES['mishna-berura'].overlapPolicy === 'no-join' && SET.PROFILES.mechaber.overlapPolicy === 'no-join');
+  check('2-overlap', 393, 'MB and Mechaber default to no join', SET.PROFILES['mishna-berura'].overlapPolicy === 'no-join' && SET.PROFILES.mechaber.overlapPolicy === 'no-join');
   // Rev. 19 pending 2-ci-overlap — answered in rev. 20 (lines 385, 901-910).
   const ci = SET.PROFILES['chazon-ish'];
-  check('rev20-r', 391, 'the Chazon Ish profile defaults to no join, matching the table', ci.overlapPolicy === 'no-join');
+  check('rev20-r', 393, 'the Chazon Ish profile defaults to no join, matching the table', ci.overlapPolicy === 'no-join');
   // A is an L of houses: walls x [-5,310], y [-10,300]; B (inside A's square) is 60+ m from every house of A.
   const ciS = { amahM: CI, karpef: ci.karpef, overlapPolicy: ci.overlapPolicy, bowPolicy: ci.bowPolicy, largeHolePolicy: ci.largeHolePolicy };
   const ciAlone = run(A, ciS, { x: 0, y: 0 }), ciBoth = run(A.concat(B), ciS, { x: 0, y: 0 });
   const ciEdge = 310 + 40.704 + 1152; // walls + 70⅔ and 2000 amos at 57.6 cm = 1502.704 m
-  check('rev20-s', 909, 'Chazon Ish profile: an overlapping city leaves the home techum unchanged (x max 1502.704 m), with the overlap warning',
+  check('rev20-s', 911, 'Chazon Ish profile: an overlapping city leaves the home techum unchanged (x max 1502.704 m), with the overlap warning',
     regionSig(ciAlone.techumRegions) === regionSig(ciBoth.techumRegions) && has(ciBoth, 'overlap-detected') &&
     approx(span(ciBoth.techumCorners).maxX, ciEdge, 1e-6) && approx(ciEdge, 1502.704, 1e-3),
     JSON.stringify(span(ciBoth.techumCorners)));
   const ciRedraw = run(A.concat(B), { ...ciS, overlapPolicy: 'join-redraw' }, { x: 0, y: 0 });
-  check('rev20-t', 915, 'joint redraw stays available as an explicit option', has(ciRedraw, 'overlap-merge-redraw'));
+  check('rev20-t', 917, 'joint redraw stays available as an explicit option', has(ciRedraw, 'overlap-merge-redraw'));
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const mainJs = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
-  check('rev20-u', 915, 'the joint-redraw option and the Chazon Ish description say turning it on is a rav\'s decision',
+  check('rev20-u', 917, 'the joint-redraw option and the Chazon Ish description say turning it on is a rav\'s decision',
     /value="join-redraw">[^<]*a rav's decision/.test(html) && /'chazon-ish':[^\n]*a rav\\'s decision/.test(mainJs));
 
   // A browser that saved the old Chazon Ish profile unchanged follows the new default once.
@@ -1103,18 +1133,18 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const oldCi = { ...SET.DEFAULTS, profile: 'chazon-ish', ...ci, overlapPolicy: 'join-redraw', dataSourceVersion: 2 };
   delete oldCi.profileRevision;
   const loadWith = (saved) => { store.set('techum-settings-v1', JSON.stringify(saved)); return SET.load(); };
-  check('rev20-v', 917, 'saved old Chazon Ish profile, unchanged: loads with no join and still shows as the Chazon Ish profile',
+  check('rev20-v', 919, 'saved old Chazon Ish profile, unchanged: loads with no join and still shows as the Chazon Ish profile',
     (() => { const l = loadWith(oldCi); return l.overlapPolicy === 'no-join' && SET.effectiveProfile(l) === 'chazon-ish' && l.profileRevision === 20; })());
-  check('rev20-w', 918, 'saved custom Chazon Ish settings (karpef off) keep the joint redraw the user chose',
+  check('rev20-w', 920, 'saved custom Chazon Ish settings (karpef off) keep the joint redraw the user chose',
     loadWith({ ...oldCi, karpef: false }).overlapPolicy === 'join-redraw');
-  check('rev20-x', 918, 'joint redraw chosen after rev. 20 is kept', loadWith({ ...oldCi, profileRevision: 20 }).overlapPolicy === 'join-redraw');
+  check('rev20-x', 920, 'joint redraw chosen after rev. 20 is kept', loadWith({ ...oldCi, profileRevision: 20 }).overlapPolicy === 'join-redraw');
   // Before rev. 13 (2026-07-14) the profile stored a yes/no overlapMerge switch and had no bow
   // or hole setting; the Chazon Ish default was overlapMerge: true (rev. 21).
   const preRev13 = { profile: 'chazon-ish', amahCm: 57.6, karpef: true, squaringAngleDeg: 0, overlapMerge: true, minCityHouses: 6, dataSourceVersion: 2 };
-  check('rev21-a', 946, 'an unchanged Chazon Ish profile saved before rev. 13 (old yes/no overlap switch) follows the new default too',
+  check('rev21-a', 948, 'an unchanged Chazon Ish profile saved before rev. 13 (old yes/no overlap switch) follows the new default too',
     (() => { const l = loadWith(preRev13); return l.overlapPolicy === 'no-join' && SET.effectiveProfile(l) === 'chazon-ish' && !('overlapMerge' in l); })());
-  check('rev21-b', 946, 'the same old save with karpef turned off keeps the joint redraw the user had', loadWith({ ...preRev13, karpef: false }).overlapPolicy === 'join-redraw');
-  check('rev21-c', 946, 'a save marked with any later revision is never switched again', loadWith({ ...oldCi, profileRevision: 21 }).overlapPolicy === 'join-redraw');
+  check('rev21-b', 948, 'the same old save with karpef turned off keeps the joint redraw the user had', loadWith({ ...preRev13, karpef: false }).overlapPolicy === 'join-redraw');
+  check('rev21-c', 948, 'a save marked with any later revision is never switched again', loadWith({ ...oldCi, profileRevision: 21 }).overlapPolicy === 'join-redraw');
   delete globalThis.localStorage;
 }
 
@@ -1130,7 +1160,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
     sameSpan(t, { minX: -993.92, maxX: 1043.92, minY: -993.92, maxY: 1023.92 }), JSON.stringify({ k, t }));
   check('1.6-d', 235, 'Mechaber (karpef off): 2000 amos straight from the walls, and no karpef region',
     off.karpefRegions.length === 0 && sameSpan(t0, { minX: -960, maxX: 1010, minY: -960, maxY: 990 }), JSON.stringify(t0));
-  check('2-karpef', 389, 'karpef is on for MB and Chazon Ish, off for Mechaber',
+  check('2-karpef', 391, 'karpef is on for MB and Chazon Ish, off for Mechaber',
     SET.PROFILES['mishna-berura'].karpef === true && SET.PROFILES['chazon-ish'].karpef === true && SET.PROFILES.mechaber.karpef === false);
   // A pin exactly on the karpef's outer edge rests inside it (MB), and is outside the city under Mechaber.
   check('1.10a-b', 316, 'a pin exactly on the karpef edge is a city resident with karpef on', run(city, { karpef: true }, { x: 83.92, y: 15 }).mode === 'city');
@@ -1191,7 +1221,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   // must be compared in the square's own (compass) frame. town(850, 850) turned 30° into the
   // engine's working frame would reach x' = 1219 m and look outside the 960.96 m square.
   const turned = run(town(850, 850), { squaringAngleDeg: 30 }, { x: 0, y: 0 });
-  check('1.10a-k', 824, 'point mode with a 30° reviewer squaring angle: the square stays 4004 amos and a city inside it is still flagged',
+  check('1.10a-k', 826, 'point mode with a 30° reviewer squaring angle: the square stays 4004 amos and a city inside it is still flagged',
     turned.mode === 'point' && has(turned, 'ir-muvlaas') && approx(span(turned.techumCorners).w, 1921.92, 1e-9),
     JSON.stringify(turned.warnings.map((w) => w.type)));
   // A city resident inside a rav-validated enclosure (line 1019) gets the same flag (rev. 21).
@@ -1210,7 +1240,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const a = run(scene, { karpef: true }, pin);
   const shuffled = scene.map((b, i) => [((i * 7919) % 101), b]).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
   const b = run(shuffled, { karpef: true }, pin);
-  check('det-a', 427, 'same buildings in a different order give the same regions and warnings',
+  check('det-a', 429, 'same buildings in a different order give the same regions and warnings',
     regionSig(a.techumRegions) === regionSig(b.techumRegions) && regionSig(a.cityRegions) === regionSig(b.cityRegions) &&
     a.warnings.map((w) => w.type).sort().join() === b.warnings.map((w) => w.type).sort().join());
   // Translation by 500 km: thresholds still decided to the millimetre.
@@ -1245,18 +1275,20 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
 // =================================================================================
 {
   const mb = SET.PROFILES['mishna-berura'], ci = SET.PROFILES['chazon-ish'], mech = SET.PROFILES.mechaber;
-  check('2-amah', 388, 'amah: MB 48 cm, Chazon Ish 57.6 cm, Mechaber 48 cm', mb.amahCm === 48 && ci.amahCm === 57.6 && mech.amahCm === 48);
-  check('2-squaring', 390, 'every profile uses the automatic shape rule (no fixed reviewer angle)',
+  check('2-amah', 390, 'amah: MB 48 cm, Chazon Ish 57.6 cm, Mechaber 48 cm', mb.amahCm === 48 && ci.amahCm === 57.6 && mech.amahCm === 48);
+  check('2-squaring', 392, 'every profile uses the automatic shape rule (no fixed reviewer angle)',
     [mb, ci, mech].every((p) => p.squaringAngleDeg === 0));
-  check('2-bow', 393, 'bow rule: MB and CI Rema-majority, Mechaber curved edge', mb.bowPolicy === 'rema-majority' && ci.bowPolicy === 'rema-majority' && mech.bowPolicy === 'mechaber-curve');
-  check('2-default', 386, 'the default profile is Mishna Berurah', SET.DEFAULTS.profile === 'mishna-berura' && SET.DEFAULTS.karpef === true && SET.DEFAULTS.overlapPolicy === 'no-join');
-  check('2-eruv', 398, 'eruv-as-city is off unless a rav-validated perimeter is supplied', SET.DEFAULTS.useValidatedPerimeter === false);
-  check('2-12mil', 399, 'the 12-mil ring and second-shita line are hidden by default', SET.DEFAULTS.show12mil === false && SET.DEFAULTS.secondAmahCm === 0);
+  check('2-bow', 395, 'bow rule: MB and CI Rema-majority, Mechaber curved edge', mb.bowPolicy === 'rema-majority' && ci.bowPolicy === 'rema-majority' && mech.bowPolicy === 'mechaber-curve');
+  check('2-default', 388, 'the default profile is Mishna Berurah', SET.DEFAULTS.profile === 'mishna-berura' && SET.DEFAULTS.karpef === true && SET.DEFAULTS.overlapPolicy === 'no-join');
+  check('2-eruv', 400, 'eruv-as-city is off unless a rav-validated perimeter is supplied', SET.DEFAULTS.useValidatedPerimeter === false);
+  check('2-12mil', 401, 'the 12-mil ring and second-shita line are hidden by default', SET.DEFAULTS.show12mil === false && SET.DEFAULTS.secondAmahCm === 0);
 }
 
-pend('7-q11', 1357, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
-pend('7-q12', 1360, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
+pend('7-q11', 1426, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
+pend('7-q12', 1429, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
 
-console.log(`\n${passed} passed, ${failed} failed, ${pending.length} pending`);
-for (const p of pending) console.log('  PENDING ' + p);
-process.exit(failed ? 1 : 0);
+Promise.all(asyncChecks).catch((error) => { failed++; console.error('FAIL  an async check threw: ' + error.message); }).then(() => {
+  console.log(`\n${passed} passed, ${failed} failed, ${pending.length} pending`);
+  for (const p of pending) console.log('  PENDING ' + p);
+  process.exit(failed ? 1 : 0);
+});

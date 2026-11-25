@@ -23,6 +23,7 @@
     overrides: new Map(), // id -> 'include' | 'exclude'
     result: null,
     fetchBBox: null,      // {south, west, north, east}
+    fromSnapshot: false,  // loaded buildings came from a snapshot: never refetched
     dataCapHit: false,
     dataRelease: null,
     correctionsApplied: 0,
@@ -538,6 +539,7 @@
       state.dataRelease = fetched.release || state.dataRelease;
       state.correctionsApplied = fetched.correctionsApplied || 0;
       state.fetchBBox = bbox;
+      state.fromSnapshot = false;
       const prepStarted = performance.now();
       prepareBuildings();
       // Never move the shevisa point automatically. A nearby mapped footprint is
@@ -989,6 +991,16 @@
     }
     if (generation !== latestAnalysisId) return null;
     state.result = result;
+    // Spec rev. 26: a re-analysis of the loaded buildings (a changed setting, profile, pin or
+    // override) can need map data the last search did not load; a larger amah makes a larger
+    // town. A live result then runs the whole search again, so it never depends on what was loaded
+    // for the previous settings. A snapshot is never refetched; it is marked incomplete instead.
+    if (!skipRender && state.fetchBBox && state.pin) {
+      const more = G.dataFrontier(result, state.proj, state.fetchBBox, state.proj.toXY(state.pin.lat, state.pin.lon));
+      if (!more) { state.dataCapHit = false; state.dataCapReason = null; }
+      else if (state.fromSnapshot) { state.dataCapHit = true; state.dataCapReason = 'snapshot'; }
+      else if (!state.dataCapHit) { void calculate(false); return result; }
+    }
     if (!skipRender) { render(); setRetryVisible(false); }
     return result;
   }
@@ -1462,6 +1474,19 @@
     const provisionalHome = (res.qualificationClusters || []).filter((cluster) =>
       cluster.qualificationProvisional && cluster.qualifiesAsCity && homeComponentKeys.has(cluster.key));
     const lines = [];
+    if (state.dataCapHit) {
+      // Spec rev. 26: a town cut off by the data limit is not an inner bound. A cut-off neighbour
+      // can make a three-villages join come out either way, so the boundary can be too large as
+      // well as too small, and the home town itself can be the wrong one. First in the answer.
+      const capHelp = state.dataCapReason === 'failed'
+        ? 'Loading a wider area failed. Calculate again to retry.'
+        : state.dataCapReason === 'snapshot'
+          ? 'This snapshot holds less map data than these settings need. Calculate again to load the rest.'
+          : `The search stopped at the ${settings.maxBuildings.toLocaleString()}-building data limit. Raise “Max buildings” in settings and calculate again.`;
+      lines.push(`<div class="warn accuracy-status data-limit"><b>Incomplete: the map data ran out</b><span>The town, or a town that can join it, continues past the loaded map data. ` +
+        `With the rest of the data this boundary could be larger or smaller, and the home town could be a different one, so do not rely on it. ` +
+        `There is no halachic limit on a town's length. ${escapeHtml(capHelp)}</span></div>`);
+    }
     if (res.calculationStatus === 'provisional-no-fill') {
       lines.push('<div class="warn accuracy-status"><b>Provisional smaller boundary</b><span>The town has a bow- or L-shaped gap whose opening is 4,000 amos or wider. Whether the town is measured across that opening depends on where the bow’s two ends are, which a reviewer has to confirm, so the app has not filled the gap. The pink area follows the town’s steps around the gap and may be too small there.</span></div>');
     }
@@ -1518,17 +1543,6 @@
     // Spec rev. 22: a light review note whenever the 12-mil ring is drawn.
     if (settings.show12mil && (res.mil12Regions || []).length) {
       lines.push('<div class="note">ℹ <b>12-mil ring:</b> drawn 24,000 amos from the town’s own squared edge, without the 70⅔-amah karpef (Sefer HaChinuch 24; Rambam Shabbos 27:1–2). Whether the squaring itself applies to the 12 mil is open. A rav should confirm before relying on it.</div>');
-    }
-    if (state.dataCapHit) {
-      // Spec rev. 26: a town cut off by the data limit is not an inner bound. A cut-off neighbour
-      // can make a three-villages join come out either way, so the boundary can be too large as
-      // well as too small, and the home town itself can be the wrong one.
-      const capHelp = state.dataCapReason === 'failed'
-        ? 'Loading a wider area failed. Calculate again to retry.'
-        : `The search stopped at the ${settings.maxBuildings.toLocaleString()}-building data limit. Raise “Max buildings” in settings and calculate again.`;
-      lines.push(`<div class="warn accuracy-status data-limit"><b>Incomplete: the map data ran out</b><span>The town, or a town that can join it, continues past the loaded map data. ` +
-        `With the rest of the data this boundary could be larger or smaller, and the home town could be a different one, so do not rely on it. ` +
-        `There is no halachic limit on a town's length. ${escapeHtml(capHelp)}</span></div>`);
     }
     const seenWarnings = new Map();
     for (const w of res.warnings) {
@@ -1730,7 +1744,7 @@
       || `Snapshot pin (${Number(snap.pin.lat).toFixed(5)}, ${Number(snap.pin.lon).toFixed(5)})`;
     state.lastQuery = null; state.lastLabel = label;
     document.getElementById('address').value = label;
-    state.pin = snap.pin; state.fetchedAt = snap.fetchedAt; state.fetchBBox = snap.fetchBBox;
+    state.pin = snap.pin; state.fetchedAt = snap.fetchedAt; state.fetchBBox = snap.fetchBBox; state.fromSnapshot = true;
     state.dataRelease = snap.dataRelease || null; state.dataSource = snap.dataSource || 'snapshot';
     state.dataCapHit = !!snap.dataCapHit; state.rawBuildings = snap.rawBuildings;
     // Older snapshots did not record this; never carry over the previous calculation's count.

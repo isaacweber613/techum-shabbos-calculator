@@ -1191,9 +1191,15 @@ Node with saved map data. No halachic default changed.
   round join cannot be undone that way); (3) the houses joined to the pin's building while too
   few are loaded to make a city. From 600, 1200 and 3000 m starts the results were identical at
   Kiryas Joel and Monsey (in both profiles), New Square, Monroe, South Fallsburg and two
-  Woodbourne pins, in at most 7 passes, and none reached the data limit. When the limit is reached, the
-  answer says the result is incomplete, could be larger or smaller and could belong to another
-  town, and the pink line is dashed.
+  Woodbourne pins, in at most 7 passes, and none reached the data limit. When the limit is
+  reached, the answer says the result is incomplete, could be larger or smaller and could
+  belong to another town, and the pink line is dashed.
+- **A changed setting used only the buildings already loaded.** Switching Monsey to the Chazon
+  Ish profile re-ran the engine on the 14,261 buildings loaded for the Mishna Berurah profile and
+  showed 4,948 houses as done; the town needs 22,022 buildings and has 6,415 houses. Now every
+  re-analysis applies the same rule: a live result searches again when it needs more map data, a
+  result already stopped at the data limit stays marked incomplete, and a snapshot is never
+  refetched; it is marked incomplete instead.
 - **A pin in the street between a town's houses was outside the town (Woodbourne, pin on the
   village centre).** §1.10a gives priority to "the qualifying dwelling/perimeter component
   physically containing the pin". The engine checked only whether the pin was inside a
@@ -1209,7 +1215,8 @@ Node with saved map data. No halachic default changed.
   larger parts. The town did not get smaller. With all the data it needs, the Chazon Ish home
   town is 6,415 houses in 178 parts, against 2,818 houses in 54 parts for the Mishna Berurah
   profile on the same data, and it holds every one of those houses. The live 53-to-17 drop
-  compared two results cut off by the widening limit; the Chazon Ish one was cut off far more.
+  compared results cut off from map data, by the widening limit or by a profile switch that
+  reused the buildings already loaded; the Chazon Ish town, being larger, was cut off far more.
 - **Found on the way (Part 7 Q19).** §1.4 joins three villages only when the lowered middle
   village fits inside the outer gap. A middle village wider than the gap never joins, so a
   village that grows can stop joining two towns. The engine keeps the rule as written, the
@@ -1220,8 +1227,8 @@ Node with saved map data. No halachic default changed.
   pieces, each with its own karpef and 2000 amos (§1.6.2), and those overlap. The map stroked
   every piece. It now draws each layer as the outline of their union (the techum is one outline
   of 52 corners); the pieces stay separate in the result and every export. The provisional note
-  is in the answer card in plain words. 96% of the buildings loaded there have unknown use and
-  are included by default; that is not the cause.
+  is in the answer card in plain words. 97% of the 11,321 buildings loaded there have unknown
+  use and are included by default; that is not the cause.
 - **Replay note.** A snapshot whose pin is in a street between houses can give a larger result
   than when it was saved. Engine version 1.7.1.
 
