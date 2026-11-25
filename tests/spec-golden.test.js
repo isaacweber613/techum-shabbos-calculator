@@ -543,16 +543,29 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('rev26-b', 321, 'the same with the Rema karpef: techum x [-993.92, 1183.92], y [-993.92, 1023.92]',
     homeHouses(streetMb) === 20 && sameSpan(span(streetMb.techumCorners), { minX: -993.92, maxX: 1183.92, minY: -993.92, maxY: 1023.92 }),
     JSON.stringify(span(streetMb.techumCorners)));
-  // A town's own area reaches half the 70⅔-amah gap (16.96 m) beyond its walls (§1.4: buffer each
-  // footprint by half the gap). Pin 16.96 m above X's house [0,10]x[20,30]: still X. 1 cm further:
-  // the empty overlap of the two karpef squares, so the common area of both applies as before.
-  const edge = run(both, { karpef: true }, { x: 5, y: 46.96 });
+  // Rev. 27 (review of rev. 26): the strip beside a town's outermost houses. Rev. 26 also gave X a pin
+  // up to 16.96 m (half the 70⅔-amah gap) outside X's squared walls, in X's karpef, though Y's square
+  // holds it too. Whether a person in that strip, which may be open field, rests in X is a question for
+  // a rav (Part 7 Q20), so the common area of both towns stays, with a review note. X's walls are
+  // x [0, 190], y [0, 30]; with the karpef (33.92 m) X's techum is x [-993.92, 1183.92],
+  // y [-993.92, 1023.92] and Y's (walls x [-190, 20], y [-100, 210]) is x [-1183.92, 1013.92],
+  // y [-1093.92, 1203.92]; the common area is x [-993.92, 1013.92], y [-993.92, 1023.92]. Pins 10 m and
+  // 16.96 m above X's house [0,10]x[20,30] get it with the note; 16.97 m gets it without the note.
+  const common = { minX: -993.92, maxX: 1013.92, minY: -993.92, maxY: 1023.92 };
+  const strip = [40, 46.96].map((y) => run(both, { karpef: true }, { x: 5, y }));
   const beyond = run(both, { karpef: true }, { x: 5, y: 46.97 });
-  check('rev26-c', 322, 'exactly half the 70⅔-amah gap (16.96 m) from the town\'s house is still in that town; 16.97 m is the empty overlap (common area, review flag)',
-    homeHouses(edge) === 20 && !has(edge, 'multiple-home-candidates') &&
-    beyond.homeCandidates.length === 2 && has(beyond, 'multiple-home-candidates') &&
-    approx(span(beyond.techumCorners).maxX, 20 + 33.92 + 960, 1e-6),
-    JSON.stringify({ edge: homeHouses(edge), beyond: beyond.homeCandidates.length, bx: span(beyond.techumCorners).maxX }));
+  check('rev27-d', 1269, 'a pin 10 m and 16.96 m outside a town\'s squared walls, in its karpef and in another town\'s square, gets the common area of both (x [-993.92, 1013.92], y [-993.92, 1023.92]) with a review note; 16.97 m gets it without the note',
+    strip.every((r) => r.mode === 'city' && r.homeCandidates.length === 2 && has(r, 'multiple-home-candidates') &&
+      has(r, 'pin-beside-town') && sameSpan(span(r.techumCorners), common)) &&
+    beyond.homeCandidates.length === 2 && has(beyond, 'multiple-home-candidates') && !has(beyond, 'pin-beside-town') &&
+    sameSpan(span(beyond.techumCorners), common),
+    JSON.stringify({ strip: strip.map((r) => [r.homeCandidates.length, has(r, 'pin-beside-town'), span(r.techumCorners)]), beyond: beyond.homeCandidates.length }));
+  // Inside X's walls the street rule stands: a pin at (5, 15), between X's two rows and 5 m from each.
+  const between = run(both, { karpef: true }, { x: 5, y: 15 });
+  check('rev27-d2', 1269, 'a pin in the street between a town\'s two rows, inside its squared walls, is in that town: 20 houses, techum x [-993.92, 1183.92]',
+    homeHouses(between) === 20 && !has(between, 'pin-beside-town') && approx(span(between.techumCorners).maxX, 1183.92, 1e-6),
+    JSON.stringify({ home: homeHouses(between) }));
+  pend('rev27-q20', 1533, 'Is a person within half of 70⅔ amos of a town\'s outermost house, outside its squared walls but in its karpef, and inside another town\'s squared area, resting in the first town? The engine gives the common area of both and a review note.');
   // The rule only chooses among towns whose final starting area already holds the pin; it never
   // adds a town. Without karpef, a pin 5 m north of X's walls (y = 35) is outside X's square:
   // it rests in Y only, as before (rev. 12: membership follows the profile's starting area).
@@ -626,11 +639,14 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
     homeOf(firstPass) === 6 && oldStopped,
     JSON.stringify(villageRuns.map(({ result, passes }) => ({ home: homeOf(result), passes: passes.length }))));
 
-  // Rule 2, by hand on a result: home town of parts h, m, p, walls x [0, 950], y [0, 30]; p
-  // (x [900, 950]) joined it by three villages. Loaded: x [-1500, 2500], y [-1500, 1500], which
-  // holds the town's walls + 33.92 + 960 m with the 127.84 m margin. Town N, x [1800, 2600], is
-  // 850 m from p (<= 960) and runs past the loaded edge, so the loader must reach past 2600 m by
-  // at least the margin. Not for a first-round join, and not for a town 961 m from p.
+  // By hand on a result (rev. 27 replaces rev. 26's rule 2, which looked only at towns near a part
+  // joined in a later round): home town of parts h, m, p, walls x [0, 950], y [0, 30]. Loaded:
+  // x [-1500, 2500], y [-1500, 1600], which holds the town's walls + 33.92 + 960 m and every part's
+  // own 960 m surroundings with the 127.84 m margin (m's top: 430 + 960 + 127.84 = 1517.84). Town N,
+  // x [1800, 2600], is 850 m from p (<= 960) and runs past the loaded edge, so the loader must take N
+  // whole and everything within 2000 amos of it: east to 2600 + 960 + 127.84 = 3687.84 m or more, for a
+  // join in any round. A town 961 m from p asks for nothing.
+  const city = (key, minX, minY, maxX, maxY) => ({ key, members: [0], qualifiesAsCity: true, corners: rect(minX, minY, maxX, maxY) });
   const handResult = (round, nMinX) => ({
     mode: 'city', homeCluster: 0, homeCandidates: [[0]], homeBuilding: -1,
     thresholds: { joinM: JOIN, t2: T2, techumM: TECHUM, karpefM: JOIN },
@@ -638,19 +654,36 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
       { members: [0], key: 'h', componentKeys: ['h', 'm', 'p'], qualifiesAsCity: true, corners: rect(0, 0, 950, 30) },
       { members: [1], key: 'n', componentKeys: ['n'], qualifiesAsCity: true, corners: rect(nMinX, 0, 2600, 30) },
     ],
-    qualificationClusters: [{ key: 'h', corners: rect(0, 0, 50, 30) }, { key: 'm', corners: rect(450, 400, 500, 430) },
-      { key: 'p', corners: rect(900, 0, 950, 30) }],
+    qualificationClusters: [city('h', 0, 0, 50, 30), city('m', 450, 400, 500, 430), city('p', 900, 0, 950, 30), city('n', nMinX, 0, 2600, 30)],
     techumRegions: [rect(-960, -960, 1910, 990)],
     warnings: [{ type: 'three-villages', round, middleComponentKeys: ['m'], outerComponentKeys: [['h'], ['p']] }],
   });
-  const handLoaded = toDegrees({ minX: -1500, maxX: 2500, minY: -1500, maxY: 1500 });
-  const later = G.dataFrontier(handResult(2, 1800), proj, handLoaded, { x: 5, y: 5 });
-  const eastM = later && proj.toXY(41, later.east).x;
-  check('rev26-g', 1189, 'a town 850 m from a part joined by three villages after an earlier join is loaded in full (the loader reaches 2600 m + 127.84 m or more); a first-round join, or a town 961 m away, asks for nothing',
-    later && eastM >= 2600 + look && eastM <= 2600 + 3 * look * 1.02 &&
-    G.dataFrontier(handResult(1, 1800), proj, handLoaded, { x: 5, y: 5 }) === null &&
+  const handLoaded = toDegrees({ minX: -1500, maxX: 2500, minY: -1500, maxY: 1600 });
+  const eastOf = (want) => want && proj.toXY(41, want.east).x;
+  const reach = [1, 2].map((round) => eastOf(G.dataFrontier(handResult(round, 1800), proj, handLoaded, { x: 5, y: 5 })));
+  check('rev27-b', 1251, 'a town 850 m from a part of the home town is loaded whole with everything within 2000 amos of it (east to 2600 + 960 + 127.84 m or more) whether it joined in the first or a later round; a town 961 m away asks for nothing',
+    reach.every((eastM) => eastM >= 2600 + TECHUM + look && eastM <= (2600 + TECHUM + 3 * look) * 1.01) &&
     G.dataFrontier(handResult(2, 1911), proj, handLoaded, { x: 5, y: 5 }) === null,
-    JSON.stringify({ eastM }));
+    JSON.stringify({ reach }));
+
+  // Rev. 27: a town's three-villages partner can be two 2000-amah steps away. H, walls x [0, 50],
+  // y [0, 30]; B, a chain of 59 houses x [110 + 40k, 120 + 40k], y [900, 910] (30 m gaps, < 33.92 m),
+  // walls x [110, 2440]; C, walls x [2500, 2550], y [0, 30]. B is 872 m from H and from C (<= 960 m).
+  // Lowered onto y = 15, B is 2330 m wide in a 2450 m gap and leaves 60 m (<= 67.84 m) on each side,
+  // so H, B and C are one town of 6 + 59 + 6 = 71 houses, walls x [0, 2550], y [0, 910], techum (no
+  // karpef) x [-960, 3510], y [-960, 1870]. From 1200 m, C is 1300 m outside the loaded area and the
+  // rev. 26 rule stopped after one pass with H's 6 houses; from 3000 m it found all 71.
+  const longB = town(0, 0);
+  for (let k = 0; k <= 58; k++) longB.push(box(110 + 40 * k, 900, 120 + 40 * k, 910));
+  longB.push(...town(2500, 0));
+  const longRuns = [1200, 3000].map((startM) => widen(longB, { x: 5, y: 5 }, startM));
+  const allSpan = (regions) => span(regions.flat());
+  check('rev27-a', 1251, 'a middle village 872 m from the town whose far end is 872 m from a town 2.5 km away: the same 71-house town from 1200 and 3000 m, walls x [0, 2550], y [0, 910], techum x [-960, 3510], y [-960, 1870]',
+    longRuns.every(({ result }) => result && homeOf(result) === 71 && has(result, 'three-villages') &&
+      sameSpan(allSpan(result.cityRegions), { minX: 0, maxX: 2550, minY: 0, maxY: 910 }) &&
+      sameSpan(allSpan(result.techumRegions), { minX: -960, maxX: 3510, minY: -960, maxY: 1870 })) &&
+    regionSig(longRuns[0].result.techumRegions) === regionSig(longRuns[1].result.techumRegions),
+    JSON.stringify(longRuns.map(({ result, passes }) => ({ home: homeOf(result), passes: passes.length }))));
 
   // One outline per layer (display only). Signed area: + counter-clockwise, - a hole.
   const area = (loop) => loop.reduce((sum, p, i) => { const q = loop[(i + 1) % loop.length]; return sum + p.x * q.y - q.x * p.y; }, 0) / 2;
@@ -720,7 +753,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
     homeOf(narrowB) === 20 && has(narrowB, 'three-villages') && !has(narrowB, 'three-villages-wider-middle') &&
     sameSpan(span(narrowB.cityCorners), { minX: 0, maxX: 200, minY: 0, maxY: 430 }),
     JSON.stringify({ wide: homeOf(wideB), placed, narrow: homeOf(narrowB) }));
-  pend('rev26-q19', 1471, 'Three villages: does a middle village wider than the gap between the outer two (or reaching over an outer village once lowered) still join them? The engine keeps the stricter reading and lists each case for review.');
+  pend('rev26-q19', 1524, 'Three villages: does a middle village wider than the gap between the outer two (or reaching over an outer village once lowered) still join them? The engine keeps the stricter reading and lists each case for review.');
 
   // The app: no widening limit, the incomplete answer, the dashed line, one outline, the review note.
   const appMain = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
@@ -743,10 +776,10 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   // already stopped at the data limit stays marked; a result that needs nothing more is complete.
   const vmRecompute = require('node:vm');
   const recomputeSource = appMain.slice(appMain.indexOf('  async function recompute(skipRender) {'), appMain.indexOf('  function cornersToLatLngs(corners) {'));
-  const replay = async ({ more, fromSnapshot = false, dataCapHit = false }) => {
+  const replay = async ({ more, fromSnapshot = false, dataCapHit = false, fetchBBox = { south: 0, west: 0, north: 1, east: 1 } }) => {
     const calls = { calculate: 0, render: 0 };
     const ctx = {
-      state: { pin: { lat: 41, lon: -74 }, proj: { toXY: () => ({ x: 0, y: 0 }) }, buildings: [], fetchBBox: { south: 0, west: 0, north: 1, east: 1 },
+      state: { pin: { lat: 41, lon: -74 }, proj: { toXY: () => ({ x: 0, y: 0 }) }, buildings: [], fetchBBox,
         fromSnapshot, dataCapHit, dataCapReason: dataCapHit ? 'buildings' : null, result: null },
       latestAnalysisId: 0, isIncluded: () => true, geometrySettings: () => ({}),
       runPipelineAsync: async () => ({ mode: 'city' }), G: { dataFrontier: () => more },
@@ -765,6 +798,30 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
         complete.calculate === 0 && complete.render === 1 && complete.dataCapHit === false,
         JSON.stringify({ live, snapshot, capped, complete }));
     }));
+  // Rev. 27: a snapshot that does not say which area its buildings cover cannot be checked, so it is
+  // marked incomplete (before, the check was skipped and its saved flag, often "complete", stood).
+  asyncChecks.push(replay({ more: null, fromSnapshot: true, fetchBBox: null }).then((unknown) => {
+    check('rev27-g', 1278, 'a snapshot with no recorded loaded area is marked incomplete and not refetched',
+      unknown.calculate === 0 && unknown.render === 1 && unknown.dataCapHit === true && unknown.reason === 'snapshot-area-unknown',
+      JSON.stringify(unknown));
+  }));
+
+  // Rev. 27: the comparison-amah line and the verified-dwellings line are separate results on the same
+  // loaded buildings. A larger amah makes a larger town, so either can need map data the main result
+  // did not load; it is then labelled incomplete on the map and in the answer, never drawn as finished.
+  check('rev27-e', 1278, 'the comparison and verified-dwellings lines are checked with dataFrontier and labelled incomplete on the map and in the answer when the loaded data does not cover them',
+    /const res2Incomplete = scenarioIncomplete\(res2\)/.test(appMain) && /const resVIncomplete = scenarioIncomplete\(resV\)/.test(appMain) &&
+    /G\.dataFrontier\(scenario, state\.proj, state\.fetchBBox/.test(appMain) &&
+    /Comparison line incomplete/.test(appMain) && /Verified-dwellings line incomplete/.test(appMain) &&
+    /INCOMPLETE: needs map data that was not loaded/.test(appMain));
+  // Rev. 27: a PNG caption names an incomplete result; the map's dashed line alone does not say why.
+  const mapExport = require('../js/map-export.js');
+  const plainCaption = mapExport.exportCaptionLines({ label: 'Town', profileLabel: 'Mishna Berurah', amahCm: 48 });
+  const cutCaption = mapExport.exportCaptionLines({ label: 'Town', profileLabel: 'Mishna Berurah', amahCm: 48, incomplete: true });
+  check('rev27-f', 1278, 'an exported PNG of an incomplete result says so in its caption; a complete one keeps its three lines',
+    plainCaption.length === 3 && !plainCaption.some((line) => /INCOMPLETE/.test(line)) &&
+    cutCaption.length === 4 && /^INCOMPLETE/.test(cutCaption[2]) && /incomplete: state\.dataCapHit/.test(appMain),
+    JSON.stringify(cutCaption));
 }
 
 // =================================================================================
@@ -1284,8 +1341,8 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('2-12mil', 401, 'the 12-mil ring and second-shita line are hidden by default', SET.DEFAULTS.show12mil === false && SET.DEFAULTS.secondAmahCm === 0);
 }
 
-pend('7-q11', 1426, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
-pend('7-q12', 1429, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
+pend('7-q11', 1479, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
+pend('7-q12', 1482, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
 
 Promise.all(asyncChecks).catch((error) => { failed++; console.error('FAIL  an async check threw: ' + error.message); }).then(() => {
   console.log(`\n${passed} passed, ${failed} failed, ${pending.length} pending`);

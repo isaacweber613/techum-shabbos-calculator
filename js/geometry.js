@@ -1636,13 +1636,20 @@
     // 70⅔ amos of each other are one component. The rule only chooses among towns whose final
     // starting area already holds the pin (rev. 12); only a pin in none of their areas, the empty
     // overlap, keeps the common area of every candidate (rev. 26).
+    // Rev. 27: only inside the town's own squared walls (its final starting area without the karpef).
+    // The strip up to half the gap beyond the outermost houses can be open field; whether a person
+    // there rests in that town when another town's square also holds him is open (Part 7 Q20), so
+    // the common area stays, with a review note.
+    let besideTown = false;
     if (physicalCityModel < 0 && !perimeterActive && selectedClosures.length > 1) {
       const half = joinM / 2;
       const pinBox = { minX: workPin.x, maxX: workPin.x, minY: workPin.y, maxY: workPin.y };
       const holding = selectedClosures.filter((closure) => closure.indices.some((index) =>
         cityModels[index].cluster.members.some((member) => bboxGap(pinBox, work[member].bbox) <= half &&
           ringDistToPoint(workPin, work[member].ring) <= half)));
-      if (holding.length === 1) selectedClosures = holding;
+      const walled = holding.filter((closure) => boundaryOf(closure).city.some((ring) => pointInOrOnRing(workPin, ring)));
+      if (walled.length === 1) selectedClosures = walled;
+      else if (holding.length) besideTown = true;
     }
     const mode = perimeterActive || selectedClosures.length ? 'city' : homeBuilding >= 0 ? 'building' : 'point';
     let home = selectedClosures.length === 1 ? cityModels[selectedClosures[0].indices[0]].clusterIndex : -1;
@@ -1678,6 +1685,7 @@
         warnings.push({ type: 'multiple-home-candidates', text: overlapPolicy === 'no-join'
           ? 'The pin lies only in the empty overlap of unrelated no-join city squares. The displayed boundary is the conservative common area of every candidate; a rav must identify the governing city for a larger result.'
           : 'The pin lies only in the empty overlap of separate city starting areas. The displayed boundary is the conservative common area of every candidate; a rav must identify the governing city for a larger result.' });
+        if (besideTown) warnings.push({ type: 'pin-beside-town', text: 'The pin is within half of 70⅔ amos of a town’s outermost house but outside that town’s squared walls, in its karpef, and another town’s area also holds it. Whether a person standing there rests in the first town is an open question for rav review (spec Part 7 Q20). The boundary shown is the common area of both towns; if he rests in the first town, its own larger boundary applies.' });
         squaring = { method: 'candidate-intersection', angleRad: 0, rectangularity: null };
       } else {
         const boundary = boundaries[0];
@@ -1895,17 +1903,23 @@
     return loops;
   }
 
-  // ---------- How much map data a result needs (spec rev. 26) ----------
+  // ---------- How much map data a result needs (spec rev. 26, rev. 27) ----------
   // The engine applies its rules only to the buildings it is given, so the app widens the loaded
   // area until a result needs nothing outside it. With a margin of 141⅓ amos plus 60 m of
   // footprint error, the loaded area must hold:
   //   1. the whole techum of every town whose squared area could hold the pin: the three-villages
   //      rule reaches 2000 amos (SA HaRav 398:12), and a swallowed city lies inside the techum;
-  //   2. in full, every town within 2000 amos of a settlement the three-villages rule joined to
-  //      such a town in a later round (after an earlier join): with the rest of that neighbour,
-  //      an earlier round could join it to the settlement first and the later join could fail,
-  //      so a partly loaded neighbour can make the town too large. (A join in the first round
-  //      cannot be undone that way; a missing neighbour can only leave a town smaller.)
+  //   2. (rev. 27) two 2000-amah steps of three villages. Every group of houses within 2000 amos of
+  //      such a town's own groups (a possible middle or outer village) is loaded whole, with
+  //      everything within 2000 amos of it, and every group within 2000 amos of one of those (the
+  //      far village a long middle village can reach) is loaded whole. A group counts when it is a
+  //      town or the loaded edge may cut it (a cut town can look like a few houses). Rev. 26 looked
+  //      one step out, and only after a later-round join, so a town with a long middle village
+  //      could stop short. Not loaded, because around Monsey they reach past the 40,000-building
+  //      data limit: the rest of a far village's 141⅓-amah chain beyond those two steps, and chains
+  //      of joins reaching further. Proving every such chain means loading every town linked by
+  //      2000-amah steps, which around Monsey passed 132,116 buildings and 28 km without ending
+  //      (spec rev. 27: a data limit, not a halachic question).
   //   3. the houses joined to the pin's building, while too few are loaded to make a city.
   // `loaded` is a {south, west, north, east} box in degrees; `pin` is in the result's local
   // meters. Returns the box to add, or null when the result needs nothing more. There is no
@@ -1958,23 +1972,27 @@
       for (const key of cluster.componentKeys || [cluster.key]) townKeys.add(key);
     }
     for (const ring of result.techumRegions || []) need(boxOf(ring));
-    // 2. Towns within 2000 amos of a settlement joined to one of those towns by three villages
-    //    in a later round.
-    const partnerKeys = new Set();
-    for (const warning of result.warnings || []) {
-      if (warning.type !== 'three-villages' || !(warning.round > 1)) continue;
-      const keys = [...(warning.middleComponentKeys || []), ...(warning.outerComponentKeys || []).flat()];
-      if (keys.some((key) => townKeys.has(key))) keys.forEach((key) => partnerKeys.add(key));
-    }
-    if (partnerKeys.size) {
-      const partners = (result.qualificationClusters || []).filter((cluster) => partnerKeys.has(cluster.key))
-        .map((cluster) => boxOf(cluster.corners));
-      for (const cluster of result.clusters) {
-        if (!cluster.qualifiesAsCity) continue;
-        const box = boxOf(cluster.corners);
-        if (partners.some((partner) => bboxGap(partner, box) <= techumM)) need(box);
+    // 2. Two 2000-amah steps of three villages from the towns' own 70⅔-amah groups.
+    const groups = (result.qualificationClusters || []).map((cluster) => ({
+      key: cluster.key, city: !!cluster.qualifiesAsCity, box: boxOf(cluster.corners) }));
+    const cut = (group) => !holds(grow(toDegrees(group.box), 1));
+    const nodes = groups.filter((group) => group.city || cut(group));
+    const index = GridIndex(Math.max(techumM, 100));
+    nodes.forEach((group, i) => index.insert(i, group.box));
+    const within = (from, distance) => {
+      const out = new Set();
+      for (const group of from) {
+        for (const i of index.query(expandRect(group.box, distance))) {
+          if (!out.has(i) && bboxGap(group.box, nodes[i].box) <= distance) out.add(i);
+        }
       }
-    }
+      return out;
+    };
+    const seeds = groups.filter((group) => townKeys.has(group.key));
+    const step1 = within(seeds, techumM);
+    const step2 = within([...step1].map((i) => nodes[i]), techumM);
+    for (const i of step1) need(expandRect(nodes[i].box, techumM));
+    for (const i of step2) need(nodes[i].box);
     return want;
   }
 

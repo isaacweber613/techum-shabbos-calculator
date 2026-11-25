@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.7.1 (2026-11-25)';
+  const ENGINE_VERSION = '1.7.2 (2026-11-25)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -999,7 +999,11 @@
     // override) can need map data the last search did not load; a larger amah makes a larger
     // town. A live result then runs the whole search again, so it never depends on what was loaded
     // for the previous settings. A snapshot is never refetched; it is marked incomplete instead.
-    if (!skipRender && state.fetchBBox && state.pin) {
+    // A snapshot that does not record its loaded area cannot be checked, so it is marked incomplete
+    // (rev. 27; before, the check was skipped and the snapshot's saved flag stood).
+    if (!skipRender && !state.fetchBBox && state.fromSnapshot && state.pin) {
+      state.dataCapHit = true; state.dataCapReason = 'snapshot-area-unknown';
+    } else if (!skipRender && state.fetchBBox && state.pin) {
       const more = G.dataFrontier(result, state.proj, state.fetchBBox, state.proj.toXY(state.pin.lat, state.pin.lon));
       if (!more) { state.dataCapHit = false; state.dataCapReason = null; }
       else if (state.fromSnapshot) { state.dataCapHit = true; state.dataCapReason = 'snapshot'; }
@@ -1186,21 +1190,33 @@
     // fetch it can monopolize the main thread for minutes, so keep the primary result
     // responsive and omit the comparison at large scale.
     const canRenderVerifiedScenario = state.buildings.length <= COMPARISON_SCENARIO_MAX_BUILDINGS;
+    // Spec rev. 27: each extra line is its own result on the buildings loaded for the main one. A
+    // larger amah makes a larger town, so a line can need map data that was not loaded; it is then
+    // labelled incomplete on the map and in the answer, never shown as a finished line.
+    const scenarioIncomplete = (scenario) => state.dataCapHit || !state.fetchBBox ||
+      !!G.dataFrontier(scenario, state.proj, state.fetchBBox, state.proj.toXY(state.pin.lat, state.pin.lon));
+    const cutLabel = ' · INCOMPLETE: needs map data that was not loaded';
+    state.scenarioIncomplete = { verified: false, comparison: false };
     if (settings.showVerifiedOnly && res.mode === 'city' && canRenderVerifiedScenario) {
       const verifiedB = state.buildings.map((b) => ({ ...b, included: isVerifiedIncluded(b) }));
       if (verifiedB.some((b) => b.included)) {
         const resV = G.runPipeline(verifiedB, geometrySettings(), state.proj.toXY(state.pin.lat, state.pin.lon));
+        const resVIncomplete = scenarioIncomplete(resV);
+        state.scenarioIncomplete.verified = resVIncomplete;
         if (resV.techumCorners)
-          addRegions(resV.techumRegions || [resV.techumCorners], { color: '#ffb300', weight: 2.5, dashArray: '8 6', fill: false },
-            'Scenario: verified dwellings only (' + (resV.mode === 'city' ? 'city' : resV.mode === 'building' ? 'building shevisa' : 'point shevisa!') + ') — data-uncertainty bracket, not a psak', layerGroups.second);
+          addRegions(resV.techumRegions || [resV.techumCorners], { color: '#ffb300', weight: 2.5, dashArray: resVIncomplete ? '2 6' : '8 6', fill: false },
+            'Scenario: verified dwellings only (' + (resV.mode === 'city' ? 'city' : resV.mode === 'building' ? 'building shevisa' : 'point shevisa!') + ') — data-uncertainty bracket, not a psak' +
+            (resVIncomplete ? cutLabel : ''), layerGroups.second);
       }
     }
 
     // comparison shita line (full second pipeline run — thresholds change with the amah)
     if (canRunComparisonAmah()) {
       const res2 = G.runPipeline(state.buildings, geometrySettings(settings.secondAmahCm), state.proj.toXY(state.pin.lat, state.pin.lon));
-      addRegions(res2.techumRegions || [res2.techumCorners], { color: '#e040fb', weight: 2.5, dashArray: '10 6', fill: false },
-        'Comparison: techum @ ' + (settings.secondAmahCm / 2.54).toFixed(2) + ' in amah', layerGroups.second);
+      const res2Incomplete = scenarioIncomplete(res2);
+      state.scenarioIncomplete.comparison = res2Incomplete;
+      addRegions(res2.techumRegions || [res2.techumCorners], { color: '#e040fb', weight: 2.5, dashArray: res2Incomplete ? '2 6' : '10 6', fill: false },
+        'Comparison: techum @ ' + (settings.secondAmahCm / 2.54).toFixed(2) + ' in amah' + (res2Incomplete ? cutLabel : ''), layerGroups.second);
     }
 
     renderAuditRings();
@@ -1486,6 +1502,8 @@
         ? 'Loading a wider area failed. Calculate again to retry.'
         : state.dataCapReason === 'snapshot'
           ? 'This snapshot holds less map data than these settings need. Calculate again to load the rest.'
+          : state.dataCapReason === 'snapshot-area-unknown'
+            ? 'This snapshot does not record which area its map data covers, so it cannot be checked. Calculate again to load the data.'
           : `The search stopped at the ${settings.maxBuildings.toLocaleString()}-building data limit. Raise “Max buildings” in settings and calculate again.`;
       lines.push(`<div class="warn accuracy-status data-limit"><b>Incomplete: the map data ran out</b><span>The town, or a town that can join it, continues past the loaded map data. ` +
         `With the rest of the data this boundary could be larger or smaller, and the home town could be a different one, so do not rely on it. ` +
@@ -1529,6 +1547,14 @@
     }
     if (settings.secondAmahCm && settings.secondAmahCm !== settings.amahCm && state.buildings.length > COMPARISON_SCENARIO_MAX_BUILDINGS) {
       lines.push('<div class="note"><b>Comparison-amah line omitted:</b> this optional second full-city scenario is disabled above 10,000 footprints. Change the primary amah and recalculate to evaluate that shita on a large city.</div>');
+    }
+    // Spec rev. 27: an extra line drawn from map data that does not cover its own town.
+    const scenarioCut = state.scenarioIncomplete || {};
+    if (scenarioCut.comparison) {
+      lines.push('<div class="warn">⚠ <b>Comparison line incomplete:</b> with the second amah the town needs map data that was not loaded for the main result, so the dotted comparison line could be larger or smaller. Choose a profile with that amah and calculate to load what it needs.</div>');
+    }
+    if (scenarioCut.verified) {
+      lines.push('<div class="warn">⚠ <b>Verified-dwellings line incomplete:</b> that line’s town needs map data that was not loaded for the main result, so the dotted line could be larger or smaller.</div>');
     }
     if (res.mode === 'city') lines.push(`<div class="stat"><b>Home city cluster:</b> ${homeSize} counted footprints</div>`);
     if (res.mode === 'building' && res.homeBuilding >= 0) {
@@ -1703,6 +1729,7 @@
       `Rav-validated residential joining perimeters: ${state.validatedJoinPerimeters.length} (join geometry only; each counts as zero houses)`,
       `Manual overrides: ${state.overrides.size}${state.overrides.size ? ' [' + [...state.overrides.entries()].map(([id, v]) => id + ':' + v).join(', ') + ']' : ''}`,
       `Search frontier closed: ${state.dataCapHit ? 'NO — data limit reached; the town continues past the loaded data, so the result is incomplete and may be too large or too small' : 'yes'}`,
+      `Extra lines from cut-off data (spec rev. 27): ${['comparison', 'verified'].filter((k) => (state.scenarioIncomplete || {})[k]).join(', ') || 'none'}`,
       `Projection: local true-north tangent plane @ pin (per-point lon scaling)`,
       `Shevisa pin: ${state.pin ? state.pin.lat.toFixed(6) + ', ' + state.pin.lon.toFixed(6) : 'n/a'}`,
       `Generated: ${new Date().toISOString()} — DRAFT, requires review by a rav/mumcheh.`,
@@ -1894,6 +1921,7 @@
       label: state.lastLabel || (state.pin ? `${state.pin.lat.toFixed(5)}, ${state.pin.lon.toFixed(5)}` : ''),
       profileLabel: eff === 'custom' ? 'Custom (edited) settings' : S.PROFILES[settings.profile].label,
       amahCm: settings.amahCm,
+      incomplete: state.dataCapHit, // spec rev. 27: a shared image names an incomplete result
     });
   }
 
@@ -2004,7 +2032,7 @@
       exportCaptionForClone.forEach((text, index) => {
         const line = clonedDocument.createElement('div');
         line.textContent = text;
-        if (index === exportCaptionForClone.length - 1) { line.style.color = '#973c58'; line.style.fontWeight = '800'; }
+        if (index === exportCaptionForClone.length - 1 || /^INCOMPLETE/.test(text)) { line.style.color = '#973c58'; line.style.fontWeight = '800'; }
         caption.appendChild(line);
       });
       clonedMap.appendChild(caption);

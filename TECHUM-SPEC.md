@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 25, 2026-11-25) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 27, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -1235,6 +1235,59 @@ Node with saved map data. No halachic default changed.
 Golden tests in `tests/spec-golden.test.js` (ids `rev26-*`) cover each item with expected
 values worked out by hand.
 
+### Rev. 27 — 2026-11-25 (independent review of rev. 26; three fixes; one result back to the safer side)
+
+An independent review of rev. 26 tested its claim that nothing outside the loaded map data can
+change a result, ran six places from two pins each and with the profiles in both orders, and tried
+the street rule on open ground beside a town. No psak default changed.
+
+- **The stopping rule could still stop short (§1.4; rev. 26 rule 2).** A long middle village can
+  join a town to another town far beyond its first 2000 amos. In a made-up map, a row of 59 houses
+  2.3 km long, 872 m beside the line from a town to a town 2.5 km away, joins all three (71 houses).
+  Rev. 26 looked for partners only within 2000 amos of the town, and only after a later-round join,
+  so from a 1200 m start it stopped after one pass with the home town's 6 houses; from 3000 m it
+  found all 71. On 300 made-up maps with such joins, the result changed with where the search
+  started in 138 maps (274 of 900 runs). Every one of those results was too small, none too large.
+- **Now (two 2000-amah steps).** The loaded area must also hold, in full: every group of houses
+  within 2000 amos of the town's own groups, with everything within 2000 amos of each of them, and
+  every group within 2000 amos of one of those. A group counts when it is a town or when the
+  loaded edge may cut it, because a cut town can look like a few houses. On the same made-up maps
+  the result no longer depended on the start (0 of 900 runs; 0 of 4,500 more on other maps).
+  Monsey now loads 22,843 buildings in 5 passes instead of 14,261 in 4, and gives the same town,
+  2,818 houses in 54 parts.
+- **What is still not proven.** Two things can reach further than two steps. A far village enters
+  the three-villages test together with the towns joined to it by 141⅓ amos, and that chain can
+  run on; following it to its end pushed Monsey to the 40,000-building data limit, so only the
+  part within the two steps is loaded. And a chain of joins can change one of the town's partners
+  before the town's own test. A partner wrongly joined from partial data becomes part of the town
+  and is then loaded whole, which undoes the error; a join wrongly missed leaves the town too
+  small, and can make it too large only if it lets a later join through that it would have
+  blocked. Proving every case means loading every town linked to the town by 2000-amah steps.
+  Around Monsey that set passed 132,116 buildings and 28 km across without ending, and the Monsey
+  town stayed the same 2,818 houses all the way. The calculator does not load that far. This is a
+  data limit, not a halachic question.
+- **The strip beside a town's outermost houses (§1.10a; Part 7 Q20).** Rev. 26 also put a pin in a
+  town when it was outside the town's squared walls but within half the 70⅔-amah gap (16.96 m at
+  48 cm) of one of its houses, in its karpef. That strip can be open field. Where another town's
+  area also holds such a pin, rev. 26 gave the first town's whole techum instead of the common
+  area of both, a larger boundary on the strength of an engineering reading. Whether a person
+  standing there rests in the first town is a question for a rav. The street rule now applies
+  only inside the town's own squared walls (its final starting area without the karpef); in the
+  strip the common area stays, with a review note in the answer. A pin in the street between a
+  town's houses inside its walls is unchanged, and so is Woodbourne's centre.
+- **Lines drawn from cut-off map data.** The comparison-amah line and the verified-dwellings line
+  are separate results on the buildings loaded for the main one. A larger amah makes a larger
+  town, so either can need map data that was not loaded; both were drawn as finished lines. Each is
+  now checked by the same rule and, when it needs more, drawn dotted, labelled incomplete on the
+  map and in the answer, and listed in the audit block. An exported image of an incomplete result
+  says so in its caption. A snapshot that does not record which area its map data covers is
+  marked incomplete instead of keeping its saved flag.
+- Engine version 1.7.2.
+
+Golden tests `rev27-a`, `rev27-b` and `rev27-d` to `rev27-g` cover each item with expected values
+worked out by hand; `rev27-b` replaces `rev26-g` and `rev27-d` replaces `rev26-c`, whose
+expectations changed.
+
 ## Part 3 — Product spec
 
 ### 3.0 Scope & users
@@ -1477,6 +1530,13 @@ the UI for building-level review is the bulk of the work.
     engine keeps the rule as written, which gives the stricter result, and lists each case
     that could add a town to the home town as a review note. The case is common: 342 such
     cases touch the Monsey home town in the Mishna Berurah profile.
+20. **The strip beside a town's outermost houses (rev. 27)** — a pin outside a town's squared
+    walls but within half of 70⅔ amos of one of its houses, in its karpef, where another town's
+    squared area or karpef also holds it. Does the person rest in the first town, so that its whole
+    techum is his, or may he use only the area common to both towns? Rev. 26 gave him the first
+    town; the engine now gives the common area with a review note. Also open in the same rule: a
+    pin in a wide square or crossroads inside a town's walls but more than half of 70⅔ amos from
+    every house is not counted as physically in the town, so it too gets the common area.
 
 **Validation benchmarks:** the tool is city-agnostic; these are continuing cross-checks,
 not scope or release blockers:
