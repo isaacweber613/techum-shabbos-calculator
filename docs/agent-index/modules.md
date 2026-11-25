@@ -82,3 +82,5 @@ Top-level exports from application, library, hook, context, and worker modules.
 | `sha256Hex` | `(value: string): Promise<string>` | `worker/registry.ts` |
 | `validateRegistrySubmission` | `(raw: unknown):` | `worker/registry.ts` |
 | `shouldRedirectToCanonical` | `(url: URL): boolean` | `worker/routing.ts` |
+| `sendTelegram` | `(env: TelegramEnv, text: string, kind: string): Promise<boolean>` | `worker/telegram.ts` |
+| `TelegramEnv` | `type` | `worker/telegram.ts` |

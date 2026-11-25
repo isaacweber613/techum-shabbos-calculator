@@ -256,7 +256,7 @@ test('Google Maps is preferred with a metered same-site config and original-map 
   assert.match(main, /leaflet-overlay-pane > svg\.leaflet-zoom-animated/);
   assert.doesNotMatch(main, /\/api\/map-export-tile/);
   assert.match(worker, /issueGoogleMapConfig/);
-  assert.match(config, /DEFAULT_GOOGLE_MAPS_DAILY_CAP = 10;/);
+  assert.match(config, /DEFAULT_GOOGLE_MAPS_DAILY_CAP = 30;/);
   assert.match(config, /ON CONFLICT\(usage_date\) DO UPDATE/);
   assert.match(config, /MAP_CONFIG_RATE_LIMITER\.limit/);
 });
