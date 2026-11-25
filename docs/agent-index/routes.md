@@ -15,6 +15,7 @@ Static discovery of browser and HTTP entry points. Dynamic regex routes are show
 | `/api/feedback` | POST | `—` | `worker/index.ts` |
 | `/api/geocode` | GET | `—` | `worker/index.ts` |
 | `/api/map-config` | GET | `—` | `worker/index.ts` |
+| `/api/map-export-slot` | POST | `—` | `worker/index.ts` |
 | `/api/registry` | GET | `—` | `worker/index.ts` |
 | `/api/registry` | POST | `—` | `worker/index.ts` |
 | `/api/reverse-geocode` | GET | `—` | `worker/index.ts` |

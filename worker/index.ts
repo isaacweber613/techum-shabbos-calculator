@@ -1,6 +1,6 @@
 import { handleBuildings } from './buildings';
 import { listBuildingCorrections, reviewBuildingCorrection, submitBuildingCorrection } from './corrections';
-import { issueGoogleMapConfig } from './map-config';
+import { claimGoogleExportSlot, issueGoogleMapConfig } from './map-config';
 import { sha256Hex, validateRegistrySubmission } from './registry';
 import { feedbackScreenshot, listFeedback, submitFeedback, updateFeedbackStatus } from './feedback';
 import { shouldRedirectToCanonical } from './routing';
@@ -23,6 +23,9 @@ interface Env {
   REGISTRY_WRITES?: string;
   GOOGLE_MAPS_BROWSER_KEY?: string;
   GOOGLE_MAPS_DAILY_CAP?: string;
+  GOOGLE_STATIC_MAPS_DAILY_CAP?: string;
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_CHAT_ID?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
 }
@@ -450,20 +453,22 @@ async function withdrawRegistry(request: Request, id: string, env: Env): Promise
   return result.meta.changes ? new Response(null, { status: 204 }) : json({ error: 'not found' }, 404);
 }
 
-async function handle(request: Request, env: Env): Promise<Response> {
+async function handle(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
+  const background = (work: Promise<unknown>) => ctx.waitUntil(work);
   if (url.pathname === '/api/event' && request.method === 'POST') return recordEvent(request, env);
   if (url.pathname === '/api/analytics' && request.method === 'GET') return analytics(request, env);
   if (url.pathname === '/api/geocode' && request.method === 'GET') return geocode(request, env);
   if (url.pathname === '/api/reverse-geocode' && request.method === 'GET') return reverseGeocode(request, env);
   if (url.pathname === '/api/autocomplete' && request.method === 'GET') return autocomplete(request, env);
-  if (url.pathname === '/api/map-config' && request.method === 'GET') return issueGoogleMapConfig(request, env);
+  if (url.pathname === '/api/map-config' && request.method === 'GET') return issueGoogleMapConfig(request, env, background);
+  if (url.pathname === '/api/map-export-slot' && request.method === 'POST') return claimGoogleExportSlot(request, env, background);
   if (url.pathname === '/api/feedback' && request.method === 'POST') {
     const network = await hmacHex(env.IP_HASH_SECRET || 'local-development-only',
       request.headers.get('CF-Connecting-IP') || 'unknown');
     const limited = await env.FEEDBACK_RATE_LIMITER.limit({ key: `feedback:${network}` });
     if (!limited.success) return json({ error: 'feedback rate limit exceeded' }, 429, { 'Retry-After': '60' });
-    return submitFeedback(request, env);
+    return submitFeedback(request, env, background);
   }
   if (url.pathname === '/api/analytics-feedback' && request.method === 'GET') {
     if (!await privateAccessEmail(request, env)) return json({ error: 'Cloudflare Access authentication required' }, 403);
@@ -525,7 +530,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   return env.ASSETS.fetch(request);
 }
 
-async function respond(request: Request, env: Env): Promise<Response> {
+async function respond(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     const url = new URL(request.url);
     if (shouldRedirectToCanonical(url)) {
@@ -534,7 +539,7 @@ async function respond(request: Request, env: Env): Promise<Response> {
       url.port = '';
       return Response.redirect(url.toString(), 308);
     }
-    return await handle(request, env);
+    return await handle(request, env, ctx);
   }
   catch (error) {
     console.error(JSON.stringify({ message: 'request failed', path: new URL(request.url).pathname,
@@ -558,8 +563,8 @@ function withSecurityHeaders(response: Response): Response {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    return withSecurityHeaders(await respond(request, env));
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    return withSecurityHeaders(await respond(request, env, ctx));
   },
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     const days = Math.max(30, Number(env.RAW_RETENTION_DAYS) || 365);
@@ -570,6 +575,8 @@ export default {
       env.DB.prepare('DELETE FROM geocode_slots WHERE second < ?1').bind(Math.floor(Date.now() / 1000) - 120),
       env.DB.prepare('DELETE FROM building_fill_slots WHERE second < ?1').bind(Math.floor(Date.now() / 1000) - 120),
       env.DB.prepare('DELETE FROM google_map_daily_usage WHERE usage_date < ?1')
+        .bind(new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)),
+      env.DB.prepare('DELETE FROM google_limit_alerts WHERE usage_date < ?1')
         .bind(new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)),
     ]);
     console.log(JSON.stringify({ message: 'retention cleanup complete', cutoff, days }));
