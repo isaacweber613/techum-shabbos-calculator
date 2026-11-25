@@ -726,6 +726,10 @@
     let acted = true;
     while (acted) {
       acted = false;
+      // Rounds are counted across the whole calculation (the cache persists between the
+      // fixed-point passes). A join made in a later round rests on earlier joins, which a
+      // partly loaded neighbour can change (dataFrontier rule 2).
+      cache.round = (cache.round || 0) + 1;
       // Only bona-fide cities can participate. Iterating every isolated footprint made
       // this O(all clusters^3), freezing dense-city pages even though almost all of
       // those clusters could never satisfy the rule.
@@ -819,6 +823,7 @@
         uf.union(t.a, t.b); uf.union(t.b, t.c);
         warnings.push({
           type: 'three-villages',
+          round: cache.round,
           text: 'Three-villages rule (SA HaRav 398:12) merged three settlements using the disclosed outer-center lowering axis; confirm the axis if an irregular outline makes another placement material.',
           middleComponentKeys: [...B.componentKeys],
           outerComponentKeys: [A.componentKeys, C.componentKeys].map((keys) => [...keys]),
@@ -1180,15 +1185,12 @@
     const validatedPerimeter = Array.isArray(settings.validatedCityPerimeter) && settings.validatedCityPerimeter.length >= 3
       ? settings.validatedCityPerimeter.map(rot) : null;
     const perimeterActive = !!(validatedPerimeter && pointInOrOnRing(workPin, validatedPerimeter));
-    const mode = perimeterActive || selectedClosures.length ? 'city' : homeBuilding >= 0 ? 'building' : 'point';
-    let home = selectedClosures.length === 1 ? cityModels[selectedClosures[0].indices[0]].clusterIndex : -1;
-    markStage('homeSelection');
 
     let squaring = null, cityPolygons = [], karpefPolygons = [], techumPolygons = [], mil12Polygons = [];
     let pointModeWorldFrame = false;
     const concavity = [];
     const regionDefToRing = (def, expansion) => rectCornersInFrame(expandRect(def.rect, expansion || 0), def.angleRad);
-    const applyShapeRules = (defs, sourceCluster, sourceAngle) => {
+    const applyShapeRules = (defs, sourceCluster, sourceAngle, collected) => {
       if (!sourceCluster || !sourceCluster.members.length) return defs;
       const framedBuildings = work.map((building) => {
         const ring = building.ring.map((point) => toOrientedFrame(point, sourceAngle));
@@ -1240,7 +1242,7 @@
         }
         warning.appliedToBoundary = exclude;
         warning.frameAngleRad = sourceAngle;
-        concavity.push(warning);
+        collected.push(warning);
         if (exclude) {
           for (const mask of warning.maskRects || [warning.region]) {
             pieces = pieces.flatMap((piece) => subtractRect(piece.rect, mask)
@@ -1250,6 +1252,58 @@
       }
       return pieces;
     };
+    // Each town's final boundary (its squared regions after the bow/hole rules), built once. Its
+    // bow/hole review notes are reported only for the towns the result uses.
+    const buildClosureBoundary = (closure) => {
+      const found = [];
+      let defs;
+      if (closure.redraw) {
+        const members = closure.indices.flatMap((index) => cityModels[index].cluster.members);
+        const combined = { members, bbox: closure.redraw.rect };
+        defs = applyShapeRules([{ rect: closure.redraw.rect, angleRad: closure.redraw.angleRad }], combined, closure.redraw.angleRad, found);
+      } else {
+        defs = closure.indices.flatMap((index) => {
+          const model = cityModels[index];
+          return applyShapeRules([{ rect: model.sq.rect, angleRad: model.sq.angleRad }], model.cluster, model.sq.angleRad, found);
+        });
+      }
+      return {
+        defs,
+        concavity: found,
+        city: defs.map((def) => regionDefToRing(def, 0)),
+        karpef: settings.karpef ? defs.map((def) => regionDefToRing(def, karpefM)) : [],
+        techum: defs.map((def) => regionDefToRing(def, techumM + (settings.karpef ? karpefM : 0))),
+        mil12: defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0))),
+      };
+    };
+    const boundaryCache = new Map();
+    const boundaryOf = (closure) => {
+      if (!boundaryCache.has(closure)) boundaryCache.set(closure, buildClosureBoundary(closure));
+      return boundaryCache.get(closure);
+    };
+    // §1.10a priority (1): when several starting areas hold a pin that is in none of their houses,
+    // the town whose own 70⅔-amah component physically holds the pin governs. A component's
+    // physical area is its footprints, each grown by half the 70⅔-amah gap (§1.4: buffer each
+    // footprint by half the gap, union, dissolve), so a pin in the street between a town's houses
+    // is in that town. Two towns' areas never overlap: footprints within 70⅔ amos of each other
+    // are one component. This applies only inside the town's own squared walls (its final
+    // starting area without the karpef): the strip up to half the gap beyond the outermost houses
+    // can be open field, and whether a person there rests in that town when another town's area
+    // also holds him is open (Part 7), so the common area of every candidate stays, with a note.
+    let besideTown = false;
+    if (physicalCityModel < 0 && !perimeterActive && selectedClosures.length > 1) {
+      const half = joinM / 2;
+      const pinBox = { minX: workPin.x, maxX: workPin.x, minY: workPin.y, maxY: workPin.y };
+      const holding = selectedClosures.filter((closure) => closure.indices.some((index) =>
+        cityModels[index].cluster.members.some((member) => bboxGap(pinBox, work[member].bbox) <= half &&
+          ringDistToPoint(workPin, work[member].ring) <= half)));
+      const walled = holding.filter((closure) => boundaryOf(closure).city.some((ring) => pointInOrOnRing(workPin, ring)));
+      if (walled.length === 1) selectedClosures = walled;
+      else if (holding.length) besideTown = true;
+    }
+    const mode = perimeterActive || selectedClosures.length ? 'city' : homeBuilding >= 0 ? 'building' : 'point';
+    let home = selectedClosures.length === 1 ? cityModels[selectedClosures[0].indices[0]].clusterIndex : -1;
+    markStage('homeSelection');
 
     if (mode === 'city' && perimeterActive) {
       squaring = deriveSquaring(validatedPerimeter, { reviewerAngleApplied: angle !== 0 });
@@ -1260,27 +1314,8 @@
       mil12Polygons = defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0)));
       warnings.push({ type: 'validated-perimeter', text: 'A reviewer-supplied validated enclosure is being used as the city edge. The app did not infer its hukaf-l\'dira status; confirm the supplied perimeter and ruling.' });
     } else if (mode === 'city') {
-      const buildClosureBoundary = (closure) => {
-        let defs;
-        if (closure.redraw) {
-          const members = closure.indices.flatMap((index) => cityModels[index].cluster.members);
-          const combined = { members, bbox: closure.redraw.rect };
-          defs = applyShapeRules([{ rect: closure.redraw.rect, angleRad: closure.redraw.angleRad }], combined, closure.redraw.angleRad);
-        } else {
-          defs = closure.indices.flatMap((index) => {
-            const model = cityModels[index];
-            return applyShapeRules([{ rect: model.sq.rect, angleRad: model.sq.angleRad }], model.cluster, model.sq.angleRad);
-          });
-        }
-        return {
-          defs,
-          city: defs.map((def) => regionDefToRing(def, 0)),
-          karpef: settings.karpef ? defs.map((def) => regionDefToRing(def, karpefM)) : [],
-          techum: defs.map((def) => regionDefToRing(def, techumM + (settings.karpef ? karpefM : 0))),
-          mil12: defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0))),
-        };
-      };
-      const boundaries = selectedClosures.map(buildClosureBoundary);
+      const boundaries = selectedClosures.map(boundaryOf);
+      for (const boundary of boundaries) concavity.push(...boundary.concavity);
       // Several disjoint starting areas contain a pin that is in none of their houses.
       // Under every overlap policy the engine must not pick one by input order; the
       // conservative common area applies (spec §1.10a; rev. 17 extends it beyond no-join).
@@ -1292,6 +1327,7 @@
         warnings.push({ type: 'multiple-home-candidates', text: overlapPolicy === 'no-join'
           ? 'The pin lies only in the empty overlap of unrelated no-join city squares. The displayed boundary is the conservative common area of every candidate; a rav must identify the governing city for a larger result.'
           : 'The pin lies only in the empty overlap of separate city starting areas. The displayed boundary is the conservative common area of every candidate; a rav must identify the governing city for a larger result.' });
+        if (besideTown) warnings.push({ type: 'pin-beside-town', text: 'The pin is within half of 70⅔ amos of a town’s house but outside that town’s squared walls (beside its outermost houses, or in a part of the square its boundary leaves out), and another town’s area also holds it. Whether a person standing there rests in the first town is an open question for rav review (spec Part 7, “The strip beside a town’s outermost houses”). The boundary shown is the common area of both towns; if he rests in the first town, its own larger boundary applies.' });
         squaring = { method: 'candidate-intersection', angleRad: 0, rectangularity: null };
       } else {
         const boundary = boundaries[0];
@@ -1411,8 +1447,96 @@
     return result;
   }
 
+  // ---------- How much map data a result needs (spec rev. 18.1) ----------
+  // The engine applies its rules only to the buildings it is given, so the app widens the loaded
+  // area until a result needs nothing outside it. With a margin of 141⅓ amos plus 60 m of
+  // footprint error, the loaded area must hold:
+  //   1. the whole techum of every town whose squared area could hold the pin: the three-villages
+  //      rule reaches 2000 amos (SA HaRav 398:12), and a swallowed city lies inside the techum;
+  //   2. in full, every town within 2000 amos of a settlement the three-villages rule joined to
+  //      such a town in a later round (after an earlier join): with the rest of that neighbour,
+  //      an earlier round could join it to the settlement first and the later join could fail,
+  //      so a partly loaded neighbour can make the town too large;
+  //   3. the houses joined to the pin's building, while too few are loaded to make a city.
+  // This is not a proof that nothing outside can change the result. A middle village that runs
+  // out of the loaded area can reach an outer village farther out, and that join is then missed,
+  // so the town comes out smaller (spec rev. 18.1, open). Loading every possible partner whole,
+  // two 2000-amah steps out, finds those joins but needs more than the 40,000-building data limit
+  // around New Square and Monsey; proving every chain means loading every town linked by
+  // 2000-amah steps, which around Monsey passed 132,116 buildings and 28 km without ending.
+  // `loaded` is a {south, west, north, east} box in degrees; `pin` is in the result's local
+  // meters. Returns the box to add, or null when the result needs nothing more. There is no
+  // limit on the number of widenings: the caller's building-count data limit is the only stop.
+  function dataFrontier(result, proj, loaded, pin) {
+    if (!result || !Array.isArray(result.clusters)) return null;
+    const { t2, techumM, karpefM } = result.thresholds;
+    const margin = t2 + 60;
+    const dLat = margin / proj.mPerDegLat;
+    const dLon = margin / (proj.mPerDegLat * Math.cos((proj.lat0 * Math.PI) / 180));
+    const toDegrees = (box) => {
+      const corners = [[box.minX, box.minY], [box.maxX, box.minY], [box.maxX, box.maxY], [box.minX, box.maxY]]
+        .map(([x, y]) => proj.toLatLon(x, y));
+      return { south: Math.min(...corners.map((p) => p.lat)), north: Math.max(...corners.map((p) => p.lat)),
+        west: Math.min(...corners.map((p) => p.lon)), east: Math.max(...corners.map((p) => p.lon)) };
+    };
+    const grow = (box, k) => ({ south: box.south - k * dLat, north: box.north + k * dLat,
+      west: box.west - k * dLon, east: box.east + k * dLon });
+    const holds = (box) => box.south >= loaded.south && box.north <= loaded.north &&
+      box.west >= loaded.west && box.east <= loaded.east;
+    let want = null;
+    const need = (localBox) => {
+      const box = toDegrees(localBox);
+      if (holds(grow(box, 1))) return;
+      const wider = grow(box, 3);
+      want = want ? { south: Math.min(want.south, wider.south), north: Math.max(want.north, wider.north),
+        west: Math.min(want.west, wider.west), east: Math.max(want.east, wider.east) } : wider;
+    };
+    const boxOf = (corners) => bboxOfRing(corners);
+    // 1. The home town, every candidate of a shared overlap, and, for a pin left outside every
+    //    town, each town whose squared box with the karpef holds it.
+    const towns = new Set(result.homeCluster >= 0 ? [result.homeCluster] : []);
+    for (const group of result.homeCandidates || []) for (const index of group) towns.add(index);
+    if (result.mode !== 'city' && pin) {
+      result.clusters.forEach((cluster, index) => {
+        if (cluster.qualifiesAsCity && pointInOrOnRing(pin, rectCornersInFrame(expandRect(boxOf(cluster.corners), karpefM), 0))) towns.add(index);
+      });
+    }
+    // The houses joined to the pin's building, while too few of them are loaded to make a city: a
+    // town cut by the edge of the loaded area can look like a few lone houses.
+    if (result.homeBuilding >= 0) {
+      const own = result.clusters.find((cluster) => !cluster.qualifiesAsCity && cluster.members.includes(result.homeBuilding));
+      if (own) need(boxOf(own.corners));
+    }
+    if (!towns.size) return want;
+    const townKeys = new Set();
+    for (const index of towns) {
+      const cluster = result.clusters[index];
+      need(expandRect(boxOf(cluster.corners), karpefM + techumM));
+      for (const key of cluster.componentKeys || [cluster.key]) townKeys.add(key);
+    }
+    for (const ring of result.techumRegions || []) need(boxOf(ring));
+    // 2. Towns within 2000 amos of a settlement joined to one of those towns by three villages
+    //    in a later round.
+    const partnerKeys = new Set();
+    for (const warning of result.warnings || []) {
+      if (warning.type !== 'three-villages' || !(warning.round > 1)) continue;
+      const keys = [...(warning.middleComponentKeys || []), ...(warning.outerComponentKeys || []).flat()];
+      if (keys.some((key) => townKeys.has(key))) keys.forEach((key) => partnerKeys.add(key));
+    }
+    if (partnerKeys.size) {
+      const partners = (result.qualificationClusters || []).filter((cluster) => partnerKeys.has(cluster.key))
+        .map((cluster) => boxOf(cluster.corners));
+      for (const cluster of result.clusters) {
+        if (!cluster.qualifiesAsCity) continue;
+        const box = boxOf(cluster.corners);
+        if (partners.some((partner) => bboxGap(partner, box) <= techumM)) need(box);
+      }
+    }
+    return want;
+  }
+
   return {
-    AMOS, makeProjection, runPipeline, bufferRing,
+    AMOS, makeProjection, runPipeline, bufferRing, dataFrontier,
     // exported for tests
     _internals: {
       bboxOfRing, bboxGap, expandRect, ringDist,

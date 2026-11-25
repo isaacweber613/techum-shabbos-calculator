@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.5.4 (2026-11-09)';
+  const ENGINE_VERSION = '1.5.5 (2026-11-25)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -23,6 +23,7 @@
     overrides: new Map(), // id -> 'include' | 'exclude'
     result: null,
     fetchBBox: null,      // {south, west, north, east}
+    fromSnapshot: false,  // loaded buildings came from a snapshot: never refetched
     dataCapHit: false,
     dataRelease: null,
     correctionsApplied: 0,
@@ -488,6 +489,7 @@
     const perf = { passes: [], buildings: 0 };
     document.getElementById('performance-report').hidden = true;
     state.dataCapHit = false;
+    state.dataCapReason = null;
     state.fromCache = false;
     // Switch frames only once this pin's buildings arrive; the previous buildings stay
     // projected in their own frame if the first fetch fails.
@@ -507,10 +509,11 @@
       } catch (e) {
         if (isStale()) return;
         if (iteration > 0 && state.result) {
-          // A completed, analyzed pass already exists. Keep it, flagged exactly like a data
-          // cap (the chain may continue beyond the fetched area — techum is an inner bound),
-          // rather than discarding the whole calculation because a wider pass failed.
+          // A completed, analyzed pass already exists. Keep it, flagged as incomplete like a
+          // data limit (the town may continue beyond the loaded area), rather than discarding
+          // the whole calculation because a wider pass failed.
           state.dataCapHit = true;
+          state.dataCapReason = 'failed';
           expansionError = e;
           perf.passes.push({ pass: iteration + 1, buildings: 0, fetchMs: performance.now() - fetchStarted,
             prepMs: 0, engineMs: 0, engineStages: null, failed: true });
@@ -526,6 +529,7 @@
       // configured safety limit (the old behavior reached 80k under a 60k cap).
       if (iteration > 0 && fetched.buildings.length > settings.maxBuildings) {
         state.dataCapHit = true;
+        state.dataCapReason = 'buildings';
         perf.passes.push({ pass: iteration + 1, buildings: fetched.buildings.length, fetchMs,
           prepMs: 0, engineMs: 0, engineStages: null, skippedAtDataCap: true });
         break;
@@ -538,6 +542,7 @@
       state.dataRelease = fetched.release || state.dataRelease;
       state.correctionsApplied = fetched.correctionsApplied || 0;
       state.fetchBBox = bbox;
+      state.fromSnapshot = false;
       const prepStarted = performance.now();
       prepareBuildings();
       // Never move the shevisa point automatically. A nearby mapped footprint is
@@ -560,15 +565,15 @@
       const engineMs = performance.now() - engineStarted;
       perf.passes.push({ pass: iteration + 1, buildings: state.rawBuildings.length, fetchMs, prepMs, engineMs,
         engineStages: state.result && state.result.engineTimings ? state.result.engineTimings : null });
+      // Widen until the result needs no building outside the loaded area: the town's whole
+      // techum, and the towns that can change a three-villages join with it (G.dataFrontier).
+      // There is no halachic cap and no limit on the number of widenings; the building-count
+      // data limit is the only stop, and the result is then marked incomplete.
+      const needed = G.dataFrontier(state.result, state.proj, bbox, state.proj.toXY(state.pin.lat, state.pin.lon));
+      if (!needed) break;
       if (state.rawBuildings.length > settings.maxBuildings) {
         state.dataCapHit = true;
-        break;
-      }
-      // Expand if the home city's rectangle approaches the fetched area's edge —
-      // the chain might continue beyond the data we have (no halachic cap; data cap only).
-      const needed = neededExpansion(bbox);
-      if (!needed || iteration >= settings.maxExpandIterations) {
-        state.dataCapHit = !!needed;
+        state.dataCapReason = 'buildings';
         break;
       }
       bbox = bboxUnionDeg(bbox, needed);
@@ -598,7 +603,9 @@
     const cacheLabel = state.fromCache
       ? `${releaseLabel} data from cache (${ageLabel}).`
       : `Fresh ${releaseLabel} footprints.`;
-    setStatus(`Done — ${state.rawBuildings.length} buildings analyzed. ` +
+    setStatus((state.dataCapHit
+      ? `Incomplete — stopped after ${state.rawBuildings.length} buildings; the town continues past the loaded map data. `
+      : `Done — ${state.rawBuildings.length} buildings analyzed. `) +
       (state.result && state.result.mode === 'city'
         ? 'Techum drawn from the squared city. '
         : state.result && state.result.mode === 'building'
@@ -606,7 +613,7 @@
           : 'Point-shevisa techum drawn. ') +
       cacheLabel +
       (expansionError ? ` ⚠ Could not load the wider area the city may extend into (${expansionError.message}); ` +
-        'the boundary is an inner bound — recalculate to retry.' : ''));
+        'the boundary may be too large or too small — recalculate to retry.' : ''));
     finishCalculationProgress(true);
     track('calc', {
       q: state.lastQuery || null, label: state.lastLabel || null,
@@ -638,28 +645,6 @@
     el.innerHTML = `<strong>Calculation time: ${(perf.totalMs / 1000).toFixed(1)}s</strong><span>${escapeHtml(reason + stageSummary)} ${perf.passes.length} map pass(es), ${perf.buildings.toLocaleString()} footprints.</span><span class="performance-actions"><button type="button" id="btn-dismiss-performance" aria-label="Dismiss performance report">Dismiss</button></span>`;
     el.hidden = false;
     document.getElementById('btn-dismiss-performance').onclick = () => { el.hidden = true; };
-  }
-
-  function neededExpansion(bbox) {
-    const res = state.result;
-    if (!res || res.mode !== 'city' || !res.cityCorners) return null;
-    const margin = res.thresholds.t2 + 60; // 141 1/3 amos + footprint-error margin
-    const proj = state.proj;
-    const regions = res.cityRegions && res.cityRegions.length ? res.cityRegions : [res.cityCorners];
-    const pts = regions.flat().map((p) => proj.toLatLon(p.x, p.y));
-    const lats = pts.map((p) => p.lat), lons = pts.map((p) => p.lon);
-    const dLat = margin / proj.mPerDegLat;
-    const dLon = margin / (proj.mPerDegLat * Math.cos((state.pin.lat * Math.PI) / 180));
-    let grow = null;
-    const want = {
-      south: Math.min(...lats) - 3 * dLat, north: Math.max(...lats) + 3 * dLat,
-      west: Math.min(...lons) - 3 * dLon, east: Math.max(...lons) + 3 * dLon,
-    };
-    if (Math.min(...lats) - dLat < bbox.south || Math.max(...lats) + dLat > bbox.north ||
-        Math.min(...lons) - dLon < bbox.west || Math.max(...lons) + dLon > bbox.east) {
-      grow = want;
-    }
-    return grow;
   }
 
   function prepareBuildings() {
@@ -1001,6 +986,19 @@
     }
     if (generation !== latestAnalysisId) return null;
     state.result = result;
+    // A re-analysis of the loaded buildings (a changed setting, profile, pin or override) can
+    // need map data the last search did not load; a larger amah makes a larger town. A live
+    // result then runs the whole search again, so it never depends on what was loaded for the
+    // previous settings. A snapshot is never refetched; it is marked incomplete instead, and so
+    // is a snapshot that does not record its loaded area, since it cannot be checked.
+    if (!skipRender && !state.fetchBBox && state.fromSnapshot && state.pin) {
+      state.dataCapHit = true; state.dataCapReason = 'snapshot-area-unknown';
+    } else if (!skipRender && state.fetchBBox && state.pin) {
+      const more = G.dataFrontier(result, state.proj, state.fetchBBox, state.proj.toXY(state.pin.lat, state.pin.lon));
+      if (!more) { state.dataCapHit = false; state.dataCapReason = null; }
+      else if (state.fromSnapshot) { state.dataCapHit = true; state.dataCapReason = 'snapshot'; }
+      else if (!state.dataCapHit) { void calculate(false); return result; }
+    }
     if (!skipRender) { render(); setRetryVisible(false); }
     return result;
   }
@@ -1141,8 +1139,11 @@
     };
     if (document.getElementById('layer-techum').checked)
       addRegions(res.techumRegions || [res.techumCorners], { color: MAP_PALETTE.pinkStroke, weight: 3.5, fill: true,
-        fillColor: MAP_PALETTE.pink, fillOpacity: 0.38, casing: true },
-      'PINK TECHUM AREA — 2000 amos (' + settings.amahCm + ' cm amah)');
+        fillColor: MAP_PALETTE.pink, fillOpacity: 0.38, casing: true,
+        // An incomplete result (the map data ran out) is drawn dashed, not as a confident line.
+        ...(state.dataCapHit ? { dashArray: '10 7' } : {}) },
+      'PINK TECHUM AREA — 2000 amos (' + settings.amahCm + ' cm amah)' +
+        (state.dataCapHit ? ' · INCOMPLETE: the map data ran out' : ''));
     if ((res.karpefRegions || []).length && document.getElementById('layer-karpef').checked)
       addRegions(res.karpefRegions, { color: MAP_PALETTE.greenStroke, weight: 2, dashArray: '6 5',
         fill: true, fillColor: MAP_PALETTE.greenSoft, fillOpacity: 0.2 }, 'Karpef (+70⅔ amos — Rema/MB 398:36)');
@@ -1165,21 +1166,33 @@
     // fetch it can monopolize the main thread for minutes, so keep the primary result
     // responsive and omit the comparison at large scale.
     const canRenderVerifiedScenario = state.buildings.length <= COMPARISON_SCENARIO_MAX_BUILDINGS;
+    // Each extra line is its own result on the buildings loaded for the main one. A larger amah
+    // makes a larger town, so a line can need map data that was not loaded; it is then labelled
+    // incomplete on the map and in the answer, never shown as a finished line.
+    const scenarioIncomplete = (scenario) => state.dataCapHit || !state.fetchBBox ||
+      !!G.dataFrontier(scenario, state.proj, state.fetchBBox, state.proj.toXY(state.pin.lat, state.pin.lon));
+    const cutLabel = ' · INCOMPLETE: needs map data that was not loaded';
+    state.scenarioIncomplete = { verified: false, comparison: false };
     if (settings.showVerifiedOnly && res.mode === 'city' && canRenderVerifiedScenario) {
       const verifiedB = state.buildings.map((b) => ({ ...b, included: isVerifiedIncluded(b) }));
       if (verifiedB.some((b) => b.included)) {
         const resV = G.runPipeline(verifiedB, geometrySettings(), state.proj.toXY(state.pin.lat, state.pin.lon));
+        const resVIncomplete = scenarioIncomplete(resV);
+        state.scenarioIncomplete.verified = resVIncomplete;
         if (resV.techumCorners)
-          addRegions(resV.techumRegions || [resV.techumCorners], { color: '#ffb300', weight: 2.5, dashArray: '8 6', fill: false },
-            'Scenario: verified dwellings only (' + (resV.mode === 'city' ? 'city' : resV.mode === 'building' ? 'building shevisa' : 'point shevisa!') + ') — data-uncertainty bracket, not a psak', layerGroups.second);
+          addRegions(resV.techumRegions || [resV.techumCorners], { color: '#ffb300', weight: 2.5, dashArray: resVIncomplete ? '2 6' : '8 6', fill: false },
+            'Scenario: verified dwellings only (' + (resV.mode === 'city' ? 'city' : resV.mode === 'building' ? 'building shevisa' : 'point shevisa!') + ') — data-uncertainty bracket, not a psak' +
+            (resVIncomplete ? cutLabel : ''), layerGroups.second);
       }
     }
 
     // comparison shita line (full second pipeline run — thresholds change with the amah)
     if (canRunComparisonAmah()) {
       const res2 = G.runPipeline(state.buildings, geometrySettings(settings.secondAmahCm), state.proj.toXY(state.pin.lat, state.pin.lon));
-      addRegions(res2.techumRegions || [res2.techumCorners], { color: '#e040fb', weight: 2.5, dashArray: '10 6', fill: false },
-        'Comparison: techum @ ' + (settings.secondAmahCm / 2.54).toFixed(2) + ' in amah', layerGroups.second);
+      const res2Incomplete = scenarioIncomplete(res2);
+      state.scenarioIncomplete.comparison = res2Incomplete;
+      addRegions(res2.techumRegions || [res2.techumCorners], { color: '#e040fb', weight: 2.5, dashArray: res2Incomplete ? '2 6' : '10 6', fill: false },
+        'Comparison: techum @ ' + (settings.secondAmahCm / 2.54).toFixed(2) + ' in amah' + (res2Incomplete ? cutLabel : ''), layerGroups.second);
     }
 
     renderAuditRings();
@@ -1451,6 +1464,21 @@
     const provisionalHome = (res.qualificationClusters || []).filter((cluster) =>
       cluster.qualificationProvisional && cluster.qualifiesAsCity && homeComponentKeys.has(cluster.key));
     const lines = [];
+    if (state.dataCapHit) {
+      // A town cut off by the data limit is not an inner bound. A cut-off neighbour can make a
+      // three-villages join come out either way, so the boundary can be too large as well as too
+      // small, and the home town itself can be the wrong one. First in the answer.
+      const capHelp = state.dataCapReason === 'failed'
+        ? 'Loading a wider area failed. Calculate again to retry.'
+        : state.dataCapReason === 'snapshot'
+          ? 'This snapshot holds less map data than these settings need. Calculate again to load the rest.'
+          : state.dataCapReason === 'snapshot-area-unknown'
+            ? 'This snapshot does not record which area its map data covers, so it cannot be checked. Calculate again to load the data.'
+            : `The search stopped at the ${settings.maxBuildings.toLocaleString()}-building data limit. Raise “Max buildings” in settings and calculate again.`;
+      lines.push(`<div class="warn accuracy-status data-limit"><b>Incomplete: the map data ran out</b><span>The town, or a town that can join it, continues past the loaded map data. ` +
+        `With the rest of the data this boundary could be larger or smaller, and the home town could be a different one, so do not rely on it. ` +
+        `There is no halachic limit on a town's length. ${escapeHtml(capHelp)}</span></div>`);
+    }
     if (res.calculationStatus === 'provisional-no-fill') {
       lines.push('<div class="warn"><b>Provisional smaller boundary:</b> a material bow/L pocket has not yet received reviewer-confirmed endpoints. The app has not filled that pocket.</div>');
     }
@@ -1490,6 +1518,14 @@
     if (settings.secondAmahCm && settings.secondAmahCm !== settings.amahCm && state.buildings.length > COMPARISON_SCENARIO_MAX_BUILDINGS) {
       lines.push('<div class="note"><b>Comparison-amah line omitted:</b> this optional second full-city scenario is disabled above 10,000 footprints. Change the primary amah and recalculate to evaluate that shita on a large city.</div>');
     }
+    // An extra line drawn from map data that does not cover its own town.
+    const scenarioCut = state.scenarioIncomplete || {};
+    if (scenarioCut.comparison) {
+      lines.push('<div class="warn">⚠ <b>Comparison line incomplete:</b> with the second amah the town needs map data that was not loaded for the main result, so the dotted comparison line could be larger or smaller. Choose a profile with that amah and calculate to load what it needs.</div>');
+    }
+    if (scenarioCut.verified) {
+      lines.push('<div class="warn">⚠ <b>Verified-dwellings line incomplete:</b> that line’s town needs map data that was not loaded for the main result, so the dotted line could be larger or smaller.</div>');
+    }
     if (res.mode === 'city') lines.push(`<div class="stat"><b>Home city cluster:</b> ${homeSize} counted footprints</div>`);
     if (res.mode === 'building' && res.homeBuilding >= 0) {
       const homeBuilding = state.buildings[res.homeBuilding];
@@ -1501,11 +1537,6 @@
     lines.push(`<div class="stat"><b>Thresholds:</b> join 70⅔ amos = ${(70.667 * amahM).toFixed(1)} m · ` +
       `city-merge 141⅓ = ${(141.333 * amahM).toFixed(1)} m · techum 2000 = ${(2000 * amahM).toFixed(0)} m` +
       (settings.karpef ? ` · karpef +${(70.667 * amahM).toFixed(1)} m` : '') + `</div>`);
-    if (state.dataCapHit) {
-      lines.push(`<div class="warn">⚠ <b>Data limit reached</b> — the built-up chain may continue beyond the fetched area. ` +
-        `There is <b>no halachic cap</b> on chain length; the techum shown is an inner (machmir) bound in those directions. ` +
-        `Raise the fetch limits in settings to extend.</div>`);
-    }
     const seenWarnings = new Map();
     for (const w of res.warnings) {
       const key = w.type + '|' + w.text;
@@ -1648,7 +1679,8 @@
       `Rav-validated enclosure perimeter: ${state.validatedPerimeter ? (settings.useValidatedPerimeter ? 'ACTIVE as city edge' : 'stored but inactive') : 'none'}`,
       `Rav-validated residential joining perimeters: ${state.validatedJoinPerimeters.length} (join geometry only; each counts as zero houses)`,
       `Manual overrides: ${state.overrides.size}${state.overrides.size ? ' [' + [...state.overrides.entries()].map(([id, v]) => id + ':' + v).join(', ') + ']' : ''}`,
-      `Search frontier closed: ${state.dataCapHit ? 'NO — data cap hit, chain may continue; techum is an inner bound in those directions' : 'yes'}`,
+      `Search frontier closed: ${state.dataCapHit ? 'NO — data limit reached; the town continues past the loaded data, so the result is incomplete and may be too large or too small' : 'yes'}`,
+      `Extra lines from cut-off data: ${['comparison', 'verified'].filter((k) => (state.scenarioIncomplete || {})[k]).join(', ') || 'none'}`,
       `Projection: local true-north tangent plane @ pin (per-point lon scaling)`,
       `Shevisa pin: ${state.pin ? state.pin.lat.toFixed(6) + ', ' + state.pin.lon.toFixed(6) : 'n/a'}`,
       `Generated: ${new Date().toISOString()} — DRAFT, requires review by a rav/mumcheh.`,
@@ -1694,7 +1726,7 @@
       || `Snapshot pin (${Number(snap.pin.lat).toFixed(5)}, ${Number(snap.pin.lon).toFixed(5)})`;
     state.lastQuery = null; state.lastLabel = label;
     document.getElementById('address').value = label;
-    state.pin = snap.pin; state.fetchedAt = snap.fetchedAt; state.fetchBBox = snap.fetchBBox;
+    state.pin = snap.pin; state.fetchedAt = snap.fetchedAt; state.fetchBBox = snap.fetchBBox; state.fromSnapshot = true;
     state.dataRelease = snap.dataRelease || null; state.dataSource = snap.dataSource || 'snapshot';
     state.dataCapHit = !!snap.dataCapHit; state.rawBuildings = snap.rawBuildings;
     // Older snapshots did not record this; never carry over the previous calculation's count.
@@ -1840,6 +1872,7 @@
       label: state.lastLabel || (state.pin ? `${state.pin.lat.toFixed(5)}, ${state.pin.lon.toFixed(5)}` : ''),
       profileLabel: eff === 'custom' ? 'Custom (edited) settings' : S.PROFILES[settings.profile].label,
       amahCm: settings.amahCm,
+      incomplete: state.dataCapHit, // a shared image names an incomplete result
     });
   }
 
@@ -1950,7 +1983,7 @@
       exportCaptionForClone.forEach((text, index) => {
         const line = clonedDocument.createElement('div');
         line.textContent = text;
-        if (index === exportCaptionForClone.length - 1) { line.style.color = '#973c58'; line.style.fontWeight = '800'; }
+        if (index === exportCaptionForClone.length - 1 || /^INCOMPLETE/.test(text)) { line.style.color = '#973c58'; line.style.fontWeight = '800'; }
         caption.appendChild(line);
       });
       clonedMap.appendChild(caption);

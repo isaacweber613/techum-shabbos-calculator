@@ -54,8 +54,7 @@
     concavityReviews: {},   // review key -> reviewer-confirmed endpoints and application state
     useValidatedPerimeter: false, // explicit rav-supplied hukaf-l'dira alternative; never inferred
     fetchRadiusM: 1200,
-    maxBuildings: 40000,
-    maxExpandIterations: 4,
+    maxBuildings: 40000,    // the only stop on widening the loaded area (spec rev. 18.1)
     dataSourceVersion: 2,   // migrates prior OSM-era display defaults once
   };
 

@@ -128,12 +128,14 @@
           const isBuilding = modeStat?.textContent.includes('building shevisa') || false;
           const pinConfirmation = original.find((node) => node.classList.contains('pin-confirmation'));
           const accuracyNotes = original.filter((node) => node.classList.contains('accuracy-status'));
+          // A result cut off by the data limit must not read as a finished answer.
+          const incomplete = original.some((node) => node.classList.contains('data-limit'));
           const confidence = document.getElementById('confidence')?.textContent.trim() || '';
           const card = document.createElement('section');
           card.className = 'simple-result-card';
           card.innerHTML = `
-            <h3>${pinConfirmation ? 'Confirm your starting place' : 'Your draft techum is ready'}</h3>
-            <p><b>Pink area = the current draft.</b> The green area is ${isCity ? 'the starting city' : isBuilding ? 'the mapped building used as your starting place' : 'your 4-amah starting square'}.</p>
+            <h3>${pinConfirmation ? 'Confirm your starting place' : incomplete ? 'This result is incomplete' : 'Your draft techum is ready'}</h3>
+            <p><b>${incomplete ? 'Pink dashed area = an incomplete draft. Do not rely on it.' : 'Pink area = the current draft.'}</b> The green area is ${isCity ? 'the starting city' : isBuilding ? 'the mapped building used as your starting place' : 'your 4-amah starting square'}.</p>
             <details class="simple-result-explainer">
               <summary>How was this calculated? <span aria-hidden="true">i</span></summary>
               <p>${isCity
