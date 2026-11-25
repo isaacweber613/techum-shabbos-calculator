@@ -222,7 +222,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-[12]|20261110-[12])'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-[12]|20261110-[12]|20261125-6)'));
   }
 });
 
@@ -440,9 +440,10 @@ test('snapshots record and restore the shared-correction count used in the audit
   assert.match(main, /state\.correctionsApplied = Number\(snap\.correctionsApplied\) \|\| 0/);
 });
 
-test('a failed wider expansion pass keeps the completed pass as a flagged inner bound', () => {
+test('a failed wider expansion pass keeps the completed pass, flagged as incomplete (spec rev. 18.1)', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
-  assert.match(main, /if \(iteration > 0 && state\.result\) \{[\s\S]{0,400}state\.dataCapHit = true;/);
+  assert.match(main, /if \(iteration > 0 && state\.result\) \{[\s\S]{0,400}state\.dataCapHit = true;\s*state\.dataCapReason = 'failed';/);
+  assert.doesNotMatch(main, /the boundary is an inner bound/);
 });
 
 test('background engine loads the same geometry.js build as the page', () => {
@@ -562,4 +563,76 @@ test('public guides name Overture as the footprint source', () => {
   }
 });
 
-console.log(`\n${passed} app tests passed`);
+// Spec rev. 18.1: load all the map data a result needs; say so when the data limit stops it.
+test('the loader widens until dataFrontier asks for nothing, with only the building-count limit, and an incomplete result says so', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const experience = fs.readFileSync(path.join(__dirname, '..', 'js', 'design-experience.js'), 'utf8');
+  assert.doesNotMatch(main, /maxExpandIterations|neededExpansion/);
+  assert.equal('maxExpandIterations' in S.DEFAULTS, false);
+  assert.match(main, /const needed = G\.dataFrontier\(state\.result, state\.proj, bbox, state\.proj\.toXY\(state\.pin\.lat, state\.pin\.lon\)\);\s*if \(!needed\) break;/);
+  assert.match(main, /Incomplete — stopped after \$\{state\.rawBuildings\.length\} buildings/);
+  assert.match(main, /\.\.\.\(state\.dataCapHit \? \{ dashArray: '10 7' \} : \{\}\)/);
+  assert.match(main, /INCOMPLETE: the map data ran out/);
+  // The data-limit note is first in the answer, before every other note.
+  const panel = main.slice(main.indexOf('    const lines = [];'));
+  assert.ok(panel.indexOf('data-limit') >= 0 && panel.indexOf('data-limit') < panel.indexOf('Provisional smaller boundary'));
+  assert.match(experience, /incomplete \? 'This result is incomplete'/);
+  assert.match(experience, /Pink dashed area = an incomplete draft\. Do not rely on it\./);
+});
+
+test('extra lines are checked with dataFrontier and labelled incomplete when the loaded data does not cover them', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.match(main, /const res2Incomplete = scenarioIncomplete\(res2\)/);
+  assert.match(main, /const resVIncomplete = scenarioIncomplete\(resV\)/);
+  assert.match(main, /G\.dataFrontier\(scenario, state\.proj, state\.fetchBBox/);
+  assert.match(main, /Comparison line incomplete/);
+  assert.match(main, /Verified-dwellings line incomplete/);
+  assert.match(main, /INCOMPLETE: needs map data that was not loaded/);
+});
+
+test('an exported PNG of an incomplete result says so in its caption; a complete one keeps its three lines', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const mapExport = require('../js/map-export.js');
+  const plain = mapExport.exportCaptionLines({ label: 'Town', profileLabel: 'Mishna Berurah', amahCm: 48 });
+  const cut = mapExport.exportCaptionLines({ label: 'Town', profileLabel: 'Mishna Berurah', amahCm: 48, incomplete: true });
+  assert.equal(plain.length, 3);
+  assert.equal(plain.some((line) => /INCOMPLETE/.test(line)), false);
+  assert.equal(cut.length, 4);
+  assert.match(cut[2], /^INCOMPLETE/);
+  assert.match(main, /incomplete: state\.dataCapHit/);
+});
+
+// A re-analysis of the loaded buildings (a changed setting or profile) runs main.js recompute
+// with the engine and calculate stubbed.
+const pendingTests = [];
+{
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const source = main.slice(main.indexOf('  async function recompute(skipRender) {'), main.indexOf('  function cornersToLatLngs(corners) {'));
+  const replay = async ({ more, fromSnapshot = false, dataCapHit = false, fetchBBox = { south: 0, west: 0, north: 1, east: 1 } }) => {
+    const calls = { calculate: 0, render: 0 };
+    const ctx = {
+      state: { pin: { lat: 41, lon: -74 }, proj: { toXY: () => ({ x: 0, y: 0 }) }, buildings: [], fetchBBox,
+        fromSnapshot, dataCapHit, dataCapReason: dataCapHit ? 'buildings' : null, result: null },
+      latestAnalysisId: 0, isIncluded: () => true, geometrySettings: () => ({}),
+      runPipelineAsync: async () => ({ mode: 'city' }), G: { dataFrontier: () => more },
+      calculate: () => { calls.calculate++; }, render: () => { calls.render++; }, setRetryVisible: () => {}, setStatus: () => {},
+    };
+    await vm.runInNewContext(`(${source.trim()})()`, ctx);
+    return { ...calls, dataCapHit: ctx.state.dataCapHit, reason: ctx.state.dataCapReason };
+  };
+  const wider = { south: -1, west: -1, north: 2, east: 2 };
+  const name = 'after a changed setting needs more map data, a live result searches again, a snapshot is marked incomplete without refetching, a result already at the data limit stays marked, one needing nothing more is complete, and a snapshot with no recorded area is marked incomplete';
+  pendingTests.push(Promise.all([replay({ more: wider }), replay({ more: wider, fromSnapshot: true }),
+    replay({ more: wider, dataCapHit: true }), replay({ more: null, dataCapHit: true }), replay({ more: null, fromSnapshot: true, fetchBBox: null })])
+    .then(([live, snapshot, capped, complete, unknown]) => {
+      assert.deepEqual([live.calculate, live.render], [1, 0]);
+      assert.deepEqual([snapshot.calculate, snapshot.render, snapshot.dataCapHit, snapshot.reason], [0, 1, true, 'snapshot']);
+      assert.deepEqual([capped.calculate, capped.render, capped.dataCapHit], [0, 1, true]);
+      assert.deepEqual([complete.calculate, complete.render, complete.dataCapHit], [0, 1, false]);
+      assert.deepEqual([unknown.calculate, unknown.render, unknown.dataCapHit, unknown.reason], [0, 1, true, 'snapshot-area-unknown']);
+      passed++; console.log('  ok  ' + name);
+    })
+    .catch((e) => { console.error('FAIL  ' + name + ' — ' + e.message); process.exitCode = 1; }));
+}
+
+Promise.all(pendingTests).then(() => console.log(`\n${passed} app tests passed`));

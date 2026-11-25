@@ -42,11 +42,13 @@
   }
 
   // Caption burned into exported map images so a shared PNG names its place and shita.
-  function exportCaptionLines({ label, profileLabel, amahCm }) {
+  function exportCaptionLines({ label, profileLabel, amahCm, incomplete }) {
     const amah = Number(amahCm);
     return [
       String(label || 'Selected map point'),
       `${profileLabel} · amah ${(amah / 2.54).toFixed(2)} in (${amah} cm) · 2,000 amos = ${Math.round(20 * amah).toLocaleString('en-US')} m`,
+      // The dashed line of an incomplete result does not explain itself on a shared image.
+      ...(incomplete ? ['INCOMPLETE — the map data ran out; this boundary could be larger or smaller. Do not rely on it.'] : []),
       'DRAFT — decision support, not a psak. Review with a rav/mumcheh.',
     ];
   }

@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 18, 2026-11-09) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 18.1, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -840,6 +840,48 @@ both orders, a 900-village field, the point square, and the antimeridian.
   city squared to the world directions." The drawn boundary was already correct. The label
   now says joint redraw only when two or more cities were redrawn together. Engine version 1.5.4.
 
+### Rev. 18.1 — 2026-11-25 (two data fixes released ahead of the rev. 19–27 review branch; no psak default changes)
+
+Released on its own from the review of pull request #61 (spec revs. 19–27, unmerged). Only
+these two fixes; nothing else from that branch.
+
+- **Monsey was cut off by a loading limit, not by the halacha.** The app widened the loaded
+  map area at most 4 times and looked only 141⅓ amos + 60 m past the town. Monsey (Mishna
+  Berurah profile) stopped at 6,401 buildings with 2,789 houses. The old note called that an
+  inner bound, but a cut-off neighbour can make a three-villages join come out either way, so a
+  cut-off result can be too large as well as too small. The widening limit is gone. The app
+  widens until the loaded area holds (1) the whole techum of every town whose squared area could
+  hold the pin, (2) in full, every town within 2000 amos of a settlement the three-villages rule
+  joined to that town after an earlier join, and (3) the houses joined to the pin's building
+  while too few are loaded to make a city (`dataFrontier` in `js/geometry.js`). Monsey now needs
+  14,261 buildings in 4 passes and has 2,820 houses in 54 parts; two pins in the town and both
+  profile orders give the same town. The building-count data limit (40,000 by default, a
+  setting) is the only stop; when it is reached, the answer says "Incomplete" and that the
+  boundary could be larger or smaller, the pink line is dashed, and the status line, answer
+  card, audit text and exported image say so. A changed setting that needs more data searches
+  again; a snapshot is never refetched and is marked incomplete when it holds too little data
+  or does not record its area. A comparison-amah or verified-dwellings line that needs data the
+  main result did not load is labelled incomplete.
+- **This is not a proof that nothing outside the loaded area can change the result.** A middle
+  village that runs out of the loaded area can reach an outer village farther out; that join is
+  then missed and the town comes out smaller. On made-up maps the result depended on where the
+  search started in 138 of 300 maps, always smaller. Loading every possible partner whole, two
+  2000-amah steps out, removed that in 5,400 made-up runs, but around New Square (Mishna
+  Berurah) it passed the 40,000-building limit, so New Square would show "Incomplete", with the
+  same 6,193 houses this rule finds in 25,120 buildings. A complete check of every chain of
+  2000-amah steps around Monsey passed 132,116 buildings and 28 km without ending, with the
+  home town unchanged. An open engineering question, not a halachic one.
+- **Woodbourne's centre gave 0 houses.** §1.10a's first priority, "the component physically
+  containing the pin", was read as "inside a footprint". A component's area is its footprints
+  grown by half the 70⅔-amah gap (§1.4: buffer each footprint by half the gap, union,
+  dissolve), so a pin in the street between a town's houses, inside that town's squared walls,
+  is in that town even where another town's starting area also covers it. Woodbourne's centre
+  now gives 92 houses. Outside the town's walls, in the strip beside its outermost houses, the
+  common area of both towns stays, with a review note (Part 7, open question "The strip beside a
+  town's outermost houses").
+- No psak default changed. Engine 1.5.5. Tests: `tests/geometry.test.js` and
+  `tests/app.test.js` (spec rev. 18.1 cases).
+
 ## Part 3 — Product spec
 
 ### 3.0 Scope & users
@@ -1025,6 +1067,13 @@ the UI for building-level review is the bulk of the work.
     measurement; Tikun Eruvin as reported by Millunchick gives a possible slope-procedure
     difference up to about 9.1%. Default to the modern-map mehalich; a posek may select and
     document a sourced adjustment for a particular terrain calculation.
+
+**The strip beside a town's outermost houses** (open, added rev. 18.1). A pin on no footprint,
+within half of 70⅔ amos (16.96 m at 48 cm) of a town's house but outside that town's squared
+walls, can be open field beside the town, in its karpef. When another town's starting area also
+holds it, is the person resting in the first town? Default: the common area of both towns, with
+a review note (`pin-beside-town`). Inside the town's own walls, in the street between its houses,
+he is in that town (§1.10a first priority; §1.4).
 
 **Validation benchmarks:** the tool is city-agnostic; these are continuing cross-checks,
 not scope or release blockers:
