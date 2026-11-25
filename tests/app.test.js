@@ -222,7 +222,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-[12]|20261110-[12])'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-[12]|20261110-[12]|20261125-[12])'));
   }
 });
 
@@ -264,7 +264,7 @@ test('Google Maps is preferred with a metered same-site config and original-map 
 test('settings profile and non-default analytics stay deterministic', () => {
   const ci = S.applyProfile({ ...S.DEFAULTS }, 'chazon-ish');
   assert.equal(S.effectiveProfile(ci), 'chazon-ish');
-  assert.equal(ci.overlapPolicy, 'join-redraw');
+  assert.equal(ci.overlapPolicy, 'no-join'); // spec rev. 20
   ci.karpef = false;
   assert.equal(S.effectiveProfile(ci), 'custom');
   assert.equal(S.diffFromDefaults(ci).karpef, false);

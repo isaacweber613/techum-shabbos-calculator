@@ -19,7 +19,11 @@
   const DWELLING_TAGS = new Set([
     'house', 'residential', 'apartments', 'detached', 'semidetached_house',
     'semi_detached', 'terrace', 'terraced_house', 'bungalow', 'dormitory',
-    'cabin', 'farm', 'houseboat', 'static_caravan', 'ger', 'stilt_house',
+    'cabin', 'farm', 'ger', 'stilt_house',
+    // Rev. 20: wooden cabins count fully (SA OC 398:10, "of stone or of boards"); a
+    // structure built as a dwelling counts even when nobody lives in it (MB 398:19), so
+    // seasonal cottages tagged as houses count all year. houseboat and static_caravan
+    // moved to the special rules below.
   ]);
   const NON_DWELLING_TAGS = new Set([
     'garage', 'garages', 'shed', 'roof', 'carport', 'greenhouse', 'barn', 'stable',
@@ -29,6 +33,8 @@
     'water_tower', 'storage_tank', 'silo', 'bunker', 'construction', 'grandstand',
     'stadium', 'sports_hall', 'sports_centre', 'pavilion', 'toilets', 'hangar',
     'digester', 'slurry_tank', 'container', 'tent', 'gazebo', 'bridge',
+    // Rev. 20: a touring caravan is like the house on a ship (SA OC 398:6) — not counted.
+    'caravan', 'touring_caravan',
   ]);
   const REVIEW_TAGS = new Set([
     'synagogue',   // extends the city ONLY with an attendant's dirah (SA HaRav 398:8)
@@ -64,6 +70,27 @@
   };
   const SUBTYPE_REVIEW_TAGS = new Set(['farm_unclassified']);
 
+  // Rev. 20 special rules (spec rev. 20 notes). Both go to review so they are always flagged.
+  //   excludeByDefault: left out unless a reviewer includes the building.
+  //   noCityCount: joins a town in the 70⅔ chain but adds 0 to the count that forms a town.
+  const SPECIAL_REVIEW_TAGS = {
+    // A dwelling on a ship does not join the town (Eruvin 55b; Rambam Shabbos 28:4; SA OC
+    // 398:6). Whether a boat that never leaves its berth is different is disputed.
+    houseboat: {
+      reason: 'building=houseboat — a dwelling on a boat does not extend the town by default (SA OC 398:6); ' +
+        'some poskim may count a boat that never leaves its berth. A rav may include it to see the town with it counted.',
+      excludeByDefault: true,
+    },
+    // Fixed on a site: joins an existing town (MB 398:33 by inference), but whether caravans
+    // alone make a town is disputed (MA 398:15 / MB 398:49 vs Eliyah Rabbah 398:14), and the
+    // map cannot tell a seasonal caravan from a year-round one.
+    static_caravan: {
+      reason: 'building=static_caravan — joins an existing town but is not counted toward the minimum that forms a town; ' +
+        'a seasonal caravan, or a site of caravans only, needs a rav.',
+      noCityCount: true,
+    },
+  };
+
   function classify(tags) {
     let b = (tags && tags.building) || 'yes';
     const subtype = tags && tags.overture_subtype;
@@ -75,6 +102,11 @@
       }
       const cls = classify(Object.assign({}, tags, { building: mapped, overture_subtype: undefined }));
       return { klass: cls.klass, reason: 'Overture subtype=' + subtype + ' → ' + cls.reason };
+    }
+    if (Object.prototype.hasOwnProperty.call(SPECIAL_REVIEW_TAGS, b)) {
+      const rule = SPECIAL_REVIEW_TAGS[b];
+      return { klass: 'review', reason: rule.reason,
+        excludeByDefault: !!rule.excludeByDefault, noCityCount: !!rule.noCityCount };
     }
     if (DWELLING_TAGS.has(b)) return { klass: 'dwelling', reason: 'building=' + b };
     if (NON_DWELLING_TAGS.has(b)) return { klass: 'non', reason: 'building=' + b };

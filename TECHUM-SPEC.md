@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 19, 2026-11-25) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 20, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -71,10 +71,10 @@ under a roof.
   **and a roof**.
 - **Does not count:** two walls without a roof, even if people live between them; cisterns,
   pits, dovecotes; a bare shul or other house of worship, warehouse, or barn with no
-  resident; open cemeteries; a dwelling on a ship; a flimsy seasonal watchman's hut in a
+  resident; open cemeteries; a dwelling on a ship (a moored houseboat by default, rev. 20); a flimsy seasonal watchman's hut in a
   theft/flood-prone area.
 - **Modern commercial/industrial structures are disputed, not categorically excluded.**
-  Chazon Ish OC 110:28 and Shevet HaLevi 1:59 are cited for counting at least some factories
+  Chazon Ish OC 110:28 (citation questioned, Part 7 Q12) and Shevet HaLevi 1:59 are cited for counting at least some factories
   containing offices and a workers' lunch room; Kiryat Ariel ch. 4, Machazeh Eliyahu 79,
   and Tikun Eruvin 5:60 collect the modern applications. A generic office, school, hospital,
   hotel, terminal, or factory therefore needs a type-specific reviewer decision; map-data
@@ -180,7 +180,7 @@ Rules by shape:
   2. overlap joins the cities, but no new joint encompassing rectangle is recursively
      redrawn (R' Shlomo Miller as reported there);
   3. overlap joins the cities and a new joint rectangle is drawn (the expansive reading
-     discussed in Chazon Ish OC 110:16; accepted by Minchas Yitzchak 8:32 and Machazeh
+     discussed in Chazon Ish OC 110:16; accepted by Minchas Yitzchak 8:32 (or 8:33, Part 7 Q11) and Machazeh
      Eliyahu 82, while Kiryat Ariel reports that the Chazon Ish did not rely on it in
      practice).
   There is **no accepted consensus**. The default remains **no join** and the calculation
@@ -382,7 +382,7 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 | Amah | 48 cm (R' Chaim Naeh) → 960 m | 57.6 cm → 1,152 m | 48 cm → 960 m |
 | Single-city karpef (+70⅔ before 2000) | **on** (Rema; MB 398:36) | on ⚠ confirm CI's own position | off (Mechaber/Rambam) |
 | Squaring alignment | automatic SA/MB shape rule: preserve a clear existing rectangle; otherwise world directions | same automatic rule; reviewer may set a sourced natural edge (CI OC 110:23) | automatic SA shape rule; reviewer override available |
-| Overlapping-squares rect merge | **no join** + warning (R' Elyashiv / R' N. Karelitz / R' Belsky); advanced middle option: join without redraw (R' S. Miller) | joint redraw available as the expansive CI reading, but CI's practical conclusion is reported as uncertain | **no join** + warning; alternatives remain explicit |
+| Overlapping-squares rect merge | **no join** + warning (R' Elyashiv / R' N. Karelitz / R' Belsky); advanced middle option: join without redraw (R' S. Miller) | **no join** + warning (rev. 20); joint redraw is a labelled option, and turning it on is a rav's decision (CI 110:16: "צריך הכרע") | **no join** + warning; alternatives remain explicit |
 | City status for 141⅓ / three villages | 3 courtyards × 2 houses or sourced 50-resident basis; six footprints only a provisional fallback | same, with CI courtyard/entrance qualifications | same sourced structure; provisional fallback remains labelled |
 | Bow/L/gamma | **Rema-majority:** fill when confirmed chord <4000 or depth <2000; otherwise no-fill; unresolved endpoints use provisional no-fill | same default; reviewer may select another sourced shita | **Mechaber/Rambam:** narrow chord fills; wide remainder follows inhabited/curved edge; reviewer endpoints required |
 | Wholly enclosed ≥4000×4000-amah hole | **include + mandatory warning** (Beit Yitzchok / R' Shulem Weiss); strict exclusion available | same | same |
@@ -858,6 +858,65 @@ both orders, a 900-village field, the point square, and the antimeridian.
   lone house, whose 2000 amos wholly contain a city now gets the same warning. The boundary
   is unchanged; no extension is drawn. Engine version 1.5.5.
 
+### Rev. 20 — 2026-11-25 (three researched answers applied; three psak default changes)
+
+These answers come from research Isaac ordered, one researching agent per question, on the
+three questions rev. 19 left pending. They were not given by a posek. Where the research
+says a rav decides, the calculator flags the case and does not rule on it.
+
+- **A moored houseboat does not extend the town by default (§1.3).** Before: building=houseboat
+  counted as a dwelling. A ship's dwelling does not join the town (Eruvin 55b; Rambam Shabbos
+  28:4; SA OC 398:6). The reason is disputed. Rashi, Magen Avraham 398:10, Mishnah Berurah
+  398:34 and Shulchan Aruch HaRav 398:9 give "it has no fixed place", which a boat that never
+  leaves its berth does not suffer from. The Meiri gives "the ship itself is movable";
+  Merkeves HaMishneh, as quoted in Chashukei Chemed (Sanhedrin 113a), excludes it even in the
+  harbor, and Chashukei Chemed concludes "possibly" permanent ship dwellers are not part of
+  the town. "A house built in the water" is a building on ground (Rashi: sea islands; Aruch
+  HaShulchan 398:15: the shore), not a floating boat. Now: houseboats go to the review
+  category, are always flagged, and are left out by default even when ambiguous structures
+  are included. The app has no separate alternative line for one building type; the review
+  text says so, and a rav can include the boat with its per-building include control to see
+  the town with it counted.
+- **Cabins, seasonal cottages and caravans (§1.3; Part 7 Q5).** The research separates
+  permanence from occupancy. Wooden cabins count fully (SA OC 398:10: houses "of stone or of
+  boards"). A structure built as a dwelling counts even when nobody lives in it (Rashi 55b;
+  Magen Avraham 398:5; Mishnah Berurah 398:19; Shulchan Aruch HaRav 398:6; Aruch HaShulchan
+  398:15), so a seasonal cottage that is a real house counts all year. A static caravan fixed
+  on a site joins an existing town by inference (flimsy watchmen's huts join an existing
+  town: Mishnah Berurah 398:33). Whether caravans alone make a town is disputed: Magen
+  Avraham 398:15 and Mishnah Berurah 398:49 say fixed in one place is like a town; the
+  Levush, as read by Eliyah Rabbah 398:14, disagrees; the Pri Megadim doubts how long counts
+  as fixed. One contemporary rav (R' A.Y. Shapira, citing Chazon Ish 110:22) joins a mobile
+  unit only while people eat or sleep there and not toward the houses that make a town. A
+  touring caravan is like the house on a ship. Now, mapped onto the tags the data has:
+  building=cabin stays a dwelling. Overture has no seasonal-cottage tag; such cottages arrive
+  as house/cabin/bungalow and count. building=static_caravan (before: a full dwelling) goes
+  to review, is included by default with the other ambiguous structures, chains in the
+  70⅔-amah join, and adds 0 to the count that forms a town, like a validated join perimeter.
+  The map cannot tell a seasonal caravan from a year-round one, so every static caravan that
+  joins a town raises a `static-caravan` warning, and a settlement that would be a town only
+  by counting its caravans raises a `caravan-site` warning; a rav may record its town status
+  through the existing city-status review. building=caravan and building=touring_caravan
+  (before: unknown use, included and flagged) are not counted.
+- **Chazon Ish profile: joint redraw off by default (§1.5 step 6; Part 2 table).** Before:
+  the Chazon Ish profile set `join_redraw` on, while the table said only that it was
+  "available". Chazon Ish OC 110:16 argues for it from Rashi, the Tur and the Rema, but his
+  note ends "והדבר צריך הכרע" (the matter needs a ruling). R' Chaim Kanievsky (Shoneh Halachos
+  398:19), R' Wosner and others read it as his ruling; R' Elyashiv, R' Dovid Landau and
+  R' Nissim Karelitz are strict or leave it open. It nearly always enlarges the boundary, so
+  it is a leniency. Now: the profile defaults to no join with the overlap warning, like the
+  other profiles; joint redraw stays a labelled option whose text says turning it on is a
+  rav's decision. A browser that saved the old Chazon Ish profile unchanged follows the new
+  default once; any other saved choice and every snapshot keep their explicit setting.
+- **Two citations marked, not ruled on** (Part 7 Q11, Q12): Minchas Yitzchak 8:32 vs 8:33 in
+  §1.5, and Chazon Ish 110:28 for factories in §1.3.
+- **Replay note.** Footprint classes are re-read when a snapshot loads, so an older snapshot
+  containing houseboats, static caravans or touring caravans can now give a different
+  boundary than when it was saved. Engine version 1.6.0.
+
+Golden tests in `tests/spec-golden.test.js` (ids `rev20-*`) cover each item with expected
+values worked out by hand.
+
 ## Part 3 — Product spec
 
 ### 3.0 Scope & users
@@ -1025,7 +1084,10 @@ the UI for building-level review is the bulk of the work.
 5. **Modern beis-dirah edge cases** — offices/factories (occupied but not slept in), hotels,
    hospitals, schools, seasonal cottages, trailers/mobile homes, airports. Rev. 12 records
    the sourced opinion counting some factories with offices/lunch facilities, but the
-   type-by-type profile matrix still requires a posek.
+   type-by-type profile matrix still requires a posek. **Rev. 20 answered (from research,
+   not a posek):** cabins and real-house seasonal cottages count; static caravans join an
+   existing town but do not count toward forming one, with a flag for seasonal caravans and
+   caravan-only sites; touring caravans and houseboats do not count by default.
 6. ~~**Where the 70⅔ is measured from**~~ **SUPPORTED MANUAL MEHALICH in rev. 12:** an
    attached fenced yard or perimeter genuinely open, subsidiary, and *hukaf l'dirah* may
    supply the measurement origin (SA 396:2; Millunchick pp. 47–48). Because those facts
@@ -1043,6 +1105,14 @@ the UI for building-level review is the bulk of the work.
     measurement; Tikun Eruvin as reported by Millunchick gives a possible slope-procedure
     difference up to about 9.1%. Default to the modern-map mehalich; a posek may select and
     document a sourced adjustment for a particular terrain calculation.
+11. **Minchas Yitzchak 8:32 or 8:33? (rev. 20, citation only)** — §1.5 and the source list
+    cite Minchas Yitzchak 8:32 for accepting the joint redraw; other sources found by the
+    rev. 20 research give 8:33. Not checked against the volume itself; no ruling changed.
+12. **Chazon Ish 110:28 on factories (rev. 20, citation only)** — §1.3 cites it for counting
+    factories with offices and a lunch room. Two secondary sources found by the rev. 20
+    research report the Chazon Ish as not counting a factory, or counting only buildings
+    with sleeping quarters. The researchers read the Chazon Ish only through later works.
+    Factories stay in review; no ruling changed.
 
 **Validation benchmarks:** the tool is city-agnostic; these are continuing cross-checks,
 not scope or release blockers:

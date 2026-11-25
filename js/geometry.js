@@ -378,7 +378,12 @@
         ? record.basis : null;
       const evidence = record && typeof record === 'object' && typeof record.evidence === 'string'
         ? record.evidence.trim().slice(0, 1000) : '';
-      cluster.houseCount = cluster.members.reduce((count, index) => count + (buildings[index].joinOnly ? 0 : 1), 0);
+      // A validated join perimeter and a static caravan (spec rev. 20) join in the chain but
+      // add nothing to the count that forms a town.
+      cluster.houseCount = cluster.members.reduce((count, index) =>
+        count + (buildings[index].joinOnly || buildings[index].noCityCount ? 0 : 1), 0);
+      cluster.caravanCount = cluster.members.reduce((count, index) =>
+        count + (buildings[index].noCityCount && !buildings[index].joinOnly ? 1 : 0), 0);
       cluster.qualifiesAsCity = typeof decision === 'boolean'
         ? decision
         : cluster.houseCount >= minCityHouses;
@@ -1081,6 +1086,12 @@
       qualificationEvidence: cluster.qualificationEvidence,
       qualificationProvisional: cluster.qualificationProvisional,
     }));
+    // Static caravans (spec rev. 20): they chain onto a town but never make one by count.
+    const caravanSites = clusters.filter((cluster) => cluster.caravanCount > 0 && cluster.qualificationProvisional &&
+      cluster.houseCount < settings.minCityHouses && cluster.houseCount + cluster.caravanCount >= settings.minCityHouses);
+    if (caravanSites.length) warnings.push({ type: 'caravan-site', text: `${caravanSites.length === 1 ? 'A settlement' : caravanSites.length + ' settlements'} would be a town only by counting static caravans. Caravans are not counted toward the minimum that forms a town, because whether caravans alone make a town is disputed (Magen Avraham 398:15 and Mishnah Berurah 398:49 against Eliyah Rabbah 398:14). A rav may record its town status.` });
+    const caravansInTowns = clusters.reduce((sum, cluster) => sum + (cluster.caravanCount > 0 && cluster.houseCount > 0 ? cluster.caravanCount : 0), 0);
+    if (caravansInTowns) warnings.push({ type: 'static-caravan', text: `${caravansInTowns} static caravan${caravansInTowns === 1 ? '' : 's'} joined the chain of houses. The map cannot show whether a caravan is lived in all year; a seasonal caravan needs a rav.` });
     markStage('cityQualification');
 
     // 141⅓ and three-village mergers are applied to a fixed point. A three-village

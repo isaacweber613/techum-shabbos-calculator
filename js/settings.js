@@ -22,7 +22,9 @@
       amahCm: 57.6,
       karpef: true,        // CONFIRM CI's own karpef position with a posek (spec Part 2)
       squaringAngleDeg: 0, // same automatic SA/MB shape rule; nonzero is reviewer override
-      overlapPolicy: 'join-redraw', // expansive reading of CI 110:16; practical CI conclusion uncertain
+      // Rev. 20: off by default. CI 110:16 ends "the matter needs a ruling"; joint redraw
+      // stays a labelled option whose use is a rav's decision.
+      overlapPolicy: 'no-join',
       largeHolePolicy: 'include-with-warning',
       bowPolicy: 'rema-majority',
       minCityHouses: 6,
@@ -57,6 +59,7 @@
     maxBuildings: 40000,
     maxExpandIterations: 4,
     dataSourceVersion: 2,   // migrates prior OSM-era display defaults once
+    profileRevision: 20,    // spec rev. 20: Chazon Ish profile overlap default join-redraw -> no-join
   };
 
   const KEY = 'techum-settings-v1';
@@ -83,6 +86,19 @@
         if (saved.dataSourceVersion !== 2) {
           saved.showVerifiedOnly = false;
           saved.dataSourceVersion = 2;
+        }
+        // Spec rev. 20 moved the Chazon Ish profile's overlap default from joint redraw to no
+        // join. A saved setting that still matches the old profile exactly took that default
+        // rather than choosing it, so it follows the new default.
+        if (saved.profileRevision !== 20) {
+          const ci = PROFILES['chazon-ish'];
+          if (saved.profile === 'chazon-ish' && saved.overlapPolicy === 'join-redraw' &&
+            saved.amahCm === ci.amahCm && saved.karpef === ci.karpef &&
+            saved.squaringAngleDeg === ci.squaringAngleDeg && saved.largeHolePolicy === ci.largeHolePolicy &&
+            saved.bowPolicy === ci.bowPolicy && saved.minCityHouses === ci.minCityHouses) {
+            saved.overlapPolicy = ci.overlapPolicy;
+          }
+          saved.profileRevision = 20;
         }
         // The validated perimeter itself is never stored in the browser (only in snapshots),
         // so a restored "use perimeter" flag would point at nothing.

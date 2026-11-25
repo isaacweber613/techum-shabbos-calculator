@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.5.5 (2026-11-25)';
+  const ENGINE_VERSION = '1.6.0 (2026-11-25)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -71,7 +71,7 @@
   };
   const PROFILE_EXPLANATIONS = {
     'mishna-berura': '<b>Mishna Berurah / Ashkenazi:</b> R\' Chaim Naeh amah (18.90 in), Rema\'s 70⅔-amah karpef, shape-aware SA/MB squaring, and the stricter view that overlapping city rectangles do not automatically merge.',
-    'chazon-ish': '<b>Chazon Ish scenario:</b> larger 22.68-inch amah and the expansive reading that repeatedly redraws overlapping city rectangles. The Chazon Ish\'s practical conclusion on overlap is reported as uncertain; use this scenario only with rabbinic direction. A reviewer may also set a controlling natural angle.',
+    'chazon-ish': '<b>Chazon Ish scenario:</b> larger 22.68-inch amah. Overlapping city rectangles stay separate by default: the Chazon Ish (OC 110:16) argues for redrawing one rectangle around both but ends that the matter needs a ruling, so turning that option on is a rav\'s decision. A reviewer may also set a controlling natural angle.',
     mechaber: '<b>Mechaber / Sefardi:</b> 18.90-inch amah here, no extra single-city karpef, shape-aware SA squaring, and no automatic overlapping-rectangle merge.',
     custom: '<b>Custom:</b> one or more choices differ from the selected profile. Review every changed shita with a rav.',
   };
@@ -674,6 +674,7 @@
         id: raw.id, tags: raw.tags, ring,
         bbox: ringBBox(ring), joinOnly: !!raw.joinOnly,
         klass: cls.klass, reason: cls.reason,
+        excludeByDefault: !!cls.excludeByDefault, noCityCount: !!cls.noCityCount,
         included: false, // set in recompute from klass + settings + override
       };
       });
@@ -901,6 +902,7 @@
     if (isTooSmall(b)) return false;
     if (b.klass === 'dwelling') return true;
     if (b.klass === 'non') return false;
+    if (b.excludeByDefault) return false; // e.g. houseboat (spec rev. 20): include only by override
     if (b.klass === 'review') return settings.includeReview;
     return settings.includeUnknown; // 'unknown'
   }
@@ -937,7 +939,8 @@
     };
   }
   function workerSafeBuildings(buildings) {
-    return buildings.map((b) => ({ id: b.id, ring: b.ring, bbox: b.bbox, included: b.included, joinOnly: !!b.joinOnly }));
+    return buildings.map((b) => ({ id: b.id, ring: b.ring, bbox: b.bbox, included: b.included, joinOnly: !!b.joinOnly,
+      noCityCount: !!b.noCityCount }));
   }
 
   // The worker imports geometry.js with this same query string, so the background engine can

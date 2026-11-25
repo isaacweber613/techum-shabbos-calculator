@@ -117,11 +117,11 @@
           <input id="sq-angle" type="number" step="1" min="-89" max="89" value="0" /></label>
         <label>Open-field square rotation (angle°) <small>Used only for point shevisa. 0 = cardinal directions; change only with rabbinic direction.</small>
           <input id="point-angle" type="number" step="1" min="-89" max="89" value="0" /></label>
-        <label>Overlapping city rectangles <small>The ordinary default keeps unrelated cities separate. The middle option produces a stepped union without redrawing one large rectangle.</small>
+        <label>Overlapping city rectangles <small>The ordinary default keeps unrelated cities separate. The middle option produces a stepped union without redrawing one large rectangle. Redrawing one rectangle around both nearly always enlarges the boundary, so choosing it is a rav's decision.</small>
           <select id="overlap">
             <option value="no-join">Do not join — default (R' Elyashiv / R' N. Karelitz / R' Belsky)</option>
             <option value="join-no-redraw">Join, keep original rectangles (R' Shlomo Miller)</option>
-            <option value="join-redraw">Join and repeatedly redraw one rectangle (expansive approach)</option>
+            <option value="join-redraw">Join and repeatedly redraw one rectangle (expansive approach; a rav's decision)</option>
           </select>
         </label>
         <label>Large enclosed empty areas <small>Applies only when a wholly surrounded void is at least 4,000 amos in both governing directions.</small>
@@ -264,12 +264,12 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="js/track.js"></script>
-  <script src="js/geometry.js?v=20261110-1"></script>
-  <script src="js/data.js?v=20261110-1"></script>
-  <script src="js/settings.js?v=20261109-1"></script>
+  <script src="js/geometry.js?v=20261125-1"></script>
+  <script src="js/data.js?v=20261125-1"></script>
+  <script src="js/settings.js?v=20261125-1"></script>
   <script src="js/kml.js?v=20261109-1"></script>
   <script src="js/map-export.js?v=20261023-1"></script>
-  <script src="js/main.js?v=20261110-1"></script>
+  <script src="js/main.js?v=20261125-1"></script>
   <script src="js/design-experience.js?v=20261110-1"></script>
   <script src="js/feedback.js?v=20261109-1"></script>
 </body>

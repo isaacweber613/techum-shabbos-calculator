@@ -135,8 +135,78 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
     check('1.3-m', 408, 'the app\'s size filter uses the engine\'s width test, not the footprint\'s north-south/east-west box',
       /function isTooSmall[\s\S]{0,200}G\.belowMinDwellingSize\(/.test(main));
   }
-  pend('1.3-q1', 74, 'building=houseboat is classified as a dwelling, but the spec says "a dwelling on a ship" does not count while "a house built in the water" does. Which is a moored houseboat?');
-  pend('1.3-q2', 1026, 'building=static_caravan and building=cabin are classified as dwellings, but open question 5 lists trailers/mobile homes and seasonal cottages as needing a posek. Should they go to review?');
+  // Rev. 19 pending 1.3-q1 (houseboat) and 1.3-q2 (caravans/cabins) — answered in rev. 20.
+}
+
+// =================================================================================
+// Rev. 20 — houseboats, cabins, seasonal cottages, caravans (lines 74, 867-899, 1087)
+// =================================================================================
+{
+  const cls = (building) => D.classify({ building });
+  const boat = cls('houseboat'), van = cls('static_caravan');
+  check('rev20-a', 867, 'building=houseboat goes to review, left out by default, and still counts as a house if a rav includes it',
+    boat.klass === 'review' && boat.excludeByDefault === true && !boat.noCityCount, JSON.stringify(boat));
+  check('rev20-b', 867, 'the houseboat review text tells the rav how to see the town with it counted',
+    /include it to see the town with it counted/.test(boat.reason), boat.reason);
+  check('rev20-c', 892, 'building=cabin is a full dwelling (SA 398:10, "of boards")',
+    cls('cabin').klass === 'dwelling' && !cls('cabin').noCityCount);
+  check('rev20-d', 892, 'seasonal cottages arrive as house/bungalow and count as dwellings all year',
+    cls('house').klass === 'dwelling' && cls('bungalow').klass === 'dwelling');
+  check('rev20-e', 893, 'building=static_caravan goes to review, included by default, adding 0 to the town count',
+    van.klass === 'review' && van.noCityCount === true && !van.excludeByDefault, JSON.stringify(van));
+  check('rev20-f', 899, 'building=caravan and building=touring_caravan are not counted',
+    cls('caravan').klass === 'non' && cls('touring_caravan').klass === 'non');
+
+  // The app's inclusion rule (main.js isIncluded) with ambiguous structures included (the default).
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const src = main.slice(main.indexOf('  function isIncluded('), main.indexOf('  // Verified-only scenario'));
+  const overrides = new Map();
+  const isIncluded = require('node:vm').runInNewContext(`(${src})`,
+    { state: { overrides }, isTooSmall: () => false, settings: { includeReview: true, includeUnknown: true } });
+  const boatB = { id: 'boat', klass: 'review', excludeByDefault: true };
+  const vanB = { id: 'van', klass: 'review', noCityCount: true };
+  check('rev20-g', 878, 'the app leaves a houseboat out by default even with ambiguous structures included', isIncluded(boatB) === false);
+  overrides.set('boat', 'include');
+  check('rev20-h', 878, 'a reviewer include override counts the houseboat', isIncluded(boatB) === true);
+  check('rev20-i', 893, 'the app includes a static caravan by default', isIncluded(vanB) === true);
+  check('rev20-j', 893, 'the app carries both flags from the table into the engine input',
+    /excludeByDefault: !!cls\.excludeByDefault, noCityCount: !!cls\.noCityCount/.test(main) &&
+    /function workerSafeBuildings[\s\S]{0,250}noCityCount: !!b\.noCityCount/.test(main));
+
+  // Town: six 10 m houses, walls x [0,50], y [0,30]. Extra footprint at x [80,90]: 30 m < 33.92 m.
+  const extra = (flags) => box(80, 0, 90, 10, flags);
+  const out = run(town(0, 0).concat(extra({ included: false })), {}, { x: 5, y: 5 });
+  const inn = run(town(0, 0).concat(extra()), {}, { x: 5, y: 5 });
+  check('rev20-k', 867, 'houseboat left out: the town ends at x = 50 and the techum at 50 + 960 = 1010',
+    out.mode === 'city' && approx(span(out.cityCorners).maxX, 50) && approx(span(out.techumCorners).maxX, 1010),
+    JSON.stringify(span(out.techumCorners)));
+  check('rev20-l', 878, 'houseboat included by a rav: the town reaches x = 90 and the techum 90 + 960 = 1050',
+    inn.mode === 'city' && approx(span(inn.cityCorners).maxX, 90) && approx(span(inn.techumCorners).maxX, 1050),
+    JSON.stringify(span(inn.techumCorners)));
+
+  const chained = run(town(0, 0).concat(extra({ noCityCount: true })), {}, { x: 5, y: 5 });
+  check('rev20-m', 893, 'a static caravan 30 m from a six-house town chains on: town to x = 90, techum to 1050, count stays 6',
+    chained.mode === 'city' && approx(span(chained.cityCorners).maxX, 90) && approx(span(chained.techumCorners).maxX, 1050) &&
+    chained.clusters[0].houseCount === 6, JSON.stringify({ t: span(chained.techumCorners), n: chained.clusters[0].houseCount }));
+  check('rev20-n', 897, 'a caravan joined to a town raises the seasonal-caravan flag, not the caravan-site flag',
+    has(chained, 'static-caravan') && !has(chained, 'caravan-site'));
+
+  const fivePlusVan = town(0, 0); fivePlusVan[5] = { ...fivePlusVan[5], noCityCount: true };
+  const fpv = run(fivePlusVan, {}, { x: 5, y: 5 });
+  const fpvT = span(fpv.techumCorners);
+  check('rev20-o', 893, 'five houses + one static caravan is not a town: building mode from the pin\'s 10 m house, techum x [-960, 970]',
+    fpv.mode === 'building' && approx(fpvT.minX, -960) && approx(fpvT.maxX, 970) && has(fpv, 'caravan-site'),
+    JSON.stringify({ mode: fpv.mode, fpvT }));
+
+  const vans = town(0, 0).map((b) => ({ ...b, noCityCount: true }));
+  const site = run(vans, {}, { x: 5, y: 5 });
+  check('rev20-p', 897, 'a site of six static caravans only does not form a town by count; it is flagged for a rav',
+    site.mode === 'building' && site.clusters[0].houseCount === 0 && has(site, 'caravan-site') && !has(site, 'static-caravan'));
+  const key = site.qualificationClusters[0].key;
+  const ruled = run(vans, { cityQualificationOverrides: { [key]: true } }, { x: 5, y: 5 });
+  check('rev20-q', 898, 'once a rav records the caravan site as a town, it squares as one: town x [0,50], techum x [-960, 1010]',
+    ruled.mode === 'city' && approx(span(ruled.techumCorners).minX, -960) && approx(span(ruled.techumCorners).maxX, 1010) &&
+    !has(ruled, 'caravan-site'), JSON.stringify(span(ruled.techumCorners)));
 }
 
 // =================================================================================
@@ -436,7 +506,38 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
     inB.homeCandidates.length === 1 && !has(inB, 'multiple-home-candidates') &&
     sameSpan(span(inB.cityCorners), { minX: 95, maxX: 145, minY: 145, maxY: 175 }), JSON.stringify(span(inB.cityCorners)));
   check('2-overlap', 385, 'MB and Mechaber default to no join', SET.PROFILES['mishna-berura'].overlapPolicy === 'no-join' && SET.PROFILES.mechaber.overlapPolicy === 'no-join');
-  pend('2-ci-overlap', 385, 'The Chazon Ish profile defaults to joint redraw (join-redraw), but the table only says joint redraw is "available" and that CI\'s practical conclusion is uncertain. Is join-redraw meant to be the CI default?');
+  // Rev. 19 pending 2-ci-overlap — answered in rev. 20 (lines 385, 901-910).
+  const ci = SET.PROFILES['chazon-ish'];
+  check('rev20-r', 385, 'the Chazon Ish profile defaults to no join, matching the table', ci.overlapPolicy === 'no-join');
+  // A is an L of houses: walls x [-5,310], y [-10,300]; B (inside A's square) is 60+ m from every house of A.
+  const ciS = { amahM: CI, karpef: ci.karpef, overlapPolicy: ci.overlapPolicy, bowPolicy: ci.bowPolicy, largeHolePolicy: ci.largeHolePolicy };
+  const ciAlone = run(A, ciS, { x: 0, y: 0 }), ciBoth = run(A.concat(B), ciS, { x: 0, y: 0 });
+  const ciEdge = 310 + G.AMOS.KARPEF * CI + G.AMOS.TECHUM * CI; // 310 + 40.704 + 1152 = 1502.704 m
+  check('rev20-s', 901, 'Chazon Ish profile: an overlapping city leaves the home techum unchanged (x max 1502.704 m), with the overlap warning',
+    regionSig(ciAlone.techumRegions) === regionSig(ciBoth.techumRegions) && has(ciBoth, 'overlap-detected') &&
+    approx(span(ciBoth.techumCorners).maxX, ciEdge, 1e-6) && approx(ciEdge, 1502.704, 1e-3),
+    JSON.stringify(span(ciBoth.techumCorners)));
+  const ciRedraw = run(A.concat(B), { ...ciS, overlapPolicy: 'join-redraw' }, { x: 0, y: 0 });
+  check('rev20-t', 907, 'joint redraw stays available as an explicit option', has(ciRedraw, 'overlap-merge-redraw'));
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const mainJs = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  check('rev20-u', 907, 'the joint-redraw option and the Chazon Ish description say turning it on is a rav\'s decision',
+    /value="join-redraw">[^<]*a rav's decision/.test(html) && /'chazon-ish':[^\n]*a rav\\'s decision/.test(mainJs));
+
+  // A browser that saved the old Chazon Ish profile unchanged follows the new default once.
+  const store = new Map();
+  const fake = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) };
+  Object.defineProperty(globalThis, 'localStorage', { value: fake, configurable: true, writable: true });
+  require('../js/settings.js').localStorage = fake;
+  const oldCi = { ...SET.DEFAULTS, profile: 'chazon-ish', ...ci, overlapPolicy: 'join-redraw', dataSourceVersion: 2 };
+  delete oldCi.profileRevision;
+  const loadWith = (saved) => { store.set('techum-settings-v1', JSON.stringify(saved)); return SET.load(); };
+  check('rev20-v', 909, 'saved old Chazon Ish profile, unchanged: loads with no join and still shows as the Chazon Ish profile',
+    (() => { const l = loadWith(oldCi); return l.overlapPolicy === 'no-join' && SET.effectiveProfile(l) === 'chazon-ish' && l.profileRevision === 20; })());
+  check('rev20-w', 910, 'saved custom Chazon Ish settings (karpef off) keep the joint redraw the user chose',
+    loadWith({ ...oldCi, karpef: false }).overlapPolicy === 'join-redraw');
+  check('rev20-x', 910, 'joint redraw chosen after rev. 20 is kept', loadWith({ ...oldCi, profileRevision: 20 }).overlapPolicy === 'join-redraw');
+  delete globalThis.localStorage;
 }
 
 // =================================================================================
@@ -561,6 +662,9 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('2-eruv', 390, 'eruv-as-city is off unless a rav-validated perimeter is supplied', SET.DEFAULTS.useValidatedPerimeter === false);
   check('2-12mil', 391, 'the 12-mil ring and second-shita line are hidden by default', SET.DEFAULTS.show12mil === false && SET.DEFAULTS.secondAmahCm === 0);
 }
+
+pend('7-q11', 1108, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
+pend('7-q12', 1111, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
 
 console.log(`\n${passed} passed, ${failed} failed, ${pending.length} pending`);
 for (const p of pending) console.log('  PENDING ' + p);
