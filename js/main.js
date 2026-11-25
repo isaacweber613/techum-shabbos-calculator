@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.6.1 (2026-11-25)';
+  const ENGINE_VERSION = '1.6.2 (2026-11-25)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -66,7 +66,7 @@
     'layer-techum': 'Shows the final 2,000-amah techum boundary.',
     'verified-only': 'Adds a comparison using only clearly identified dwellings.',
     'second-amah': 'Adds another techum line using a different amah length.',
-    'show-12mil': 'Shows the larger twelve-mil boundary used by one Torah-law opinion.',
+    'show-12mil': 'Shows the larger twelve-mil boundary used by one Torah-law opinion, measured from the town’s own squared edge without the karpef.',
     'audit-rings': 'Shows exactly how nearby buildings connect into settlements and the home city.',
   };
   const PROFILE_EXPLANATIONS = {
@@ -1154,7 +1154,8 @@
       startingAreaLabel);
     }
     if (settings.show12mil)
-      addRegions(res.mil12Regions || [res.mil12Corners], { color: '#666', weight: 1.5, dashArray: '2 6', fill: false }, '12 mil (d’oraisa shita)');
+      addRegions(res.mil12Regions || [res.mil12Corners], { color: '#666', weight: 1.5, dashArray: '2 6', fill: false },
+        '12 mil (d’oraisa shita) — 24,000 amos from the town’s own squared edge, without the karpef; confirm with a rav');
     for (const region of res.concavityRegions || [])
       addRect(region, { color: '#ffdc00', weight: 2, dashArray: '4 4', fillColor: '#ffdc00', fillOpacity: 0.15 }, '≥4000-amos concavity — review');
 
@@ -1502,6 +1503,10 @@
     lines.push(`<div class="stat"><b>Thresholds:</b> join 70⅔ amos = ${(70.667 * amahM).toFixed(1)} m · ` +
       `city-merge 141⅓ = ${(141.333 * amahM).toFixed(1)} m · techum 2000 = ${(2000 * amahM).toFixed(0)} m` +
       (settings.karpef ? ` · karpef +${(70.667 * amahM).toFixed(1)} m` : '') + `</div>`);
+    // Spec rev. 22: a light review note whenever the 12-mil ring is drawn.
+    if (settings.show12mil && (res.mil12Regions || []).length) {
+      lines.push('<div class="note">ℹ <b>12-mil ring:</b> drawn 24,000 amos from the town’s own squared edge, without the 70⅔-amah karpef (Sefer HaChinuch 24; Rambam Shabbos 27:1–2). Whether the squaring itself applies to the 12 mil is open. A rav should confirm before relying on it.</div>');
+    }
     if (state.dataCapHit) {
       lines.push(`<div class="warn">⚠ <b>Data limit reached</b> — the built-up chain may continue beyond the fetched area. ` +
         `There is <b>no halachic cap</b> on chain length; the techum shown is an inner (machmir) bound in those directions. ` +

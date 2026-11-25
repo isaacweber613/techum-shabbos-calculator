@@ -82,10 +82,58 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const city = span(cityRes.cityCorners), mil = span(cityRes.mil12Corners);
   check('1.1-a', 31, '12-mil comparison ring = city + 24,000 amos (11,520 m) on every side',
     approx(mil.minX, city.minX - 11520, 1e-6) && approx(mil.maxY, city.maxY + 11520, 1e-6), JSON.stringify(mil));
-  // The engine also draws the 12-mil ring beyond the Rema karpef (11,520 + 33.92 m per side).
-  // The spec never says whether the d'oraisa 12 mil starts at the karpef, so this stays a
-  // pending question (Part 7 Q15), not a check (rev. 21).
-  pend('1.1-b', 31, 'Is the 12-mil comparison ring measured beyond the Rema karpef, as the engine draws it, or from the city edge? (Part 7 Q15)');
+  // Rev. 21 left open whether the ring starts beyond the Rema karpef (Part 7 Q15). Rev. 22
+  // (lines 975-987) answers it from research: 24,000 amos from the town's own squared edge,
+  // without the karpef, in every profile. Before rev. 22 the engine added the karpef
+  // (11,520 + 33.92 m per side at 48 cm), which every check below would catch.
+  {
+    const ring = (r) => span(r.mil12Corners);
+    const onTown = run(town(0, 0), { karpef: true }, { x: 5, y: 5 });
+    check('rev22-a', 975, 'karpef on (MB): the 12-mil ring is the squared town + 11,520 m on every side, not + 11,553.92 m',
+      onTown.mode === 'city' && sameSpan(ring(onTown), { minX: -11520, maxX: 50 + 11520, minY: -11520, maxY: 30 + 11520 }),
+      JSON.stringify(ring(onTown)));
+    check('rev22-b', 980, 'the 2000-amah techum still keeps its karpef: walls ± (33.92 + 960) m',
+      sameSpan(span(onTown.techumCorners), { minX: -993.92, maxX: 1043.92, minY: -993.92, maxY: 1023.92 }),
+      JSON.stringify(span(onTown.techumCorners)));
+    // Chazon Ish amah: 24,000 · 0.576 = 13,824 m (before: + 40.704 = 13,864.704 m).
+    const ciTown = run(town(0, 0), { amahM: CI, karpef: true }, { x: 5, y: 5 });
+    check('rev22-c', 978, 'Chazon Ish amah (57.6 cm) with karpef: ring = squared town + 13,824 m',
+      sameSpan(ring(ciTown), { minX: -13824, maxX: 50 + 13824, minY: -13824, maxY: 30 + 13824 }), JSON.stringify(ring(ciTown)));
+    // Two towns exactly 141⅓ amos (67.84 m) apart are one town: walls x [0, 167.84].
+    const joined = run(town(0, 0).concat(town(50 + T2, 0)), { karpef: true }, { x: 5, y: 5 });
+    check('rev22-d', 979, 'two towns joined at 141⅓ amos: the ring is measured from the merged town: x [-11,520, 11,687.84]',
+      joined.clusters.length === 1 && sameSpan(ring(joined), { minX: -11520, maxX: 167.84 + 11520, minY: -11520, maxY: 30 + 11520 }),
+      JSON.stringify(ring(joined)));
+    const mech = run(town(0, 0), { karpef: false, bowPolicy: 'mechaber-curve' }, { x: 5, y: 5 });
+    check('rev22-e', 987, 'Mechaber (karpef off): ring = squared town + 11,520 m, unchanged',
+      sameSpan(ring(mech), { minX: -11520, maxX: 50 + 11520, minY: -11520, maxY: 30 + 11520 }));
+    check('rev22-f', 978, 'with karpef on and off the ring is identical (it never depends on the karpef)',
+      regionSig(onTown.mil12Regions) === regionSig(mech.mil12Regions));
+    // A rav-validated enclosure x [-10,60], y [-10,40] is the town's edge (§3.2 line 1019).
+    const enclosure = [{ x: -10, y: -10 }, { x: 60, y: -10 }, { x: 60, y: 40 }, { x: -10, y: 40 }];
+    const enc = run(town(0, 0), { karpef: true, validatedCityPerimeter: enclosure }, { x: 5, y: 5 });
+    check('rev22-g', 978, 'validated enclosure with karpef: ring = enclosure + 11,520 m: x [-11,530, 11,580]',
+      enc.validatedPerimeterActive && sameSpan(ring(enc), { minX: -11530, maxX: 11580, minY: -11530, maxY: 11560 }), JSON.stringify(ring(enc)));
+    // A lone house never had a karpef: walls x [0,10] -> ring x [-11,520, 11,530].
+    const lone = run([box(0, 0, 10, 10)], { karpef: true }, { x: 5, y: 5 });
+    check('rev22-h', 978, 'building mode: ring = the house walls + 11,520 m',
+      lone.mode === 'building' && sameSpan(ring(lone), { minX: -11520, maxX: 11530, minY: -11520, maxY: 11530 }));
+    // A town split into regions by an unfilled pocket: each region gets 24,000 amos, no karpef.
+    // Tiny amah 0.01 m: 24,000 amos = 240 m, karpef 0.70667 m.
+    const deepU = [];
+    for (let n = 0; n <= 10; n++) { deepU.push(house(0, n * 10), house(100, n * 10)); if (n > 0 && n < 10) deepU.push(house(n * 10, 0)); }
+    const multi = run(deepU, { amahM: 0.01, karpef: true }, { x: 0, y: 50 });
+    check('rev22-i', 978, 'a town of several regions: each region\'s ring is that region + 240 m (24,000 amos at 1 cm), no karpef',
+      multi.cityRegions.length > 1 && multi.mil12Regions.length === multi.cityRegions.length &&
+      multi.cityRegions.every((region, i) => { const c = span(region), m = span(multi.mil12Regions[i]);
+        return approx(m.minX, c.minX - 240) && approx(m.maxX, c.maxX + 240) && approx(m.minY, c.minY - 240) && approx(m.maxY, c.maxY + 240); }),
+      `regions=${multi.cityRegions.length}`);
+    const mainJs = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+    check('rev22-j', 988, 'when the ring is shown, the panel adds the rav note and the ring\'s label says "without the karpef"',
+      /settings\.show12mil && \(res\.mil12Regions/.test(mainJs) && /12-mil ring:<\/b> drawn 24,000 amos from the town’s own squared edge, without the 70⅔-amah karpef/.test(mainJs) &&
+      /'12 mil \(d’oraisa shita\) — 24,000 amos from the town’s own squared edge, without the karpef/.test(mainJs));
+  }
+  pend('1.1-c', 991, 'Is the Torah-law 12 mil measured from the squared town at all, or from the houses themselves? Minchas Chinuch 24 doubts in general whether rabbinic techum leniencies reach the Torah measure. (Part 7 Q16)');
 
   check('1.2-e', 53, 'default amah is 48 cm with the second comparison line off',
     SET.DEFAULTS.amahCm === 48 && SET.DEFAULTS.secondAmahCm === 0);
@@ -735,8 +783,8 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('2-12mil', 391, 'the 12-mil ring and second-shita line are hidden by default', SET.DEFAULTS.show12mil === false && SET.DEFAULTS.secondAmahCm === 0);
 }
 
-pend('7-q11', 1156, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
-pend('7-q12', 1159, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
+pend('7-q11', 1194, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
+pend('7-q12', 1197, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
 
 console.log(`\n${passed} passed, ${failed} failed, ${pending.length} pending`);
 for (const p of pending) console.log('  PENDING ' + p);

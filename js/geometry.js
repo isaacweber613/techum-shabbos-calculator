@@ -1302,7 +1302,9 @@
         city: defs.map((def) => regionDefToRing(def, 0)),
         karpef: settings.karpef ? defs.map((def) => regionDefToRing(def, karpefM)) : [],
         techum: defs.map((def) => regionDefToRing(def, techumM + (settings.karpef ? karpefM : 0))),
-        mil12: defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0))),
+        // The Torah-law 12 mil is measured from the town's own squared edge. The Rema's
+        // karpef is a leniency for the rabbinic 2000 and is not added (spec rev. 22).
+        mil12: defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM)),
       };
     };
     const boundaryCache = new Map();
@@ -1334,7 +1336,7 @@
       cityPolygons = defs.map((def) => regionDefToRing(def, 0));
       karpefPolygons = settings.karpef ? defs.map((def) => regionDefToRing(def, karpefM)) : [];
       techumPolygons = defs.map((def) => regionDefToRing(def, techumM + (settings.karpef ? karpefM : 0)));
-      mil12Polygons = defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0)));
+      mil12Polygons = defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM)); // no karpef (rev. 22)
       warnings.push({ type: 'validated-perimeter', text: 'A reviewer-supplied validated enclosure is being used as the city edge. The app did not infer its hukaf-l\'dira status; confirm the supplied perimeter and ruling.' });
       // Another city wholly inside this techum is flagged as in ordinary city mode (§1.10a,
       // rev. 21). A city touching the validated enclosure belongs to the enclosed city itself.

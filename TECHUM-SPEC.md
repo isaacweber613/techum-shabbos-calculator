@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 21, 2026-11-25) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 22, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -30,7 +30,8 @@ Igros Moshe OC 1:136; Minchas Yitzchak 7:24, 8:33.
 - **D'oraisa/d'rabbanan:** 2000 amos is d'rabbanan per Rambam/Rif/Chinuch; the Rambam holds
   **12 mil (24,000 amos)** is d'oraisa (per Yerushalmi Eruvin 3:4); many Rishonim (Rosh,
   Tosafos, Baal HaMaor) hold even 12 mil is d'rabbanan. MB 397:1 is concerned for the
-  d'oraisa view at 12 mil; concludes many hold it's all d'rabbanan.
+  d'oraisa view at 12 mil; concludes many hold it's all d'rabbanan. The 12-mil comparison
+  ring is measured from the town's own squared edge, without the karpef (rev. 22).
 - **Consequence:** *halacha k'divrei ha-meikel b'eruv* — in genuine measurement doubt we
   follow the more lenient (larger) measurement (Eruvin 58b; SA 399). This licenses generous
   resolution of borderline measurement cases — but does **not by itself choose** among
@@ -388,7 +389,7 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 | Wholly enclosed ≥4000×4000-amah hole | **include + mandatory warning** (Beit Yitzchok / R' Shulem Weiss); strict exclusion available | same | same |
 | Unknown-use buildings | include, flagged for review (all profiles — data policy, not psak) | ” | ” |
 | Eruv-enclosure-as-city | **off unless rav-validated** — selected practice/data-confidence default, not settled consensus; validated *hukaf l'dirah* perimeter available | same | same |
-| 12-mil ring / second-shita comparison line | hidden / off (available in all profiles) | ” | ” |
+| 12-mil ring / second-shita comparison line | hidden / off (available in all profiles); the ring is 24,000 amos from the town's own squared edge, without the karpef (rev. 22) | ” | ” |
 
 Audit rule: any change to defaults gets a dated rev note in this section (append, don't
 overwrite).
@@ -965,6 +966,43 @@ default changed. Engine version 1.6.1.
   old-save switches. Three checks this spec does not settle became pending questions: the
   12-mil ring beyond the karpef (Part 7 Q15), and tents and containers as non-dwellings (Q14).
 
+### Rev. 22 — 2026-11-25 (researched answer: the 12-mil ring; one default change)
+
+From research Isaac ordered, one researching agent per question, not from a posek. Every
+place cited below was checked on Sefaria on 2026-11-25. The research put its confidence at
+about 85%.
+
+- **The 12-mil ring starts at the town's own squared edge, without the karpef (Part 7 Q15).**
+  Before: with the Rema's karpef on (the MB and Chazon Ish profiles), the engine drew the ring
+  24,000 amos beyond the karpef, 70⅔ amos (33.92 m at 48 cm) further out than the town's
+  squared edge. Now the ring is 24,000 amos from the squared town in every profile, for one
+  town and for towns joined into one (Rambam Shabbos 28:5: two towns within 141⅓ amos count
+  as one town). The 2000-amah techum keeps its karpef as before. Sources: Sefer HaChinuch 24
+  measures the Torah-law 12 mil "from the edge of the outermost house in the city"; Rambam
+  Shabbos 27:1–2 and Smag, Lavin 66 count it from the city; the karpef of a single town is
+  the Rema's leniency ("so it seems to me, to be lenient", SA OC 398:5), which the Mechaber,
+  following the Rambam and the Smag, does not give at all (Mishnah Berurah 398:21; Biur
+  Halacha 398:5); and the 12 mil is treated strictly as a Torah-law doubt (Rema on SA OC
+  404:1; Mishnah Berurah 404:7). The research found no authority who adds the karpef to the
+  12 mil. The Mechaber profile, with no karpef, is unchanged.
+- **Flag.** Whenever the ring is shown, the results panel adds a short note that it is drawn
+  from the town's own squared edge without the karpef and that a rav should confirm it. The
+  ring stays off by default.
+- **Still open (Part 7 Q16).** Whether the 12 mil is measured from the squared town at all,
+  or from the houses themselves. Minchas Chinuch 24 (paragraphs 7 and 10) asks in general
+  whether the rabbinic techum rules and leniencies apply to the Torah measure, and holds that
+  the stepped slope measurement does not; on the squared corners of the techum itself he says
+  the same dispute applies to the 12 mil. He does not discuss squaring the town for the 12
+  mil, so the research's report of his doubt about squaring checked out only in that general
+  form. The ring keeps the squared edge. The Chazon Ish's own words were not read; his work is
+  not on Sefaria.
+- **Replay note.** A snapshot that shows the 12-mil ring with the karpef on now draws the ring
+  70⅔ amos closer to the town than when it was saved. Engine version 1.6.2.
+
+Golden tests in `tests/spec-golden.test.js` (ids `rev22-*`) cover one town, two joined towns,
+both amos, each profile, a validated enclosure, building mode and a multi-region town, with
+expected values worked out by hand.
+
 ## Part 3 — Product spec
 
 ### 3.0 Scope & users
@@ -1174,7 +1212,13 @@ the UI for building-level review is the bulk of the work.
     non-dwellings. Which of these is a beis dirah?
 15. **The 12-mil comparison ring (rev. 21)** — the engine draws the 24,000-amah ring beyond the
     Rema karpef, like the 2000. Is the d'oraisa 12 mil measured from the karpef or from the
-    city's own edge? The ring is off by default.
+    city's own edge? The ring is off by default. **Rev. 22 answered (from research, not a
+    posek):** from the town's own squared edge, without the karpef, in every profile; the part
+    still open is Q16.
+16. **Is the 12 mil measured from the squared town? (rev. 22)** — the ring keeps the squared
+    edge. Minchas Chinuch 24 asks in general whether the rabbinic techum rules and leniencies
+    carry over to the Torah measure, which would include squaring the town, but he does not
+    discuss squaring directly. The Chazon Ish's own words on the 12 mil were not read.
 
 **Validation benchmarks:** the tool is city-agnostic; these are continuing cross-checks,
 not scope or release blockers:
