@@ -16,16 +16,22 @@
       largeHolePolicy: 'include-with-warning', // Beit Yitzchok / R' Shulem Weiss
       bowPolicy: 'rema-majority', // Tosafos/Rosh/Rema; reviewer supplies real-city endpoints
       minCityHouses: 6,    // provisional footprint proxy for MB 398:38, not the rule itself
+      // Spec rev. 25: a real 4×4-amah square must fit inside (Rosh; MA 398:6); 16 square amos
+      // without one goes to review (Biur Halacha 398:6 leaves it open).
+      sizeRule: 'square',
     },
     'chazon-ish': {
       label: 'Chazon Ish',
       amahCm: 57.6,
       karpef: true,        // CONFIRM CI's own karpef position with a posek (spec Part 2)
       squaringAngleDeg: 0, // same automatic SA/MB shape rule; nonzero is reviewer override
-      overlapPolicy: 'join-redraw', // expansive reading of CI 110:16; practical CI conclusion uncertain
+      // Rev. 20: off by default. CI 110:16 ends "the matter needs a ruling"; joint redraw
+      // stays a labelled option whose use is a rav's decision.
+      overlapPolicy: 'no-join',
       largeHolePolicy: 'include-with-warning',
       bowPolicy: 'rema-majority',
       minCityHouses: 6,
+      sizeRule: 'square',  // spec rev. 25; the Chazon Ish's own words on shape were not read
     },
     'mechaber': {
       label: 'Mechaber / Sefardi',
@@ -36,6 +42,7 @@
       largeHolePolicy: 'include-with-warning',
       bowPolicy: 'mechaber-curve',
       minCityHouses: 6,
+      sizeRule: 'area',    // spec rev. 25: 16 square amos in any shape (Rambam; SA YD 286:13)
     },
   };
 
@@ -45,7 +52,7 @@
     includeUnknown: true,   // data policy (just-works default); flagged in UI
     includeReview: true,    // hotels/shuls/schools etc — flagged, open question Q5
     showVerifiedOnly: false, // optional reviewer scenario; ordinary users get one automatic result
-    minSizeFilter: true,    // exclude structures below 4x4 amos (SA HaRav 398:10)
+    minSizeFilter: true,    // apply the minimum dwelling size of 4×4 amos (spec rev. 25)
     secondAmahCm: 0,        // 0 = off; draws a comparison techum line
     show12mil: false,
     pointRotationDeg: 0,    // open-field square rotation (SA 399 — person may orient)
@@ -54,8 +61,9 @@
     concavityReviews: {},   // review key -> reviewer-confirmed endpoints and application state
     useValidatedPerimeter: false, // explicit rav-supplied hukaf-l'dira alternative; never inferred
     fetchRadiusM: 1200,
-    maxBuildings: 40000,    // the only stop on widening the loaded area (spec rev. 18.1)
+    maxBuildings: 40000,    // the only stop on widening the loaded area (spec rev. 26)
     dataSourceVersion: 2,   // migrates prior OSM-era display defaults once
+    profileRevision: 20,    // spec rev. 20: Chazon Ish profile overlap default join-redraw -> no-join
   };
 
   const KEY = 'techum-settings-v1';
@@ -68,6 +76,11 @@
       settings.overlapPolicy = settings.overlapMerge ? 'join-redraw' : 'no-join';
     }
     delete settings.overlapMerge;
+    // Rev. 25 added the size rule. A save or snapshot from before it takes the rule of its own
+    // profile, so a Mechaber save gets the area rule; no choice a user made is changed.
+    if (settings.sizeRule !== 'square' && settings.sizeRule !== 'area') {
+      settings.sizeRule = (PROFILES[settings.profile] || PROFILES[DEFAULTS.profile]).sizeRule;
+    }
     return { ...DEFAULTS, ...settings };
   }
 
@@ -82,6 +95,22 @@
         if (saved.dataSourceVersion !== 2) {
           saved.showVerifiedOnly = false;
           saved.dataSourceVersion = 2;
+        }
+        // Spec rev. 20 moved the Chazon Ish profile's overlap default from joint redraw to no
+        // join. A saved setting that still matches the old profile exactly took that default
+        // rather than choosing it, so it follows the new default. The comparison reads the
+        // normalized values, so a save from before rev. 13 (binary overlapMerge switch, no
+        // bow or hole setting yet) is recognised too, and a save marked with any later
+        // revision is never switched again (rev. 21).
+        if (!((Number(saved.profileRevision) || 0) >= 20)) {
+          const ci = PROFILES['chazon-ish'], now = normalize(saved);
+          if (now.profile === 'chazon-ish' && now.overlapPolicy === 'join-redraw' &&
+            now.amahCm === ci.amahCm && now.karpef === ci.karpef &&
+            now.squaringAngleDeg === ci.squaringAngleDeg && now.largeHolePolicy === ci.largeHolePolicy &&
+            now.bowPolicy === ci.bowPolicy && now.minCityHouses === ci.minCityHouses) {
+            saved.overlapPolicy = ci.overlapPolicy;
+          }
+          saved.profileRevision = 20;
         }
         // The validated perimeter itself is never stored in the browser (only in snapshots),
         // so a restored "use perimeter" flag would point at nothing.
@@ -100,7 +129,7 @@
     return { ...s, profile: profileKey, amahCm: p.amahCm, karpef: p.karpef,
       squaringAngleDeg: p.squaringAngleDeg, overlapPolicy: p.overlapPolicy,
       largeHolePolicy: p.largeHolePolicy, bowPolicy: p.bowPolicy,
-      minCityHouses: p.minCityHouses };
+      minCityHouses: p.minCityHouses, sizeRule: p.sizeRule };
   }
   // Reviewer records (free-text evidence, member ids, endpoints) never go to analytics; only
   // how many exist.
@@ -126,7 +155,7 @@
     const same = p.amahCm === s.amahCm && p.karpef === s.karpef &&
       p.squaringAngleDeg === s.squaringAngleDeg && p.overlapPolicy === s.overlapPolicy &&
       p.largeHolePolicy === s.largeHolePolicy && p.bowPolicy === s.bowPolicy &&
-      p.minCityHouses === s.minCityHouses;
+      p.minCityHouses === s.minCityHouses && p.sizeRule === s.sizeRule;
     return same ? s.profile : 'custom';
   }
 

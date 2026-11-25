@@ -20,6 +20,7 @@
     BOW: 4000,               // bow-endpoint limit — SA OC 398:3
     MIL12: 24000,            // 12 mil d'oraisa view — Rambam
     PERSON: 4,               // 4 amos of a person in a field
+    DWELLING: 4,             // 4×4-amah beis dirah — Sukkah 3a-b; SA OC 398:6 (spec rev. 25)
   };
 
   // ---------- Local projection (lat/lon <-> local meters, true-north aligned) ----------
@@ -329,6 +330,36 @@
     return `${id}@${box.minX.toFixed(3)},${box.minY.toFixed(3)},${box.maxX.toFixed(3)},${box.maxY.toFixed(3)}`;
   }
 
+  // Structures that join a town in the 70⅔-amah chain but add 0 to the count that forms a
+  // town (building.noCityCount). Each kind raises its own pair of flags: `joined` when it
+  // chains onto a settlement with houses, `site` when a settlement would be a town only by
+  // counting it. A noCityCount footprint without a known kind is a static caravan, the only
+  // kind before rev. 23. A container reaches here only when a reviewer included it (rev. 24).
+  const UNCOUNTED_KINDS = {
+    'static-caravan': { // spec rev. 20
+      siteType: 'caravan-site',
+      site: (n) => `${n === 1 ? 'A settlement' : n + ' settlements'} would be a town only by counting static caravans. Caravans are not counted toward the minimum that forms a town, because whether caravans alone make a town is disputed (Magen Avraham 398:15 and Mishnah Berurah 398:49 against Eliyah Rabbah 398:14). A rav may record its town status.`,
+      joinedType: 'static-caravan',
+      joined: (n) => `${n} static caravan${n === 1 ? '' : 's'} joined the chain of houses. The map cannot show whether a caravan is lived in all year; a seasonal caravan needs a rav.`,
+    },
+    'fixed-tent': { // spec rev. 23
+      siteType: 'tent-site',
+      site: (n) => `${n === 1 ? 'A settlement' : n + ' settlements'} would be a town only by counting tents or yurts. Tents are not counted toward the minimum that forms a town: tents have no town status (SA OC 398:10), and whether tents fixed in one place make one is disputed (Magen Avraham 398:15 and Mishnah Berurah 398:49 against the Levush as read by Eliyah Rabbah 398:14). Three courtyards of two permanent houses each make the whole camp a town. A rav may record its town status.`,
+      joinedType: 'fixed-tent',
+      joined: (n) => `${n} tent${n === 1 ? '' : 's'} or yurt${n === 1 ? '' : 's'} joined the chain of houses. A tent counts only when it is fixed in one place (Magen Avraham 398:15), and how long makes it fixed is unsettled (Eshel Avraham 398:15: one summer or 30 days; Kaf HaChaim 398:66: 30 days). The map cannot show this; a rav should confirm.`,
+    },
+    'lived-in-container': { // spec rev. 24
+      siteType: 'container-site',
+      site: (n) => `${n === 1 ? 'A settlement' : n + ' settlements'} would be a town only by counting containers a reviewer included. A container people live in is treated like a static caravan and is not counted toward the minimum that forms a town, because whether movable dwellings fixed on a site make a town by themselves is disputed (Magen Avraham 398:15 and Mishnah Berurah 398:49 against Eliyah Rabbah 398:14). No posek we found discusses containers by name. A rav may record its town status.`,
+      joinedType: 'lived-in-container',
+      joined: (n) => `${n} container${n === 1 ? '' : 's'} a reviewer included joined the chain of houses. A storage container is not a dwelling (SA OC 398:6); one people live in, fixed in place, joins the town like any building lived in (Shulchan Aruch HaRav 398:8) but is not counted toward the minimum that forms one, like a static caravan. No posek we found discusses containers by name; a rav should confirm.`,
+    },
+  };
+  function uncountedKindOf(building) {
+    return Object.prototype.hasOwnProperty.call(UNCOUNTED_KINDS, building.noCityCountKind)
+      ? building.noCityCountKind : 'static-caravan';
+  }
+
   // buildings: the caller's unrotated footprints (ids and joinOnly flags).
   // frameBuildings: the same footprints in the working frame, used only to recognise a
   // legacy v2 key saved under the same projection origin and squaring angle.
@@ -378,7 +409,18 @@
         ? record.basis : null;
       const evidence = record && typeof record === 'object' && typeof record.evidence === 'string'
         ? record.evidence.trim().slice(0, 1000) : '';
-      cluster.houseCount = cluster.members.reduce((count, index) => count + (buildings[index].joinOnly ? 0 : 1), 0);
+      // A validated join perimeter, a static caravan (spec rev. 20) and a fixed tent or yurt
+      // (rev. 23) join in the chain but add nothing to the count that forms a town.
+      cluster.houseCount = cluster.members.reduce((count, index) =>
+        count + (buildings[index].joinOnly || buildings[index].noCityCount ? 0 : 1), 0);
+      cluster.uncounted = {};
+      for (const index of cluster.members) {
+        const building = buildings[index];
+        if (!building.noCityCount || building.joinOnly) continue;
+        const kind = uncountedKindOf(building);
+        cluster.uncounted[kind] = (cluster.uncounted[kind] || 0) + 1;
+      }
+      cluster.uncountedCount = Object.values(cluster.uncounted).reduce((sum, count) => sum + count, 0);
       cluster.qualifiesAsCity = typeof decision === 'boolean'
         ? decision
         : cluster.houseCount >= minCityHouses;
@@ -501,6 +543,263 @@
       return { method: 'trapezoid-extended', angleRad: trapezoidAngle, rect, rectangularity };
     }
     return { method: 'world-aligned', angleRad: 0, rect: bboxOfRing(points), rectangularity };
+  }
+
+  // Narrowest width in any direction (rotating calipers over the convex hull).
+  function minimumWidth(ring) {
+    const hull = convexHull(ring || []);
+    if (hull.length < 3) return 0;
+    let best = Infinity;
+    for (let i = 0; i < hull.length; i++) {
+      const a = hull[i], b = hull[(i + 1) % hull.length];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (!len) continue;
+      const nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
+      let reach = 0;
+      for (const p of hull) reach = Math.max(reach, Math.abs((p.x - a.x) * nx + (p.y - a.y) * ny));
+      best = Math.min(best, reach);
+    }
+    return best === Infinity ? 0 : best;
+  }
+
+  // ---------- Beis-dirah size (spec rev. 25) ----------
+  // Under 16 square amos of floor is never a dwelling (Sukkah 3a-b; SA OC 398:6). Rule 'area'
+  // (Mechaber profile): 16 square amos in any shape counts (Rambam Mezuzah 6:2; SA YD 286:13;
+  // Kaf HaChaim 398:29). Rule 'square' (Mishnah Berurah and Chazon Ish profiles): a real
+  // 4×4-amah square must fit inside, in some rotation (Rosh, Hilchos Mezuzah 16; MA 398:6;
+  // SA HaRav 398:10); 16 square amos without one is disputed and goes to review. The outline is
+  // the outside of the walls, and nothing is taken off for their thickness. holes: inner rings,
+  // such as a closed courtyard. Returns 'ok', 'small' (not a dwelling) or 'no-square' (review).
+  // Before rev. 25 the test was the narrowest width of the outer hull (rev. 19).
+  const SIZE_SLACK_M = 1e-9;        // floating-point slack in a single check
+  const SIZE_ROTATION_TOL_M = 1e-6; // the search over rotations settles each case to a micron
+  function dwellingSize(ring, amahM, rule, holes) {
+    if (!Array.isArray(ring) || ring.length < 3) return 'small';
+    const rings = [ring].concat((holes || []).filter((hole) => Array.isArray(hole) && hole.length >= 3));
+    const side = AMOS.DWELLING * amahM;
+    const floor = rings.slice(1).reduce((area, hole) => area - ringArea(hole), ringArea(ring));
+    if (!(Math.sqrt(Math.max(floor, 0)) >= side - SIZE_SLACK_M)) return 'small';
+    if (rule === 'area') return 'ok';
+    return squareFitsInside(rings, side) ? 'ok' : 'no-square';
+  }
+
+  // Whether a side × side square fits inside the floor (rings[0] the outer wall, the rest
+  // holes) at some rotation, for any outline, concave or with holes.
+  function squareFitsInside(rings, side) {
+    // Most buildings: a circle of radius side/√2 around the floor's centre holds the square at
+    // any angle.
+    const centre = ringCentroid(rings[0]);
+    if (centre && floorDistance(centre, rings) >= side / Math.SQRT2) return true;
+    // A square is at least `side` wide in every direction, so a narrower outline holds none.
+    if (minimumWidth(rings[0]) < side - SIZE_SLACK_M) return false;
+    // A square holds a circle of radius side/2 and fits inside one of radius side/√2.
+    const circle = inscribedCircle(rings, side / 2 - SIZE_SLACK_M, side / Math.SQRT2);
+    if (circle !== 'unsure') return circle === 'yes';
+    return squareFitsAtSomeAngle(rings, side / 2);
+  }
+
+  function ringCentroid(ring) {
+    const area = polygonSignedArea(ring);
+    if (!area) return null;
+    let cx = 0, cy = 0;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[j], b = ring[i], f = a.x * b.y - b.x * a.y;
+      cx += (a.x + b.x) * f; cy += (a.y + b.y) * f;
+    }
+    return { x: cx / (6 * area), y: cy / (6 * area) };
+  }
+
+  // Signed distance from p to the nearest wall: positive on the floor, negative off it.
+  function floorDistance(p, rings) {
+    let inside = pointInRing(p, rings[0]);
+    for (let k = 1; inside && k < rings.length; k++) if (pointInRing(p, rings[k])) inside = false;
+    let d = Infinity;
+    for (const ring of rings) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) d = Math.min(d, pointSegDist(p, ring[j], ring[i]));
+    }
+    return inside ? d : -d;
+  }
+
+  // Best-first search over square cells for the point of the floor farthest from every wall
+  // (the method of Mapbox's polylabel), stopped once the question is settled: 'yes' when some
+  // point is at least `high` from every wall, 'no' when none is `low`, else 'unsure'. It only
+  // saves time: the exact search below decides every 'unsure' case.
+  function inscribedCircle(rings, low, high) {
+    const box = bboxOfRing(rings[0]);
+    const size = Math.min(box.maxX - box.minX, box.maxY - box.minY);
+    if (!(size > 0)) return 'no';
+    const heap = []; // max-heap on each cell's upper bound
+    const up = (i) => {
+      while (i > 0) {
+        const parent = (i - 1) >> 1;
+        if (heap[parent].max >= heap[i].max) break;
+        [heap[parent], heap[i]] = [heap[i], heap[parent]]; i = parent;
+      }
+    };
+    const pop = () => {
+      const top = heap[0], last = heap.pop();
+      if (heap.length) {
+        heap[0] = last;
+        for (let i = 0; ;) {
+          const l = 2 * i + 1, r = l + 1;
+          let m = i;
+          if (l < heap.length && heap[l].max > heap[m].max) m = l;
+          if (r < heap.length && heap[r].max > heap[m].max) m = r;
+          if (m === i) break;
+          [heap[m], heap[i]] = [heap[i], heap[m]]; i = m;
+        }
+      }
+      return top;
+    };
+    let best = -Infinity, unresolved = false;
+    // No point in a cell is farther from the walls than its centre's distance plus h·√2.
+    const consider = (x, y, h) => {
+      const d = floorDistance({ x, y }, rings);
+      if (d > best) best = d;
+      const max = d + h * Math.SQRT2;
+      if (max >= low) { heap.push({ x, y, h, max }); up(heap.length - 1); }
+    };
+    const h0 = size / 2;
+    for (let x = box.minX; x < box.maxX; x += size) {
+      for (let y = box.minY; y < box.maxY; y += size) consider(x + h0, y + h0, h0);
+    }
+    const centre = ringCentroid(rings[0]);
+    if (centre) consider(centre.x, centre.y, 0);
+    // Cells this small are left to the exact search; the bound only limits the work here.
+    const smallest = (high - low) / 64;
+    while (heap.length) {
+      if (best >= high) return 'yes';
+      const cell = pop();
+      if (cell.max < high && best >= low) return 'unsure'; // nothing left can reach `high`
+      if (cell.h <= smallest) { unresolved = true; continue; }
+      const h = cell.h / 2;
+      consider(cell.x - h, cell.y - h, h); consider(cell.x + h, cell.y - h, h);
+      consider(cell.x - h, cell.y + h, h); consider(cell.x + h, cell.y + h, h);
+    }
+    if (best >= high) return 'yes';
+    return best >= low || unresolved ? 'unsure' : 'no';
+  }
+
+  // Upper bound on the half-side of a square turned anywhere within `half` of `mid` that fits in
+  // the hull: such a square is 2g wide along its sides and 2g·√2 along its diagonals, and the
+  // hull is at least as wide in every direction. The hull's widest extent over a range of
+  // directions comes from its vertex pairs: |pq|·cos of the angle from pq to the nearest one.
+  function hullSquareBound(hull, mid, half) {
+    const widest = (direction) => {
+      let best = 0;
+      for (let i = 0; i < hull.length; i++) {
+        for (let j = i + 1; j < hull.length; j++) {
+          const dx = hull[j].x - hull[i].x, dy = hull[j].y - hull[i].y;
+          const turn = ((Math.atan2(dy, dx) - direction) % Math.PI + Math.PI) % Math.PI;
+          const off = Math.max(0, Math.min(turn, Math.PI - turn) - half);
+          best = Math.max(best, Math.hypot(dx, dy) * Math.cos(off));
+        }
+      }
+      return best;
+    };
+    return Math.min(widest(mid) / 2, widest(mid + Math.PI / 2) / 2,
+      widest(mid + Math.PI / 4) / (2 * Math.SQRT2), widest(mid - Math.PI / 4) / (2 * Math.SQRT2));
+  }
+
+  // Exact search over rotations; 0°-90° covers every square. If a square of half-side g fits
+  // at angle θ, a square of half-side g / (cos δ + sin δ) with the same centre fits at θ + δ
+  // (|δ| ≤ 45°). So when no square of half-side r / (cos Δ + sin Δ) fits at the middle of an
+  // interval of half-width Δ, no square of half-side r fits anywhere in that interval.
+  function squareFitsAtSomeAngle(rings, r) {
+    const quarter = Math.PI / 2;
+    const fold = (angle) => ((angle % quarter) + quarter) % quarter;
+    const hull = convexHull(rings[0]);
+    const tooNarrow = (mid, half) => hullSquareBound(hull, mid, half) < r - SIZE_SLACK_M;
+    if (tooNarrow(quarter / 2, quarter / 2)) return false; // e.g. a round outline just too small
+    // A building's largest square usually lies along its walls, so try those angles first.
+    const first = [];
+    const rect = minimumAreaRect(rings[0]);
+    if (rect) first.push(fold(rect.angleRad));
+    let longest = 0;
+    for (let i = 0, j = rings[0].length - 1; i < rings[0].length; j = i++) {
+      const a = rings[0][j], b = rings[0][i], length = Math.hypot(b.x - a.x, b.y - a.y);
+      if (length > longest) { longest = length; first[1] = fold(Math.atan2(b.y - a.y, b.x - a.x)); }
+    }
+    for (const angle of first) {
+      if (angle != null && !tooNarrow(angle, 0) && squareFitsAtAngle(rings, angle, r)) return true;
+    }
+    const stack = [[quarter / 2, quarter / 2]];
+    while (stack.length) {
+      const [mid, half] = stack.pop();
+      if (tooNarrow(mid, half)) continue;
+      const shrink = Math.cos(half) + Math.sin(half);
+      if (!squareFitsAtAngle(rings, mid, r / shrink)) continue;
+      if (squareFitsAtAngle(rings, mid, r)) return true;
+      // Within a micron of 4 amos: counts, like a building exactly 4×4 amos.
+      if (r - r / shrink <= SIZE_ROTATION_TOL_M) return true;
+      stack.push([mid - half / 2, half / 2], [mid + half / 2, half / 2]);
+    }
+    return false;
+  }
+
+  // L∞ distance from c to segment ab: the half-side of the largest axis-aligned square centred
+  // on c that does not reach the segment. The minimum lies at an end or a break point of
+  // max(|u - t·dx|, |v - t·dy|).
+  function squareDistToSeg(c, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, u = c.x - a.x, v = c.y - a.y;
+    const at = (t) => Math.max(Math.abs(u - t * dx), Math.abs(v - t * dy));
+    let best = Math.min(at(0), at(1));
+    for (const [num, den] of [[u, dx], [v, dy], [u - v, dx - dy], [u + v, dx + dy]]) {
+      if (den !== 0) { const t = num / den; if (t > 0 && t < 1) best = Math.min(best, at(t)); }
+    }
+    return best;
+  }
+  function segmentCrossing(p, q, s, t) {
+    const rx = q.x - p.x, ry = q.y - p.y, sx = t.x - s.x, sy = t.y - s.y;
+    const den = rx * sy - ry * sx;
+    if (den === 0) return null; // parallel: where they meet is already a corner
+    const wx = s.x - p.x, wy = s.y - p.y;
+    const a = (wx * sy - wy * sx) / den, b = (wx * ry - wy * rx) / den;
+    const e = 1e-12; // parameter rounding at a shared corner
+    if (a < -e || a > 1 + e || b < -e || b > 1 + e) return null;
+    return { x: p.x + a * rx, y: p.y + a * ry };
+  }
+
+  // Whether a square of half-side r, turned by `angle`, fits inside the floor. In the turned
+  // frame the square is axis-aligned. The centres where it fits form a closed region whose edge
+  // is made of the outlines each wall sweeps with the square (a hexagon per wall). If that
+  // region is not empty, its lowest point is a corner of one outline or a crossing of two, so
+  // those points are checked one by one.
+  function squareFitsAtAngle(rings, angle, r) {
+    const turned = rings.map((ring) => ring.map((p) => toOrientedFrame(p, angle)));
+    const walls = [];
+    for (const ring of turned) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) walls.push([ring[j], ring[i]]);
+    const box = bboxOfRing(turned[0]);
+    const lo = { x: box.minX + r - SIZE_SLACK_M, y: box.minY + r - SIZE_SLACK_M };
+    const hi = { x: box.maxX - r + SIZE_SLACK_M, y: box.maxY - r + SIZE_SLACK_M };
+    if (lo.x > hi.x || lo.y > hi.y) return false;
+    const fitsAt = (c) => {
+      if (c.x < lo.x || c.x > hi.x || c.y < lo.y || c.y > hi.y) return false;
+      for (const [a, b] of walls) if (squareDistToSeg(c, a, b) < r - SIZE_SLACK_M) return false;
+      if (!pointInRing(c, turned[0])) return false;
+      for (let k = 1; k < turned.length; k++) if (pointInRing(c, turned[k])) return false;
+      return true;
+    };
+    const sides = [];
+    for (const [a, b] of walls) {
+      const swept = convexHull([a, b].flatMap((p) => [
+        { x: p.x - r, y: p.y - r }, { x: p.x + r, y: p.y - r }, { x: p.x + r, y: p.y + r }, { x: p.x - r, y: p.y + r }]));
+      for (let i = 0; i < swept.length; i++) {
+        const p = swept[i], q = swept[(i + 1) % swept.length];
+        if (fitsAt(p)) return true;
+        sides.push({ p, q, minX: Math.min(p.x, q.x), maxX: Math.max(p.x, q.x), minY: Math.min(p.y, q.y), maxY: Math.max(p.y, q.y) });
+      }
+    }
+    for (let i = 0; i < sides.length; i++) {
+      const s = sides[i];
+      for (let j = i + 1; j < sides.length; j++) {
+        const t = sides[j];
+        if (t.minX > s.maxX || t.maxX < s.minX || t.minY > s.maxY || t.maxY < s.minY) continue;
+        const crossing = segmentCrossing(s.p, s.q, t.p, t.q);
+        if (crossing && fitsAt(crossing)) return true;
+      }
+    }
+    return false;
   }
 
   function rectIntersection(a, b) {
@@ -728,7 +1027,7 @@
       acted = false;
       // Rounds are counted across the whole calculation (the cache persists between the
       // fixed-point passes). A join made in a later round rests on earlier joins, which a
-      // partly loaded neighbour can change (dataFrontier rule 2).
+      // partly loaded neighbour can change (rev. 26: dataFrontier).
       cache.round = (cache.round || 0) + 1;
       // Only bona-fide cities can participate. Iterating every isolated footprint made
       // this O(all clusters^3), freezing dense-city pages even though almost all of
@@ -761,7 +1060,7 @@
         }
         return { min, max, width: max - min };
       };
-      const found = [];
+      const found = [], wider = [];
       for (const { i: b } of candidates) {
         const nearby = [];
         for (const i of cityGrid.query(expandRect(clusters[b].bbox, techum))) {
@@ -810,12 +1109,33 @@
             if (bSupport.width <= outerGap &&
                 leftGap >= 0 && rightGap >= 0 && leftGap <= t2 && rightGap <= t2) {
               found.push({ a, b, c, nx, ny, outerGap, middleWidth: bSupport.width, leftGap, rightGap });
+            } else if (leftGap <= t2 && rightGap <= t2 && bSupport.max > aSupport.max && bSupport.min < cSupport.min) {
+              // Lowered, the middle village spans the gap and reaches over an outer village's
+              // span, so as written it does not "fit" and nothing joins. Whether a village wider
+              // than the gap still joins is open (Part 7 Q19); the result is flagged, not changed.
+              wider.push({ a, b, c, nx, ny, outerGap, middleWidth: bSupport.width, leftGap, rightGap });
             }
           }
         }
       }
-      if (!found.length) break;
       const tripleKey = (t) => [clusters[t.b].key, clusters[t.a].key, clusters[t.c].key].join('|');
+      if (!cache.widerSeen) cache.widerSeen = new Set();
+      wider.sort((x, y) => byKey(tripleKey(x), tripleKey(y)));
+      for (const t of wider) {
+        const key = tripleKey(t);
+        if (cache.widerSeen.has(key)) continue;
+        cache.widerSeen.add(key);
+        warnings.push({
+          type: 'three-villages-wider-middle',
+          text: 'Three-villages rule (SA HaRav 398:12): a middle village within 2000 amos of two towns is wider than the gap between them once lowered onto their axis, so as the spec words the rule it does not fit and the towns stay apart. Whether such a village still joins them is an open question for rav review (spec Part 7 Q19). If it does, the town is larger; the boundary shown is the stricter one.',
+          middleComponentKeys: [...clusters[t.b].componentKeys],
+          outerComponentKeys: [clusters[t.a].componentKeys, clusters[t.c].componentKeys].map((keys) => [...keys]),
+          round: cache.round,
+          axis: { x: t.nx, y: t.ny },
+          projectedPlacementM: { outerGap: t.outerGap, middleWidth: t.middleWidth, leftGap: t.leftGap, rightGap: t.rightGap },
+        });
+      }
+      if (!found.length) break;
       found.sort((x, y) => byKey(tripleKey(x), tripleKey(y)));
       const uf = UnionFind(clusters.length);
       for (const t of found) {
@@ -823,10 +1143,10 @@
         uf.union(t.a, t.b); uf.union(t.b, t.c);
         warnings.push({
           type: 'three-villages',
-          round: cache.round,
           text: 'Three-villages rule (SA HaRav 398:12) merged three settlements using the disclosed outer-center lowering axis; confirm the axis if an irregular outline makes another placement material.',
           middleComponentKeys: [...B.componentKeys],
           outerComponentKeys: [A.componentKeys, C.componentKeys].map((keys) => [...keys]),
+          round: cache.round,
           axis: { x: t.nx, y: t.ny },
           actualMiddleGapsM: {
             toFirstOuter: clusterGapExact(A, B, buildings, clusterGrid),
@@ -1063,6 +1383,17 @@
       qualificationEvidence: cluster.qualificationEvidence,
       qualificationProvisional: cluster.qualificationProvisional,
     }));
+    // Static caravans (spec rev. 20), fixed tents or yurts (rev. 23) and lived-in containers
+    // (rev. 24) chain onto a town but never make one by count. A settlement that would be a town only by counting them is
+    // flagged once for each kind it holds.
+    const uncountedSites = clusters.filter((cluster) => cluster.uncountedCount > 0 && cluster.qualificationProvisional &&
+      cluster.houseCount < settings.minCityHouses && cluster.houseCount + cluster.uncountedCount >= settings.minCityHouses);
+    for (const [kind, rule] of Object.entries(UNCOUNTED_KINDS)) {
+      const sites = uncountedSites.filter((cluster) => cluster.uncounted[kind] > 0).length;
+      if (sites) warnings.push({ type: rule.siteType, text: rule.site(sites) });
+      const joined = clusters.reduce((sum, cluster) => sum + (cluster.houseCount > 0 ? cluster.uncounted[kind] || 0 : 0), 0);
+      if (joined) warnings.push({ type: rule.joinedType, text: rule.joined(joined) });
+    }
     markStage('cityQualification');
 
     // 141⅓ and three-village mergers are applied to a fixed point. A three-village
@@ -1190,6 +1521,8 @@
     let pointModeWorldFrame = false;
     const concavity = [];
     const regionDefToRing = (def, expansion) => rectCornersInFrame(expandRect(def.rect, expansion || 0), def.angleRad);
+    // `collected` receives this call's bow/hole warnings; only the closures that end up
+    // governing the result (or were rejected because of a pocket) report them.
     const applyShapeRules = (defs, sourceCluster, sourceAngle, collected) => {
       if (!sourceCluster || !sourceCluster.members.length) return defs;
       const framedBuildings = work.map((building) => {
@@ -1252,8 +1585,6 @@
       }
       return pieces;
     };
-    // Each town's final boundary (its squared regions after the bow/hole rules), built once. Its
-    // bow/hole review notes are reported only for the towns the result uses.
     const buildClosureBoundary = (closure) => {
       const found = [];
       let defs;
@@ -1273,7 +1604,9 @@
         city: defs.map((def) => regionDefToRing(def, 0)),
         karpef: settings.karpef ? defs.map((def) => regionDefToRing(def, karpefM)) : [],
         techum: defs.map((def) => regionDefToRing(def, techumM + (settings.karpef ? karpefM : 0))),
-        mil12: defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0))),
+        // The Torah-law 12 mil is measured from the town's own squared edge. The Rema's
+        // karpef is a leniency for the rabbinic 2000 and is not added (spec rev. 22).
+        mil12: defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM)),
       };
     };
     const boundaryCache = new Map();
@@ -1281,15 +1614,32 @@
       if (!boundaryCache.has(closure)) boundaryCache.set(closure, buildClosureBoundary(closure));
       return boundaryCache.get(closure);
     };
+    // A pin outside every house is in a city only inside that city's FINAL starting area
+    // (spec §1.10a). The full squared rectangle can contain the pin while an unfilled
+    // bow/L pocket or an excluded hole removes that spot from the starting area; such a pin
+    // rests outside the city (rev. 21). A pin in one of the city's own houses stays a resident,
+    // and inside an active validated enclosure the enclosure itself is the person's city.
+    const pocketRejected = [];
+    if (physicalCityModel < 0 && !perimeterActive) {
+      selectedClosures = selectedClosures.filter((closure) => {
+        const boundary = boundaryOf(closure);
+        if ((settings.karpef ? boundary.karpef : boundary.city).some((ring) => pointInOrOnRing(workPin, ring))) return true;
+        pocketRejected.push(closure);
+        return false;
+      });
+    }
     // §1.10a priority (1): when several starting areas hold a pin that is in none of their houses,
     // the town whose own 70⅔-amah component physically holds the pin governs. A component's
-    // physical area is its footprints, each grown by half the 70⅔-amah gap (§1.4: buffer each
-    // footprint by half the gap, union, dissolve), so a pin in the street between a town's houses
-    // is in that town. Two towns' areas never overlap: footprints within 70⅔ amos of each other
-    // are one component. This applies only inside the town's own squared walls (its final
-    // starting area without the karpef): the strip up to half the gap beyond the outermost houses
-    // can be open field, and whether a person there rests in that town when another town's area
-    // also holds him is open (Part 7), so the common area of every candidate stays, with a note.
+    // physical area is its footprints and validated perimeters, each grown by half the 70⅔-amah
+    // gap (§1.4: buffer each footprint by half the gap, union, dissolve), so a pin in the street
+    // between a town's houses is in that town. Two towns' areas never overlap: footprints within
+    // 70⅔ amos of each other are one component. The rule only chooses among towns whose final
+    // starting area already holds the pin (rev. 12); only a pin in none of their areas, the empty
+    // overlap, keeps the common area of every candidate (rev. 26).
+    // Rev. 27: only inside the town's own squared walls (its final starting area without the karpef).
+    // The strip up to half the gap beyond the outermost houses can be open field; whether a person
+    // there rests in that town when another town's square also holds him is open (Part 7 Q20), so
+    // the common area stays, with a review note.
     let besideTown = false;
     if (physicalCityModel < 0 && !perimeterActive && selectedClosures.length > 1) {
       const half = joinM / 2;
@@ -1311,8 +1661,16 @@
       cityPolygons = defs.map((def) => regionDefToRing(def, 0));
       karpefPolygons = settings.karpef ? defs.map((def) => regionDefToRing(def, karpefM)) : [];
       techumPolygons = defs.map((def) => regionDefToRing(def, techumM + (settings.karpef ? karpefM : 0)));
-      mil12Polygons = defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0)));
+      mil12Polygons = defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM)); // no karpef (rev. 22)
       warnings.push({ type: 'validated-perimeter', text: 'A reviewer-supplied validated enclosure is being used as the city edge. The app did not infer its hukaf-l\'dira status; confirm the supplied perimeter and ruling.' });
+      // Another city wholly inside this techum is flagged as in ordinary city mode (§1.10a,
+      // rev. 21). A city touching the validated enclosure belongs to the enclosed city itself.
+      for (const model of cityModels) {
+        if (ringsOverlap(model.ring, validatedPerimeter)) continue;
+        if (techumPolygons.some((region) => model.ring.every((point) => pointInOrOnRing(point, region)))) {
+          warnings.push({ type: 'ir-muvlaas', text: 'Another complete city lies inside this techum. Its route-specific ir muvla’at continuation is not represented by one universal permission polygon; check the destination with a rav.' });
+        }
+      }
     } else if (mode === 'city') {
       const boundaries = selectedClosures.map(boundaryOf);
       for (const boundary of boundaries) concavity.push(...boundary.concavity);
@@ -1327,7 +1685,7 @@
         warnings.push({ type: 'multiple-home-candidates', text: overlapPolicy === 'no-join'
           ? 'The pin lies only in the empty overlap of unrelated no-join city squares. The displayed boundary is the conservative common area of every candidate; a rav must identify the governing city for a larger result.'
           : 'The pin lies only in the empty overlap of separate city starting areas. The displayed boundary is the conservative common area of every candidate; a rav must identify the governing city for a larger result.' });
-        if (besideTown) warnings.push({ type: 'pin-beside-town', text: 'The pin is within half of 70⅔ amos of a town’s house but outside that town’s squared walls (beside its outermost houses, or in a part of the square its boundary leaves out), and another town’s area also holds it. Whether a person standing there rests in the first town is an open question for rav review (spec Part 7, “The strip beside a town’s outermost houses”). The boundary shown is the common area of both towns; if he rests in the first town, its own larger boundary applies.' });
+        if (besideTown) warnings.push({ type: 'pin-beside-town', text: 'The pin is within half of 70⅔ amos of a town’s outermost house but outside that town’s squared walls, in its karpef, and another town’s area also holds it. Whether a person standing there rests in the first town is an open question for rav review (spec Part 7 Q20). The boundary shown is the common area of both towns; if he rests in the first town, its own larger boundary applies.' });
         squaring = { method: 'candidate-intersection', angleRad: 0, rectangularity: null };
       } else {
         const boundary = boundaries[0];
@@ -1372,6 +1730,23 @@
       squaring = { method: pointAngle === 0 ? 'world-aligned-point' : 'reviewer-angle-point', angleRad: pointAngle, rectangularity: null };
       warnings.push({ type: 'point-mode', text: 'No city starting area contains this point — treated as open-field shevisa: a 4-amah square plus 2000 amos on every side.' });
     }
+    // A person outside every city (point or lone-building shevisa) can also have a whole
+    // city swallowed by his reach (SA 408:1; spec §1.10a). Flag it; never draw an extension.
+    if (mode === 'point' || mode === 'building') {
+      const inTechumFrame = (point) => (pointModeWorldFrame ? unrot(point) : point);
+      for (const model of cityModels) {
+        const ring = model.ring.map(inTechumFrame);
+        if (techumPolygons.some((region) => ring.every((point) => pointInOrOnRing(point, region)))) {
+          warnings.push({ type: 'ir-muvlaas', text: 'A complete city lies inside this techum. Its route-specific ir muvla’at continuation is not represented by one universal permission polygon; check the destination with a rav.' });
+        }
+      }
+    }
+    // A city passed over because the pin rests in its unfilled pocket keeps its bow/hole
+    // review visible: confirming endpoints that fill the pocket would make the pin a resident.
+    if (pocketRejected.length) {
+      for (const closure of pocketRejected) concavity.push(...boundaryOf(closure).concavity);
+      warnings.push({ type: 'pin-in-excluded-pocket', text: 'The pin is inside a city’s squared rectangle but in an unfilled bow/L pocket or an excluded hole, which is not part of that city’s starting area, so it is measured as resting outside that city. If a reviewer fills the pocket or includes the hole, the pin becomes a resident.' });
+    }
     warnings.push(...concavity);
     markStage('boundaryAndWarnings');
 
@@ -1409,7 +1784,8 @@
       serializedClusters[home] = {
         ...serializedClusters[home],
         members: [...new Set(joinedModels.flatMap((model) => model.cluster.members))],
-        houseCount: joinedModels.reduce((sum, model) => sum + (model.cluster.houseCount || model.cluster.members.length), 0),
+        houseCount: joinedModels.reduce((sum, model) => sum +
+          (model.cluster.houseCount == null ? model.cluster.members.length : model.cluster.houseCount), 0),
         overlapJoinedClusterIndices: joinedModels.map((model) => model.clusterIndex),
       };
     }
@@ -1447,7 +1823,87 @@
     return result;
   }
 
-  // ---------- How much map data a result needs (spec rev. 18.1) ----------
+  // ---------- One outline for a union of regions (map display only; spec rev. 26) ----------
+  // A multi-region result stays separate regions in the data and every export (§1.5), but a map
+  // that strokes every piece shows dozens of overlapping edges inside the permitted area, where
+  // the area has no edge. Rectangles that share one direction are merged into the loops that bound
+  // their union, holes included (draw them with the even-odd fill rule). Any other region is
+  // returned unchanged. No area is added or removed.
+  function rectUnionLoops(rects) {
+    const snap = (v) => Math.round(v * 1e6) / 1e6; // a micrometre: frame round-off, not geometry
+    const boxes = rects.map((r) => ({ minX: snap(r.minX), maxX: snap(r.maxX), minY: snap(r.minY), maxY: snap(r.maxY) }))
+      .filter((r) => r.maxX > r.minX && r.maxY > r.minY);
+    const xs = [...new Set(boxes.flatMap((r) => [r.minX, r.maxX]))].sort((a, b) => a - b);
+    const ys = [...new Set(boxes.flatMap((r) => [r.minY, r.maxY]))].sort((a, b) => a - b);
+    const nx = xs.length - 1, ny = ys.length - 1;
+    if (nx < 1 || ny < 1) return [];
+    const xi = new Map(xs.map((v, i) => [v, i])), yi = new Map(ys.map((v, i) => [v, i]));
+    const covered = new Uint8Array(nx * ny);
+    for (const r of boxes) {
+      const x0 = xi.get(r.minX), x1 = xi.get(r.maxX);
+      for (let j = yi.get(r.minY); j < yi.get(r.maxY); j++) covered.fill(1, j * nx + x0, j * nx + x1);
+    }
+    const at = (i, j) => i >= 0 && j >= 0 && i < nx && j < ny && covered[j * nx + i] === 1;
+    // Boundary edges keep the covered cell on their left: outer loops run counter-clockwise.
+    const edges = [], from = new Map();
+    const add = (i0, j0, i1, j1) => {
+      const edge = { i0, j0, i1, j1, used: false }, key = i0 + ',' + j0;
+      edges.push(edge);
+      if (!from.has(key)) from.set(key, []);
+      from.get(key).push(edge);
+    };
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      if (!at(i, j)) continue;
+      if (!at(i, j - 1)) add(i, j, i + 1, j);
+      if (!at(i + 1, j)) add(i + 1, j, i + 1, j + 1);
+      if (!at(i, j + 1)) add(i + 1, j + 1, i, j + 1);
+      if (!at(i - 1, j)) add(i, j + 1, i, j);
+    }
+    const loops = [];
+    for (const start of edges) {
+      if (start.used) continue;
+      const loop = [];
+      let edge = start;
+      while (edge && !edge.used) {
+        edge.used = true;
+        loop.push([edge.i0, edge.j0]);
+        const dx = edge.i1 - edge.i0, dy = edge.j1 - edge.j0;
+        // Where two cells meet only at a corner, turn left so each keeps its own loop.
+        const turn = (e) => dx * (e.j1 - e.j0) - dy * (e.i1 - e.i0); // > 0: a left turn
+        const next = (from.get(edge.i1 + ',' + edge.j1) || []).filter((e) => !e.used)
+          .sort((a, b) => turn(b) - turn(a));
+        edge = next[0] || null;
+      }
+      // Drop the corners where a straight side merely passes a grid line.
+      const points = loop.filter((p, k) => {
+        const a = loop[(k + loop.length - 1) % loop.length], b = loop[(k + 1) % loop.length];
+        return (p[0] - a[0]) * (b[1] - p[1]) !== (p[1] - a[1]) * (b[0] - p[0]);
+      });
+      if (points.length >= 4) loops.push(points.map(([i, j]) => ({ x: xs[i], y: ys[j] })));
+    }
+    return loops;
+  }
+  function unionOutline(regions) {
+    const groups = new Map(), loops = [];
+    for (const ring of regions || []) {
+      if (!Array.isArray(ring) || ring.length < 3) continue;
+      const angle = normalizeRectAngle(Math.atan2(ring[1].y - ring[0].y, ring[1].x - ring[0].x));
+      const framed = ring.map((point) => toOrientedFrame(point, angle)), box = bboxOfRing(framed);
+      const near = (a, b) => Math.abs(a - b) <= 1e-6;
+      const isRect = ring.length === 4 && framed.every((p) =>
+        (near(p.x, box.minX) || near(p.x, box.maxX)) && (near(p.y, box.minY) || near(p.y, box.maxY)));
+      if (!isRect) { loops.push(ring); continue; }
+      const key = angle.toFixed(9);
+      if (!groups.has(key)) groups.set(key, { angle, rects: [] });
+      groups.get(key).rects.push(box);
+    }
+    for (const { angle, rects } of groups.values()) {
+      for (const loop of rectUnionLoops(rects)) loops.push(loop.map((point) => fromOrientedFrame(point, angle)));
+    }
+    return loops;
+  }
+
+  // ---------- How much map data a result needs (spec rev. 26, rev. 27) ----------
   // The engine applies its rules only to the buildings it is given, so the app widens the loaded
   // area until a result needs nothing outside it. With a margin of 141⅓ amos plus 60 m of
   // footprint error, the loaded area must hold:
@@ -1456,14 +1912,13 @@
   //   2. in full, every town within 2000 amos of a settlement the three-villages rule joined to
   //      such a town in a later round (after an earlier join): with the rest of that neighbour,
   //      an earlier round could join it to the settlement first and the later join could fail,
-  //      so a partly loaded neighbour can make the town too large;
+  //      so a partly loaded neighbour can make the town too large.
+  //      Not a proof (rev. 27): a middle village that runs out of the loaded area can reach an
+  //      outer village farther out, and that join is then missed, so the town comes out smaller.
+  //      Loading every possible partner whole, two 2000-amah steps out, finds those joins but
+  //      passes the 40,000-building data limit around New Square (Mishna Berurah) and Monsey
+  //      (Chazon Ish) with the same houses, so it is not used (spec rev. 27);
   //   3. the houses joined to the pin's building, while too few are loaded to make a city.
-  // This is not a proof that nothing outside can change the result. A middle village that runs
-  // out of the loaded area can reach an outer village farther out, and that join is then missed,
-  // so the town comes out smaller (spec rev. 18.1, open). Loading every possible partner whole,
-  // two 2000-amah steps out, finds those joins but needs more than the 40,000-building data limit
-  // around New Square and Monsey; proving every chain means loading every town linked by
-  // 2000-amah steps, which around Monsey passed 132,116 buildings and 28 km without ending.
   // `loaded` is a {south, west, north, east} box in degrees; `pin` is in the result's local
   // meters. Returns the box to add, or null when the result needs nothing more. There is no
   // limit on the number of widenings: the caller's building-count data limit is the only stop.
@@ -1493,7 +1948,7 @@
     };
     const boxOf = (corners) => bboxOfRing(corners);
     // 1. The home town, every candidate of a shared overlap, and, for a pin left outside every
-    //    town, each town whose squared box with the karpef holds it.
+    //    town, each town whose square with the karpef holds it (its unfilled pocket held the pin).
     const towns = new Set(result.homeCluster >= 0 ? [result.homeCluster] : []);
     for (const group of result.homeCandidates || []) for (const index of group) towns.add(index);
     if (result.mode !== 'city' && pin) {
@@ -1536,7 +1991,7 @@
   }
 
   return {
-    AMOS, makeProjection, runPipeline, bufferRing, dataFrontier,
+    AMOS, makeProjection, runPipeline, bufferRing, dwellingSize, dataFrontier, unionOutline,
     // exported for tests
     _internals: {
       bboxOfRing, bboxGap, expandRect, ringDist,
@@ -1545,6 +2000,7 @@
       ringsOverlap,
       convexHull, minimumAreaRect, deriveSquaring, toOrientedFrame, fromOrientedFrame,
       intersectConvexPolygons, intersectPolygonSets,
+      minimumWidth, squareFitsInside, squareFitsAtAngle, inscribedCircle,
     },
   };
 });

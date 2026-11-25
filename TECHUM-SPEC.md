@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 18.1, 2026-11-25) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 27, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -30,7 +30,8 @@ Igros Moshe OC 1:136; Minchas Yitzchak 7:24, 8:33.
 - **D'oraisa/d'rabbanan:** 2000 amos is d'rabbanan per Rambam/Rif/Chinuch; the Rambam holds
   **12 mil (24,000 amos)** is d'oraisa (per Yerushalmi Eruvin 3:4); many Rishonim (Rosh,
   Tosafos, Baal HaMaor) hold even 12 mil is d'rabbanan. MB 397:1 is concerned for the
-  d'oraisa view at 12 mil; concludes many hold it's all d'rabbanan.
+  d'oraisa view at 12 mil; concludes many hold it's all d'rabbanan. The 12-mil comparison
+  ring is measured from the town's own squared edge, without the karpef (rev. 22).
 - **Consequence:** *halacha k'divrei ha-meikel b'eruv* — in genuine measurement doubt we
   follow the more lenient (larger) measurement (Eruvin 58b; SA 399). This licenses generous
   resolution of borderline measurement cases — but does **not by itself choose** among
@@ -60,7 +61,10 @@ SA HaRav 398:8–14) — never the civil boundary.
 **Beis-dirah predicate — a structure counts if it is ≥ 4×4 amos and inhabited or attended,
 with either a roof or three walls** (SA OC 398:6; SA HaRav 398:8, 10; under 4 amos wide is not
 a dwelling even if very long). Three walls count even without a roof; two walls count only
-under a roof.
+under a roof. How the 4×4 amos is measured is disputed (rev. 25): under 16 square amos is never
+a dwelling; the Mechaber profile counts 16 square amos in any shape, and the Mishna Berurah and
+Chazon Ish profiles need a real 4×4-amah square inside and send 16 square amos without one to
+review.
 
 - **Counts (extends the city):** houses; a shul **with** an attendant's residence, and
   likewise any house of worship with living quarters for its clergy (SA OC 398:6); a
@@ -71,10 +75,12 @@ under a roof.
   **and a roof**.
 - **Does not count:** two walls without a roof, even if people live between them; cisterns,
   pits, dovecotes; a bare shul or other house of worship, warehouse, or barn with no
-  resident; open cemeteries; a dwelling on a ship; a flimsy seasonal watchman's hut in a
-  theft/flood-prone area.
+  resident; open cemeteries; a dwelling on a ship (a moored houseboat by default, rev. 20); a flimsy seasonal watchman's hut in a
+  theft/flood-prone area; a pitched tent (a tent or yurt fixed in one place joins an existing
+  town but adds nothing toward forming one, rev. 23); a storage or shipping container (one
+  people live in, fixed in place, is treated like a static caravan, rev. 24).
 - **Modern commercial/industrial structures are disputed, not categorically excluded.**
-  Chazon Ish OC 110:28 and Shevet HaLevi 1:59 are cited for counting at least some factories
+  Chazon Ish OC 110:28 (citation questioned, Part 7 Q12) and Shevet HaLevi 1:59 are cited for counting at least some factories
   containing offices and a workers' lunch room; Kiryat Ariel ch. 4, Machazeh Eliyahu 79,
   and Tikun Eruvin 5:60 collect the modern applications. A generic office, school, hospital,
   hotel, terminal, or factory therefore needs a type-specific reviewer decision; map-data
@@ -180,7 +186,7 @@ Rules by shape:
   2. overlap joins the cities, but no new joint encompassing rectangle is recursively
      redrawn (R' Shlomo Miller as reported there);
   3. overlap joins the cities and a new joint rectangle is drawn (the expansive reading
-     discussed in Chazon Ish OC 110:16; accepted by Minchas Yitzchak 8:32 and Machazeh
+     discussed in Chazon Ish OC 110:16; accepted by Minchas Yitzchak 8:32 (or 8:33, Part 7 Q11) and Machazeh
      Eliyahu 82, while Kiryat Ariel reports that the Chazon Ish did not rely on it in
      practice).
   There is **no accepted consensus**. The default remains **no join** and the calculation
@@ -360,6 +366,8 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 - **No halachic maximum metro size** — Peninei Halakha states the chain can extend "even a
   distance of days' walk" as long as each gap qualifies. Any cap in the app is a **data
   limit** and must be labeled as such (techum shown as an inner/machmir bound when hit).
+  **Rev. 26:** a result cut off by the data limit is not an inner bound. It can be too large
+  as well as too small, so it is shown as incomplete (see Rev. 26).
 - **Karpef is denomination-sensitive** — MB 398:36 records the Rema's single-city karpef
   (70⅔ before the 2000). So "off" is a Mechaber/Sefardi default, **on** is the honest
   MB/Ashkenazi default. Moved into the profile system.
@@ -382,13 +390,15 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 | Amah | 48 cm (R' Chaim Naeh) → 960 m | 57.6 cm → 1,152 m | 48 cm → 960 m |
 | Single-city karpef (+70⅔ before 2000) | **on** (Rema; MB 398:36) | on ⚠ confirm CI's own position | off (Mechaber/Rambam) |
 | Squaring alignment | automatic SA/MB shape rule: preserve a clear existing rectangle; otherwise world directions | same automatic rule; reviewer may set a sourced natural edge (CI OC 110:23) | automatic SA shape rule; reviewer override available |
-| Overlapping-squares rect merge | **no join** + warning (R' Elyashiv / R' N. Karelitz / R' Belsky); advanced middle option: join without redraw (R' S. Miller) | joint redraw available as the expansive CI reading, but CI's practical conclusion is reported as uncertain | **no join** + warning; alternatives remain explicit |
+| Overlapping-squares rect merge | **no join** + warning (R' Elyashiv / R' N. Karelitz / R' Belsky); advanced middle option: join without redraw (R' S. Miller) | **no join** + warning (rev. 20); joint redraw is a labelled option, and turning it on is a rav's decision (CI 110:16: "צריך הכרע") | **no join** + warning; alternatives remain explicit |
 | City status for 141⅓ / three villages | 3 courtyards × 2 houses or sourced 50-resident basis; six footprints only a provisional fallback | same, with CI courtyard/entrance qualifications | same sourced structure; provisional fallback remains labelled |
 | Bow/L/gamma | **Rema-majority:** fill when confirmed chord <4000 or depth <2000; otherwise no-fill; unresolved endpoints use provisional no-fill | same default; reviewer may select another sourced shita | **Mechaber/Rambam:** narrow chord fills; wide remainder follows inhabited/curved edge; reviewer endpoints required |
 | Wholly enclosed ≥4000×4000-amah hole | **include + mandatory warning** (Beit Yitzchok / R' Shulem Weiss); strict exclusion available | same | same |
 | Unknown-use buildings | include, flagged for review (all profiles — data policy, not psak) | ” | ” |
+| Minimum dwelling size (rev. 25) | under 16 square amos is not a dwelling; a 4×4-amah square must fit inside, in some rotation; 16 square amos without one goes to review | same | under 16 square amos is not a dwelling; 16 square amos in any shape counts |
+| Static caravans (rev. 20), fixed tents and yurts (rev. 23), lived-in containers (rev. 24) | join an existing town, add 0 to the count that forms one, flagged; building=tent is left out unless a rav includes it; building=container is a non-dwelling, not flagged, until a rav includes it | ” | ” |
 | Eruv-enclosure-as-city | **off unless rav-validated** — selected practice/data-confidence default, not settled consensus; validated *hukaf l'dirah* perimeter available | same | same |
-| 12-mil ring / second-shita comparison line | hidden / off (available in all profiles) | ” | ” |
+| 12-mil ring / second-shita comparison line | hidden / off (available in all profiles); the ring is 24,000 amos from the town's own squared edge, without the karpef (rev. 22) | ” | ” |
 
 Audit rule: any change to defaults gets a dated rev note in this section (append, don't
 overwrite).
@@ -840,47 +850,449 @@ both orders, a 900-village field, the point square, and the antimeridian.
   city squared to the world directions." The drawn boundary was already correct. The label
   now says joint redraw only when two or more cities were redrawn together. Engine version 1.5.4.
 
-### Rev. 18.1 — 2026-11-25 (two data fixes released ahead of the rev. 19–27 review branch; no psak default changes)
+### Rev. 19 — 2026-11-25 (spec-traced golden tests; two conformance fixes; no psak default changes)
 
-Released on its own from the review of pull request #61 (spec revs. 19–27, unmerged). Only
-these two fixes; nothing else from that branch.
+- **Spec-traced golden suite.** `tests/spec-golden.test.js` ties each case to the spec line
+  it proves, with expected values worked out by hand: exact equality at 70⅔, 141⅓, 2000
+  (three villages), 4000 (bow mouth and reviewed chord) and the 94% classifier; 1 mm past
+  each limit; straight-line corner gaps; amah scaling of every threshold; the karpef on all
+  four sides; building-mode karpef; profile values. Questions the spec does not settle are
+  listed as pending, never encoded as a ruling.
+- **The 4×4-amah size test measures true width (§1.3).** The filter compared the
+  footprint's north-south and east-west box with 4 amos, so a 1.5 m wide, 50 m long shed
+  turned 45° (box about 36 × 36 m) counted as a dwelling. SA HaRav 398:10 says under 4 amos
+  wide is not a dwelling even if very long. The test now uses the narrowest width in any
+  direction. Compass-aligned footprints are unaffected.
+- **Swallowed cities are flagged for a person outside every city (§1.10a).** The
+  ir-muvla'at warning was raised only in city mode. A person in point mode, or resting in a
+  lone house, whose 2000 amos wholly contain a city now gets the same warning. The boundary
+  is unchanged; no extension is drawn. Engine version 1.5.5.
 
-- **Monsey was cut off by a loading limit, not by the halacha.** The app widened the loaded
-  map area at most 4 times and looked only 141⅓ amos + 60 m past the town. Monsey (Mishna
-  Berurah profile) stopped at 6,401 buildings with 2,789 houses. The old note called that an
-  inner bound, but a cut-off neighbour can make a three-villages join come out either way, so a
-  cut-off result can be too large as well as too small. The widening limit is gone. The app
-  widens until the loaded area holds (1) the whole techum of every town whose squared area could
-  hold the pin, (2) in full, every town within 2000 amos of a settlement the three-villages rule
-  joined to that town after an earlier join, and (3) the houses joined to the pin's building
-  while too few are loaded to make a city (`dataFrontier` in `js/geometry.js`). Monsey now needs
-  14,261 buildings in 4 passes and has 2,820 houses in 54 parts; two pins in the town and both
-  profile orders give the same town. The building-count data limit (40,000 by default, a
-  setting) is the only stop; when it is reached, the answer says "Incomplete" and that the
-  boundary could be larger or smaller, the pink line is dashed, and the status line, answer
-  card, audit text and exported image say so. A changed setting that needs more data searches
-  again; a snapshot is never refetched and is marked incomplete when it holds too little data
-  or does not record its area. A comparison-amah or verified-dwellings line that needs data the
-  main result did not load is labelled incomplete.
-- **This is not a proof that nothing outside the loaded area can change the result.** A middle
-  village that runs out of the loaded area can reach an outer village farther out; that join is
-  then missed and the town comes out smaller. On made-up maps the result depended on where the
-  search started in 138 of 300 maps, always smaller. Loading every possible partner whole, two
-  2000-amah steps out, removed that in 5,400 made-up runs, but around New Square (Mishna
-  Berurah) it passed the 40,000-building limit, so New Square would show "Incomplete", with the
-  same 6,193 houses this rule finds in 25,120 buildings. A complete check of every chain of
-  2000-amah steps around Monsey passed 132,116 buildings and 28 km without ending, with the
-  home town unchanged. An open engineering question, not a halachic one.
-- **Woodbourne's centre gave 0 houses.** §1.10a's first priority, "the component physically
-  containing the pin", was read as "inside a footprint". A component's area is its footprints
-  grown by half the 70⅔-amah gap (§1.4: buffer each footprint by half the gap, union,
-  dissolve), so a pin in the street between a town's houses, inside that town's squared walls,
-  is in that town even where another town's starting area also covers it. Woodbourne's centre
-  now gives 92 houses. Outside the town's walls, in the strip beside its outermost houses, the
-  common area of both towns stays, with a review note (Part 7, open question "The strip beside a
-  town's outermost houses").
-- No psak default changed. Engine 1.5.5. Tests: `tests/geometry.test.js` and
-  `tests/app.test.js` (spec rev. 18.1 cases).
+### Rev. 20 — 2026-11-25 (three researched answers applied; three psak default changes)
+
+These answers come from research Isaac ordered, one researching agent per question, on the
+three questions rev. 19 left pending. They were not given by a posek. Where the research
+says a rav decides, the calculator flags the case and does not rule on it.
+
+- **A moored houseboat does not extend the town by default (§1.3).** Before: building=houseboat
+  counted as a dwelling. A ship's dwelling does not join the town (Eruvin 55b; Rambam Shabbos
+  28:4; SA OC 398:6). The reason is disputed. Rashi, Magen Avraham 398:10, Mishnah Berurah
+  398:34 and Shulchan Aruch HaRav 398:9 give "it has no fixed place", which a boat that never
+  leaves its berth does not suffer from. The Meiri gives "the ship itself is movable";
+  Merkeves HaMishneh, as quoted in Chashukei Chemed (Sanhedrin 113a), excludes it even in the
+  harbor, and Chashukei Chemed concludes "possibly" permanent ship dwellers are not part of
+  the town. "A house built in the water" is a building on ground (Rashi: sea islands; Aruch
+  HaShulchan 398:15: the shore), not a floating boat. Now: houseboats go to the review
+  category, are always flagged, and are left out by default even when ambiguous structures
+  are included. The app has no separate alternative line for one building type; the review
+  text says so, and a rav can include the boat with its per-building include control to see
+  the town with it counted.
+- **Cabins, seasonal cottages and caravans (§1.3; Part 7 Q5).** The research separates
+  permanence from occupancy. Wooden cabins count fully (SA OC 398:10: houses "of stone or of
+  boards"). A structure built as a dwelling counts even when nobody lives in it (Rashi 55b;
+  Magen Avraham 398:5; Mishnah Berurah 398:19; Shulchan Aruch HaRav 398:6; Aruch HaShulchan
+  398:15), so a seasonal cottage that is a real house counts all year. A static caravan fixed
+  on a site joins an existing town by inference (flimsy watchmen's huts join an existing
+  town: Mishnah Berurah 398:33). Whether caravans alone make a town is disputed: Magen
+  Avraham 398:15 and Mishnah Berurah 398:49 say fixed in one place is like a town; the
+  Levush, as read by Eliyah Rabbah 398:14, disagrees; the Pri Megadim doubts how long counts
+  as fixed. One contemporary rav (R' A.Y. Shapira, citing Chazon Ish 110:22) joins a mobile
+  unit only while people eat or sleep there and not toward the houses that make a town. A
+  touring caravan is like the house on a ship. Now, mapped onto the tags the data has:
+  building=cabin stays a dwelling. Overture has no seasonal-cottage tag; such cottages arrive
+  as house/cabin/bungalow and count. building=static_caravan (before: a full dwelling) goes
+  to review, is included by default with the other ambiguous structures, chains in the
+  70⅔-amah join, and adds 0 to the count that forms a town, like a validated join perimeter.
+  The map cannot tell a seasonal caravan from a year-round one, so every static caravan that
+  joins a town raises a `static-caravan` warning, and a settlement that would be a town only
+  by counting its caravans raises a `caravan-site` warning; a rav may record its town status
+  through the existing city-status review. building=caravan and building=touring_caravan
+  (before: unknown use, included and flagged) are not counted.
+- **Chazon Ish profile: joint redraw off by default (§1.5 step 6; Part 2 table).** Before:
+  the Chazon Ish profile set `join_redraw` on, while the table said only that it was
+  "available". Chazon Ish OC 110:16 argues for it from Rashi, the Tur and the Rema, but his
+  note ends "והדבר צריך הכרע" (the matter needs a ruling). R' Chaim Kanievsky (Shoneh Halachos
+  398:19), R' Wosner and others read it as his ruling; R' Elyashiv, R' Dovid Landau and
+  R' Nissim Karelitz are strict or leave it open. It nearly always enlarges the boundary, so
+  it is a leniency. Now: the profile defaults to no join with the overlap warning, like the
+  other profiles; joint redraw stays a labelled option whose text says turning it on is a
+  rav's decision. A browser that saved the old Chazon Ish profile unchanged follows the new
+  default once; any other saved choice and every snapshot keep their explicit setting.
+- **Two citations marked, not ruled on** (Part 7 Q11, Q12): Minchas Yitzchak 8:32 vs 8:33 in
+  §1.5, and Chazon Ish 110:28 for factories in §1.3.
+- **Replay note.** Footprint classes are re-read when a snapshot loads, so an older snapshot
+  containing houseboats, static caravans or touring caravans can now give a different
+  boundary than when it was saved. Engine version 1.6.0.
+
+Golden tests in `tests/spec-golden.test.js` (ids `rev20-*`) cover each item with expected
+values worked out by hand.
+
+### Rev. 21 — 2026-11-25 (independent review of revs. 19–20; conformance fixes; no psak default changes)
+
+An independent review redid every golden value in `tests/spec-golden.test.js` by hand and broke
+the engine on purpose to see which tests notice. Every expected value was right. No profile
+default changed. Engine version 1.6.1.
+
+- **A pin in an unfilled pocket rests outside the city (§1.10a).** Membership tested the city's
+  whole squared rectangle, so a pin in the empty middle of an unfilled bow/L pocket, or of an
+  excluded hole, was treated as a resident, although §1.10a counts only the final starting
+  area. The techum drawn from the houses could then leave the pin itself outside. Now such a
+  pin rests outside that city (the open-field square, or building mode in a lone house), with
+  a `pin-in-excluded-pocket` warning. The pocket's review stays visible, and a reviewer fill
+  makes the pin a resident again. A pin in one of the city's houses, or inside the Rema karpef
+  of the houses facing the pocket, is a resident as before.
+- **Swallowed cities are flagged inside a validated enclosure too (§1.10a).** Rev. 19 covered
+  point, building and ordinary city mode, but not a resident of a rav-validated enclosure. A
+  city that does not touch the enclosure and lies wholly inside the techum now raises the same
+  `ir-muvlaas` warning. The boundary is unchanged.
+- **The rev. 20 Chazon Ish switch also reaches saves from before rev. 13.** Those saves held the
+  old yes/no `overlapMerge` switch (Chazon Ish default: on) and no bow or hole setting, so the
+  exact-match test missed them and an unchanged old profile kept joint redraw. The comparison
+  now reads the normalized values. It also runs only for a revision below 20, so a later
+  revision number never re-runs it. Explicit choices and snapshots are untouched, as before.
+- **Overture class names.** Overture's `semi` (semi-detached house) and `dwelling_house` were
+  read as unknown use; they are dwellings. The default boundary does not change, because unknown
+  use is included; the verified-dwellings-only line and the review queue do. Rev. 20 said
+  Overture has no seasonal-cottage tag. It has `allotment_house`, `beach_hut`, `hut` and
+  `shelter`; they stay unknown use (included, flagged) pending Part 7 Q14. `caravan` and
+  `touring_caravan` are not Overture classes; only an OSM-era snapshot can carry them.
+- **Replay note for rev. 19.** The narrowest-width size test also runs when an older snapshot
+  loads, so a snapshot holding a narrow footprint turned off the compass can now give a
+  different boundary than when it was saved.
+- **Engineering tolerances, disclosed.** Distances are compared exactly at every limit (70⅔,
+  141⅓, 2000, 4000, the 4-amah width), with equality on the side each rule states.
+  Floating-point error there is below a millionth of a millimetre, far under the 2–4 m footprint
+  error in Part 4. A point counts as on a ring within 1 cm: a pin within 1 cm of a wall, karpef
+  or city edge is inside it, a city corner within 1 cm outside a techum still counts as
+  swallowed, and two city rectangles within 1 cm of each other can count as overlapping. These
+  are engineering tolerances, not shiurim. Part 4's "show borderline joins as uncertain" is not
+  implemented, and no margin for it has been chosen.
+- **Golden tests.** Their thresholds are now written from this spec instead of read back from
+  the engine; before, changing the 4000-amah bow limit to 3999 failed no test. New cases cover
+  exact equality at 2000 amos for three villages (the older equality case rounded to just
+  inside 960 m), the Rema chord at exactly 4000 and depth at exactly 2000 amos, the swallowed-
+  city flag with a reviewer squaring angle and inside an enclosure, the pocket pin, and both
+  old-save switches. Three checks this spec does not settle became pending questions: the
+  12-mil ring beyond the karpef (Part 7 Q15), and tents and containers as non-dwellings (Q14).
+
+### Rev. 22 — 2026-11-25 (researched answer: the 12-mil ring; one default change)
+
+From research Isaac ordered, one researching agent per question, not from a posek. Every
+place cited below was checked on Sefaria on 2026-11-25. The research put its confidence at
+about 85%.
+
+- **The 12-mil ring starts at the town's own squared edge, without the karpef (Part 7 Q15).**
+  Before: with the Rema's karpef on (the MB and Chazon Ish profiles), the engine drew the ring
+  24,000 amos beyond the karpef, 70⅔ amos (33.92 m at 48 cm) further out than the town's
+  squared edge. Now the ring is 24,000 amos from the squared town in every profile, for one
+  town and for towns joined into one (Rambam Shabbos 28:5: two towns within 141⅓ amos count
+  as one town). The 2000-amah techum keeps its karpef as before. Sources: Sefer HaChinuch 24
+  measures the Torah-law 12 mil "from the edge of the outermost house in the city"; Rambam
+  Shabbos 27:1–2 and Smag, Lavin 66 count it from the city; the karpef of a single town is
+  the Rema's leniency ("so it seems to me, to be lenient", SA OC 398:5), which the Mechaber,
+  following the Rambam and the Smag, does not give at all (Mishnah Berurah 398:21; Biur
+  Halacha 398:5); and the 12 mil is treated strictly as a Torah-law doubt (Rema on SA OC
+  404:1; Mishnah Berurah 404:7). The research found no authority who adds the karpef to the
+  12 mil. The Mechaber profile, with no karpef, is unchanged.
+- **Flag.** Whenever the ring is shown, the results panel adds a short note that it is drawn
+  from the town's own squared edge without the karpef and that a rav should confirm it. The
+  ring stays off by default.
+- **Still open (Part 7 Q16).** Whether the 12 mil is measured from the squared town at all,
+  or from the houses themselves. Minchas Chinuch 24 (paragraphs 7 and 10) asks in general
+  whether the rabbinic techum rules and leniencies apply to the Torah measure, and holds that
+  the stepped slope measurement does not; on the squared corners of the techum itself he says
+  the same dispute applies to the 12 mil. He does not discuss squaring the town for the 12
+  mil, so the research's report of his doubt about squaring checked out only in that general
+  form. The ring keeps the squared edge. The Chazon Ish's own words were not read; his work is
+  not on Sefaria.
+- **Replay note.** A snapshot that shows the 12-mil ring with the karpef on now draws the ring
+  70⅔ amos closer to the town than when it was saved. Engine version 1.6.2.
+
+Golden tests in `tests/spec-golden.test.js` (ids `rev22-*`) cover one town, two joined towns,
+both amos, each profile, a validated enclosure, building mode and a multi-region town, with
+expected values worked out by hand.
+
+### Rev. 23 — 2026-11-25 (researched answer: tents and yurts; two default changes)
+
+From research Isaac ordered, not from a posek. Every place cited below was checked on Sefaria
+on 2026-11-25; the Levush itself is not there and is cited only as the Eliyah Rabbah reads it.
+The research put its confidence high for pitched tents and for camps with permanent houses,
+and medium for fixed tents.
+
+- **A pitched tent is not a dwelling; the table was right (Part 7 Q14).** Rav Huna (Eruvin
+  55b): hut-dwellers are measured only from the doors of their own houses; Rashi there: such
+  huts are not permanent, and Israel in the desert "were tent-dwellers who are not fixed".
+  Rambam Shabbos 28:10 and SA OC 398:10 rule that dwellers in tents of reeds and willows have
+  no town status. The Beis Yosef (398) quotes the Shibolei HaLeket: they are not fixed in one
+  place but stay until the pasture is used up, so even many tents together, such as an army's
+  camp, are each measured from their own tent. A camp fenced by a 10-tefach partition or
+  ditch is a different rule (Rema on SA OC 398:10, from the same Beis Yosef).
+- **A tent fixed in one place gets rev. 20's static-caravan treatment.** Magen Avraham 398:15
+  and Mishnah Berurah 398:49: tents fixed in one place are like a town; so also Chayei Adam
+  (Shabbos) 76:11 and Kaf HaChaim 398:66, who calls them fixed after 30 days. Against: the
+  Levush, as Eliyah Rabbah 398:14 reads him, excludes even fixed tents. How long makes a tent
+  fixed is unsettled: Eshel Avraham (Pri Megadim) 398:15 asks whether one summer or 30 days.
+  So a fixed tent chains in the 70⅔-amah join onto an existing town, adds 0 to the count that
+  forms a town, and is flagged: a `fixed-tent` warning when it joins a settlement with houses,
+  and a `tent-site` warning when a settlement would be a town only by counting its tents. A
+  rav may record that settlement's town status through the existing city-status review.
+- **A camp with three courtyards of two permanent houses each is a town, tents and all.**
+  Eruvin 55b (R' Chinana bar R' Kahana in the name of R' Ashi): with three such courtyards
+  "they are fixed"; Rashi: houses of stone or wood "fix all of them"; Rambam 28:10; SA OC
+  398:10. In the engine the camp's houses make the town (through the provisional six-footprint
+  proxy or a rav's record) and the tents chain on as part of it. With fewer permanent houses
+  the tents do not count toward a town, and the camp is flagged.
+- **Map classes.** The map data cannot tell a pitched tent from a fixed one. building=tent
+  (before: a non-dwelling, never flagged) now goes to review: it is still left out by default,
+  even when ambiguous structures are included, so it is always flagged, and a rav's
+  per-building include gives it the fixed-tent treatment. building=ger, a yurt (before: a full
+  dwelling), gets the fixed-tent treatment directly: review, included by default with the
+  other ambiguous structures, counted 0 toward a town. Overture's building classes (its schema,
+  checked 2026-11-25) include `ger` but not `tent`, so building=tent reaches the calculator
+  only from a snapshot saved from the older OpenStreetMap source. A footprint left out by
+  default (a tent, a houseboat) is also no longer offered as the starting building when the
+  pin is placed near it, unless a rav included it. The same rules apply in every profile.
+- **Replay note.** A snapshot holding a yurt or a tent can now give a different boundary than
+  when it was saved. Engine version 1.6.3.
+
+Golden tests in `tests/spec-golden.test.js` (ids `rev23-*`) cover each item with expected
+values worked out by hand.
+
+### Rev. 24 — 2026-11-25 (researched answer: shipping containers; one default change)
+
+From research Isaac ordered, not from a posek. The research found no posek who discusses
+containers by name, so this applies the rules for storehouses and caravans to them. Every
+place cited below was checked on Sefaria on 2026-11-25. The research put its confidence high
+for storage containers and medium for lived-in ones.
+
+- **A storage or shipping container is not a dwelling and does not join a town, in every
+  profile; the table was right (Part 7 Q14).** The baraita in Eruvin 55b, Rambam Shabbos
+  28:3–4 and SA OC 398:6 count storehouses only when there is a dwelling in them, and list
+  storehouses without one among the structures that do not join. Rashi there and Mishnah
+  Berurah 398:27: storehouses for grain, wine and oil are not dwellings, so they need a
+  dwelling for watchmen. Aruch HaShulchan 398:14 says the same of storehouses of "other
+  merchandise": the storehouse itself is not a dwelling.
+- **A container people live in, fixed in place, gets rev. 20's static-caravan treatment.** A
+  building not made for living in joins the town once people live in it (Shulchan Aruch
+  HaRav 398:8). A container is made to be moved, and a house on a ship does not join because
+  it is not fixed in one place (Rashi on Eruvin 55b; Mishnah Berurah 398:34). Whether movable
+  dwellings fixed on a site make a town by themselves is the caravan and tent dispute (Magen
+  Avraham 398:15 and Mishnah Berurah 398:49 against Eliyah Rabbah 398:14). So a lived-in,
+  fixed container chains in the 70⅔-amah join onto an existing town, adds 0 to the count
+  that forms a town, and is flagged: a `lived-in-container` warning when it joins a
+  settlement with houses, and a `container-site` warning when a settlement would be a town
+  only by counting such containers. A rav may record that settlement's town status through
+  the existing city-status review.
+- **Map classes.** The map data cannot tell a lived-in container from a storage one.
+  building=container stays a non-dwelling: left out, not in the review queue and never
+  flagged by default. Before, a reviewer's per-building include counted it as a full house;
+  now the include gives it the static-caravan treatment, and only that case is flagged. Any
+  footprint a reviewer included, such as a lived-in container, can now be offered as the
+  starting building when the pin is placed near it; before, a non-dwelling never was.
+  Overture's building classes (checked 2026-11-25) have no `container`, so
+  building=container reaches the calculator only from a snapshot saved from the older
+  OpenStreetMap source. The same rules apply in every profile.
+- **Still open (Part 7 Q17).** The same baraita counts "the house in the sea", which Rav Papa
+  explains as a house made for unloading a ship's goods, and Mishnah Berurah 398:30 says that
+  is why it counts as a dwelling. Whether that reaches a port warehouse, or containers on a
+  quay, was not part of the research. The calculator counts neither.
+- **Replay note.** A snapshot holding a container a reviewer included can now give a different
+  boundary than when it was saved. Engine version 1.6.4.
+
+Golden tests in `tests/spec-golden.test.js` (ids `rev24-*`) cover each item with expected
+values worked out by hand.
+
+### Rev. 25 — 2026-11-25 (researched answer: the shape of a 4×4-amah dwelling; two default changes)
+
+From research Isaac ordered, not from a posek. Every place cited below was checked on Sefaria
+on 2026-11-25. The Chazon Ish is not there and was not read. The research put its confidence
+high on what the texts say and medium on which profile follows which.
+
+- **No opinion uses the outline's overall width (Part 7 Q13).** Rev. 19 counted a footprint
+  when it was at least 4 amos wide in every direction across its outer hull. That let an L- or
+  U-shaped building with walls under 4 amos thick count, though no 4×4 square fits inside it.
+- **Under 16 square amos is never a dwelling, in every profile.** The baraita in Sukkah 3a–b:
+  a house without 4 by 4 amos is not made an ibur between two towns, because people do not
+  live in it. SA OC 398:6 needs the house to be 4 by 4 amos. Less floor than 16 square amos
+  fails every reading.
+- **Mechaber / Sefardi: 16 square amos in any shape counts.** Rambam (Mezuzah 6:2) and SA YD
+  286:13: a house with enough room to square 4 by 4 amos counts even if it is round,
+  five-cornered or longer than it is wide. Kaf HaChaim 398:29 applies this to techum: by the
+  Rambam and the Shulchan Aruch, a house under 4 amos wide is still a house. Machatzis HaShekel
+  398:6 says the same follows for every law in that baraita. This reverses rev. 19's
+  long-narrow rule for this profile only: a 1.5 m wide, 50 m long structure now counts there.
+- **Mishna Berurah and Chazon Ish: a real 4×4-amah square must fit inside, in some rotation.**
+  The Rosh (Hilchos Mezuzah 16) needs 4 by 4 amos and rejects the Rambam's reading; the Shach
+  (YD 286:23) follows the Rosh enough to put up a mezuzah without a blessing. Magen Avraham
+  398:6, Shulchan Aruch HaRav 398:10 and Aruch HaShulchan 398:15: under 4 amos wide is not a
+  house, however long. Eshel Avraham 398:6 reads the Magen Avraham as needing a real square,
+  not enough area to make one, and Machatzis HaShekel 398:6 concludes one should be strict and
+  require a square for ibur.
+- **16 square amos with no such square goes to review in those two profiles.** Pri Megadim
+  (Eshel Avraham 398:7) asks why the Magen Avraham needs a square here but not in 366:6, and
+  leaves it open. Biur Halacha 398:6 says the Mishnah Berurah left the Magen Avraham's rule out
+  because later authorities challenged it, and that it depends on the dispute in YD 286:13.
+  Mishnah Berurah 366:22 says the poskim differ. Magen Avraham 366:6 itself cites the Ralbach
+  that enough room to square suffices, and Chayei Adam 76:12 questions the Magen Avraham, "all
+  the more in a rabbinic matter" (he names the two sides the other way round from the texts
+  above). Such a building is treated like the other ambiguous buildings: it follows the
+  "include ambiguous buildings" setting (on by default), is listed in the review queue and drawn
+  in the review colour, and the verified-dwellings line leaves it out. Before, one at least 4
+  amos wide in every direction counted as an ordinary dwelling, and a narrower one was left out.
+- **How the test works.** The floor area is the outline's area less any holes. The square test
+  is exact for any outline: concave (L, U and T shapes), round, or with holes. It looks at every
+  rotation and settles each case to within a millionth of a metre; a building inside that
+  margin counts, like one exactly 4×4 amos.
+- **Walls.** A map outline is the outside face of the walls. Machatzis HaShekel 398:6 measures
+  the 4 by 4 amos inside the walls, without their thickness. The calculator cannot see how thick
+  a wall is and takes nothing off for it, so a building that passes by less than its walls'
+  thickness may fail when measured inside. A rav checking such a building should measure it
+  inside. No wall thickness is assumed.
+- **Holes.** The building data keeps only each building's outer outline (inner rings are
+  dropped when the map tiles are read and when a footprint file is imported), so a closed
+  courtyard is measured as floor for now. That matters only when every wing around the
+  courtyard is under 4 amos wide. Carrying courtyards through would mean fetching every stored
+  map tile again; that was not done here.
+- **Profiles and saved settings.** Each profile now carries its size rule (the setting "Shape of
+  a 4×4-amah dwelling"): a 4×4 square for the Mishna Berurah and Chazon Ish profiles, 16 square
+  amos for the Mechaber profile. A save or snapshot from before rev. 25 has no size rule and
+  takes its own profile's rule, as rev. 20 did for an unchanged profile, so a saved Mechaber
+  profile moves to the area rule. Nothing a user chose is changed, including the size filter's
+  on/off switch. Choosing the other rule makes the profile Custom.
+- **Still open (Part 7 Q18).** The Chazon Ish's own words on the shape of a 4×4 dwelling were
+  not read.
+- **Replay note.** The size test also runs when an older snapshot loads, so a snapshot holding
+  a thin, L-shaped or U-shaped footprint can now give a different boundary than when it was
+  saved. Engine version 1.7.0.
+
+Golden tests in `tests/spec-golden.test.js` (ids `rev25-*`) cover each item with expected
+values worked out by hand.
+
+### Rev. 26 — 2026-11-25 (four doubted results; three engine fixes; no psak default changes)
+
+Isaac doubted four results of the live calculator. Each was reproduced on a local copy and in
+Node with saved map data. No halachic default changed.
+
+- **The search for map data stopped after 4 widenings (Monsey, default settings).** The app
+  loads the buildings around the pin, runs the engine, and loads a wider area while the town
+  reaches the edge. Rev. 2 allowed 4 widenings and looked only 141⅓ amos plus 60 m past the
+  town. Neither is a halachic rule (no halachic maximum, Part 2). Both made the result depend
+  on where the search started: Monsey stopped after 4 widenings with 6,401 buildings loaded,
+  though the data limit is 40,000, and the three-villages rule (§1.4) joins towns up to 2000
+  amos apart, far past that look-ahead. A town cut off this way is not an inner bound, as rev. 2
+  said: a neighbour cut by the edge can make a three-villages join come out either way. Cut off,
+  the Monsey town reached 479 m too far south and stopped 500 m short in the west (2,787
+  houses from a 1200 m start, 2,818 from 3000 m).
+- **Now:** the number of widenings has no limit; the building-count data limit (40,000 by
+  default) is the only stop. The loaded area must hold, with a margin of 141⅓ amos plus 60 m:
+  (1) the whole techum of every town whose starting area could hold the pin; (2) in full, every
+  town within 2000 amos of a part joined to such a town by three villages after an earlier
+  join, because with the rest of that town an earlier join can pre-empt the later one (a first-
+  round join cannot be undone that way); (3) the houses joined to the pin's building while too
+  few are loaded to make a city. From 600, 1200 and 3000 m starts the results were identical at
+  Kiryas Joel and Monsey (in both profiles), New Square, Monroe, South Fallsburg and two
+  Woodbourne pins, in at most 7 passes, and none reached the data limit. When the limit is
+  reached, the answer says the result is incomplete, could be larger or smaller and could
+  belong to another town, and the pink line is dashed.
+- **A changed setting used only the buildings already loaded.** Switching Monsey to the Chazon
+  Ish profile re-ran the engine on the 14,261 buildings loaded for the Mishna Berurah profile and
+  showed 4,948 houses as done; the town needs 22,022 buildings and has 6,415 houses. Now every
+  re-analysis applies the same rule: a live result searches again when it needs more map data, a
+  result already stopped at the data limit stays marked incomplete, and a snapshot is never
+  refetched; it is marked incomplete instead.
+- **A pin in the street between a town's houses was outside the town (Woodbourne, pin on the
+  village centre).** §1.10a gives priority to "the qualifying dwelling/perimeter component
+  physically containing the pin". The engine checked only whether the pin was inside a
+  footprint, so a pin in the street fell through to the empty-overlap rule: the common area of
+  the overlapping squared towns, with 0 houses. A component's physical area is its houses with
+  half the 70⅔-amah gap around each, the area §1.4 unions to join them, so a pin within 16.96 m
+  of a house (at 48 cm) is in that town. Woodbourne now gives 92 houses with the pin on the
+  centre, as it did 3.8 m away on a building. The rule only chooses among towns whose final
+  starting area holds the pin; it never makes a resident of a pin outside them all.
+- **"Parts" under the Chazon Ish profile (Monsey).** A part is one group of houses joined house
+  to house within 70⅔ amos; parts join each other by 141⅓ amos or three villages. With the
+  57.6 cm amah, 70⅔ amos is 40.70 m, not 33.92 m, so more houses join directly into fewer,
+  larger parts. The town did not get smaller. With all the data it needs, the Chazon Ish home
+  town is 6,415 houses in 178 parts, against 2,818 houses in 54 parts for the Mishna Berurah
+  profile on the same data, and it holds every one of those houses. The live 53-to-17 drop
+  compared results cut off from map data, by the widening limit or by a profile switch that
+  reused the buildings already loaded; the Chazon Ish town, being larger, was cut off far more.
+- **Found on the way (Part 7 Q19).** §1.4 joins three villages only when the lowered middle
+  village fits inside the outer gap. A middle village wider than the gap never joins, so a
+  village that grows can stop joining two towns. The engine keeps the rule as written, the
+  stricter result, and lists each case that could add a town to the home town as a review note.
+- **Many overlapping rectangles (Kiryas Joel).** The houses do join: the home town is 27 parts,
+  1,224 houses. It has a bow-shaped gap with an opening of at least 4000 amos and no
+  reviewer-confirmed ends, so §1.5 step 5 gives the provisional smaller result: 174 stepped
+  pieces, each with its own karpef and 2000 amos (§1.6.2), and those overlap. The map stroked
+  every piece. It now draws each layer as the outline of their union (the techum is one outline
+  of 52 corners); the pieces stay separate in the result and every export. The provisional note
+  is in the answer card in plain words. 97% of the 11,321 buildings loaded there have unknown
+  use and are included by default; that is not the cause.
+- **Replay note.** A snapshot whose pin is in a street between houses can give a larger result
+  than when it was saved. Engine version 1.7.1.
+
+Golden tests in `tests/spec-golden.test.js` (ids `rev26-*`) cover each item with expected
+values worked out by hand.
+
+### Rev. 27 — 2026-11-25 (independent review of rev. 26; two fixes; one result back to the safer side; one loading question open)
+
+An independent review of rev. 26 tested its claim that nothing outside the loaded map data can
+change a result, ran six places from two pins each and with the profiles in both orders, and tried
+the street rule on open ground beside a town. No psak default changed.
+
+- **The stopping rule could still stop short (§1.4; rev. 26 rule 2).** A long middle village can
+  join a town to another town far beyond its first 2000 amos. In a made-up map, a row of 59 houses
+  2.3 km long, 872 m beside the line from a town to a town 2.5 km away, joins all three (71 houses).
+  Rev. 26 looked for partners only within 2000 amos of the town, and only after a later-round join,
+  so from a 1200 m start it stopped after one pass with the home town's 6 houses; from 3000 m it
+  found all 71. On 300 made-up maps with such joins, the result changed with where the search
+  started in 138 maps (274 of 900 runs). Every one of those results was too small, none too large.
+- **Tried and not used: two 2000-amah steps.** Loading in full every group of houses within 2000
+  amos of the town's own groups, with everything within 2000 amos of each, and every group within
+  2000 amos of one of those, removed that start dependence on the same made-up maps (0 of 900
+  runs; 0 of 4,500 more). On real data it does not fit the 40,000-building data limit: around
+  New Square (Mishna Berurah) it stops at the limit after 39,257 buildings, where the rev. 26 rule
+  finishes at 25,120 with the same 6,193 houses, and Monsey under the Chazon Ish profile needs
+  187,805 buildings in 36 passes to finish, with the same 6,415 houses the rev. 26 rule finds in
+  22,022. One outer town there is a single 70⅔-amah group of up to 30,277 houses, and while it is
+  partly loaded it can join the home town falsely (13,119 and 41,901 houses on the way). Loading
+  such a town only until it is known to be a town left that false join in place. So the rev. 26
+  rule stays: its known error is a town that comes out smaller, and the stricter rule would show
+  "Incomplete" for New Square. This is an open engineering question, not a halachic one
+  (golden test `rev27-a2`, open).
+- **What is still not proven.** A chain of joins can change one of the town's partners before
+  the town's own test, and a far village enters the three-villages test together with the towns
+  joined to it by 141⅓ amos. A partner wrongly joined from partial data becomes part of the town
+  and is then loaded whole, which undoes the error; a join wrongly missed leaves the town too
+  small. Proving every case means loading every town linked to the town by 2000-amah steps.
+  Around Monsey that set passed 132,116 buildings and 28 km across without ending, and the Monsey
+  town stayed the same 2,818 houses all the way. The calculator does not load that far. This is a
+  data limit, not a halachic question.
+- **Released on its own (2026-11-25).** The two rev. 26 fixes, loading all the map data a result
+  needs (with the rev. 26 rule above) and a street pin inside a town's walls being in that town,
+  went live from master as spec rev. 18.1 (pull request #66, engine 1.5.5) with this review's
+  fixes for incomplete results, without the rest of revs. 19–27.
+- **The strip beside a town's outermost houses (§1.10a; Part 7 Q20).** Rev. 26 also put a pin in a
+  town when it was outside the town's squared walls but within half the 70⅔-amah gap (16.96 m at
+  48 cm) of one of its houses, in its karpef. That strip can be open field. Where another town's
+  area also holds such a pin, rev. 26 gave the first town's whole techum instead of the common
+  area of both, a larger boundary on the strength of an engineering reading. Whether a person
+  standing there rests in the first town is a question for a rav. The street rule now applies
+  only inside the town's own squared walls (its final starting area without the karpef); in the
+  strip the common area stays, with a review note in the answer. A pin in the street between a
+  town's houses inside its walls is unchanged, and so is Woodbourne's centre.
+- **Lines drawn from cut-off map data.** The comparison-amah line and the verified-dwellings line
+  are separate results on the buildings loaded for the main one. A larger amah makes a larger
+  town, so either can need map data that was not loaded; both were drawn as finished lines. Each is
+  now checked by the same rule and, when it needs more, drawn dotted, labelled incomplete on the
+  map and in the answer, and listed in the audit block. An exported image of an incomplete result
+  says so in its caption. A snapshot that does not record which area its map data covers is
+  marked incomplete instead of keeping its saved flag.
+- Engine version 1.7.3 (1.7.2 had the two-step rule).
+
+Golden tests `rev27-a` and `rev27-d` to `rev27-g` cover each item with expected values worked
+out by hand; `rev27-a2` is open; `rev27-d` replaces `rev26-c`, whose expectations changed.
 
 ## Part 3 — Product spec
 
@@ -1049,7 +1461,10 @@ the UI for building-level review is the bulk of the work.
 5. **Modern beis-dirah edge cases** — offices/factories (occupied but not slept in), hotels,
    hospitals, schools, seasonal cottages, trailers/mobile homes, airports. Rev. 12 records
    the sourced opinion counting some factories with offices/lunch facilities, but the
-   type-by-type profile matrix still requires a posek.
+   type-by-type profile matrix still requires a posek. **Rev. 20 answered (from research,
+   not a posek):** cabins and real-house seasonal cottages count; static caravans join an
+   existing town but do not count toward forming one, with a flag for seasonal caravans and
+   caravan-only sites; touring caravans and houseboats do not count by default.
 6. ~~**Where the 70⅔ is measured from**~~ **SUPPORTED MANUAL MEHALICH in rev. 12:** an
    attached fenced yard or perimeter genuinely open, subsidiary, and *hukaf l'dirah* may
    supply the measurement origin (SA 396:2; Millunchick pp. 47–48). Because those facts
@@ -1067,13 +1482,67 @@ the UI for building-level review is the bulk of the work.
     measurement; Tikun Eruvin as reported by Millunchick gives a possible slope-procedure
     difference up to about 9.1%. Default to the modern-map mehalich; a posek may select and
     document a sourced adjustment for a particular terrain calculation.
-
-**The strip beside a town's outermost houses** (open, added rev. 18.1). A pin on no footprint,
-within half of 70⅔ amos (16.96 m at 48 cm) of a town's house but outside that town's squared
-walls, can be open field beside the town, in its karpef. When another town's starting area also
-holds it, is the person resting in the first town? Default: the common area of both towns, with
-a review note (`pin-beside-town`). Inside the town's own walls, in the street between its houses,
-he is in that town (§1.10a first priority; §1.4).
+11. **Minchas Yitzchak 8:32 or 8:33? (rev. 20, citation only)** — §1.5 and the source list
+    cite Minchas Yitzchak 8:32 for accepting the joint redraw; other sources found by the
+    rev. 20 research give 8:33. Not checked against the volume itself; no ruling changed.
+12. **Chazon Ish 110:28 on factories (rev. 20, citation only)** — §1.3 cites it for counting
+    factories with offices and a lunch room. Two secondary sources found by the rev. 20
+    research report the Chazon Ish as not counting a factory, or counting only buildings
+    with sleeping quarters. The researchers read the Chazon Ish only through later works.
+    Factories stay in review; no ruling changed.
+13. **Narrow non-rectangular footprints (rev. 21)** — the size test asks whether an outline is
+    at least 4 amos wide in every direction, measured across its outer hull. An L- or U-shaped
+    structure whose walls are under 4 amos thick, or a small triangle, passes although no
+    4×4-amah square fits inside it (as it also did before rev. 19). Does "4 by 4 amos" (SA HaRav
+    398:10) need a 4×4 square inside the structure, an area of 16 square amos, or only that
+    width? Mishnah Berurah 398:33 also cites Sha'arei Teshuvah that watchmen's huts need not
+    have 4 amos at all, while the size test removes every footprint under 4 amos wide.
+    **Rev. 25 answered the shape (from research, not a posek):** no opinion uses the outline's
+    width; under 16 square amos is never a dwelling; the Mechaber profile counts 16 square amos
+    in any shape; the Mishna Berurah and Chazon Ish profiles need a real 4×4 square and send 16
+    square amos without one to review. The watchmen's-hut point and Q18 stay open.
+14. **Map classes with no ruling (rev. 21)** — Overture's `allotment_house` (a garden cottage,
+    often seasonal), `beach_hut`, `hut`, `shelter`, `boathouse`, `trullo` and `presbytery`
+    stay unknown use (included, flagged), and the table counts `tent` and `container` as
+    non-dwellings. Which of these is a beis dirah? **Rev. 23 answered tents (from research,
+    not a posek):** a pitched tent is not a dwelling; a tent or yurt fixed in one place joins
+    an existing town but adds 0 toward forming one, with flags; building=tent stays out unless
+    a rav includes it. **Rev. 24 answered containers (from research, not a posek):** a storage
+    or shipping container is not a dwelling; one people live in, fixed in place, gets the
+    static-caravan treatment once a rav includes it. The other classes stay open.
+15. **The 12-mil comparison ring (rev. 21)** — the engine draws the 24,000-amah ring beyond the
+    Rema karpef, like the 2000. Is the d'oraisa 12 mil measured from the karpef or from the
+    city's own edge? The ring is off by default. **Rev. 22 answered (from research, not a
+    posek):** from the town's own squared edge, without the karpef, in every profile; the part
+    still open is Q16.
+16. **Is the 12 mil measured from the squared town? (rev. 22)** — the ring keeps the squared
+    edge. Minchas Chinuch 24 asks in general whether the rabbinic techum rules and leniencies
+    carry over to the Torah measure, which would include squaring the town, but he does not
+    discuss squaring directly. The Chazon Ish's own words on the 12 mil were not read.
+17. **A house built in the water for a ship's goods (rev. 24)** — Eruvin 55b counts "the house
+    in the sea"; Rav Papa explains it as a house made for unloading a ship's goods, and
+    Mishnah Berurah 398:30 says that is why it counts as a dwelling (when it has 4×4 amos and
+    stands within 70⅔ amos of the town). Does this reach a port warehouse or containers on a
+    quay? Both stay non-dwellings.
+18. **The Chazon Ish on the shape of a 4×4 dwelling (rev. 25)** — the Chazon Ish profile
+    follows the Mishna Berurah profile's square rule. The Chazon Ish's own words on whether 16
+    square amos must hold a real 4×4 square were not read; they are not on Sefaria.
+19. **A middle village wider than the gap (rev. 26)** — §1.4 joins three villages when the
+    middle one, lowered onto the line between the outer two, fits inside their gap with at
+    most 141⅓ amos left on each side. A middle village wider than the gap, or one that reaches
+    over an outer village's span once lowered, does not fit, so nothing joins, though it would
+    close the gap completely. A village that grows (under a larger amah, or as more houses are
+    mapped) can therefore stop joining two towns. Does such a village still join them? The
+    engine keeps the rule as written, which gives the stricter result, and lists each case
+    that could add a town to the home town as a review note. The case is common: 342 such
+    cases touch the Monsey home town in the Mishna Berurah profile.
+20. **The strip beside a town's outermost houses (rev. 27)** — a pin outside a town's squared
+    walls but within half of 70⅔ amos of one of its houses, in its karpef, where another town's
+    squared area or karpef also holds it. Does the person rest in the first town, so that its whole
+    techum is his, or may he use only the area common to both towns? Rev. 26 gave him the first
+    town; the engine now gives the common area with a review note. Also open in the same rule: a
+    pin in a wide square or crossroads inside a town's walls but more than half of 70⅔ amos from
+    every house is not counted as physically in the town, so it too gets the common area.
 
 **Validation benchmarks:** the tool is city-agnostic; these are continuing cross-checks,
 not scope or release blockers:

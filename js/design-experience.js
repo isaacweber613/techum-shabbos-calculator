@@ -128,7 +128,7 @@
           const isBuilding = modeStat?.textContent.includes('building shevisa') || false;
           const pinConfirmation = original.find((node) => node.classList.contains('pin-confirmation'));
           const accuracyNotes = original.filter((node) => node.classList.contains('accuracy-status'));
-          // A result cut off by the data limit must not read as a finished answer.
+          // Spec rev. 26: a result cut off by the data limit must not read as a finished answer.
           const incomplete = original.some((node) => node.classList.contains('data-limit'));
           const confidence = document.getElementById('confidence')?.textContent.trim() || '';
           const card = document.createElement('section');
