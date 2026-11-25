@@ -1104,7 +1104,7 @@
 
   // Removes every trace of a result that no longer applies (moved pin, failed re-analysis).
   function clearResultDisplay() {
-    document.body.classList.remove('has-result');
+    document.body.classList.remove('has-result', 'key-comparison', 'key-12mil', 'key-concavity');
     layerGroups.buildings.clearLayers();
     layerGroups.rects.clearLayers(); layerGroups.second.clearLayers(); layerGroups.settlements.clearLayers();
     layerGroups.audit.clearLayers(); layerGroups.perimeter.clearLayers();
@@ -1221,6 +1221,11 @@
       addRegions(res2.techumRegions || [res2.techumCorners], { color: '#e040fb', weight: 2.5, dashArray: res2Incomplete ? '2 6' : '10 6', fill: false },
         'Comparison: techum @ ' + (settings.secondAmahCm / 2.54).toFixed(2) + ' in amah' + (res2Incomplete ? cutLabel : ''), layerGroups.second);
     }
+
+    // The map key lists these extra lines only while they are drawn.
+    document.body.classList.toggle('key-comparison', canRunComparisonAmah());
+    document.body.classList.toggle('key-12mil', !!settings.show12mil);
+    document.body.classList.toggle('key-concavity', (res.concavityRegions || []).length > 0);
 
     renderAuditRings();
     renderAuditGuide();
@@ -1749,6 +1754,7 @@
     };
     K.download('techum-snapshot.json', JSON.stringify(snap), 'application/json');
     track('snapshot', { action: 'save' });
+    setStatus('Snapshot saved. Load snapshot replays this exact map later.');
   }
   function loadSnapshot(file) {
     const reader = new FileReader();
@@ -1839,6 +1845,7 @@
     if (!res) { setStatus('Calculate a techum before exporting KML.'); return; }
     K.download('techum-draft.kml', buildKmlText(res));
     track('export', { format: 'kml' });
+    setStatus('KML exported for Google Earth review.');
   }
 
   function exportGeoJSON() {
@@ -1853,6 +1860,7 @@
     }, { config: configText(), dataConfidence: D.computeDataConfidence(state.buildings) });
     K.download('techum-draft.geojson', JSON.stringify(fc, null, 2), 'application/geo+json');
     track('export', { format: 'geojson' });
+    setStatus('GeoJSON exported.');
   }
 
   function exportKMZ() {

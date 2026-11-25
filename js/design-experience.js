@@ -110,6 +110,9 @@
           <span><i class="key-line city"></i><strong>Green</strong> Starting place (city, building, or 4 amos)</span>
           <span><i class="key-line karpef"></i><strong>Pale green</strong> Extra city space</span>
           <span><i class="key-line alternate"></i><strong>Amber</strong> Alternate, when shown</span>
+          <span class="key-extra key-extra-comparison"><i class="key-line comparison"></i><strong>Purple</strong> Comparison amah</span>
+          <span class="key-extra key-extra-concavity"><i class="key-line concavity"></i><strong>Yellow</strong> Pocket for rav review</span>
+          <span class="key-extra key-extra-12mil"><i class="key-line mil12"></i><strong>Gray</strong> 12 mil</span>
         </div>`;
       const mapKeyToggle = mapKey.querySelector('.map-key-toggle');
       mapKeyToggle.addEventListener('click', () => {
