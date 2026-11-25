@@ -518,3 +518,7 @@ html[data-design="9"] .pin-confirm-actions button,html[data-design="10"] .pin-co
   html[data-design="9"] #simple-quick-settings > summary,html[data-design="10"] #simple-quick-settings > summary { padding-right:58px; }
   html[data-design="9"] #sidebar,html[data-design="10"] #sidebar { padding-bottom:90px; }
 }
+
+/* In the settings drawer these sections start closed, so show they open like the others. */
+html[data-design] #design-drawer .settings-grid summary { cursor:pointer; }
+html[data-design] #design-drawer .settings-grid summary:after { display:block; }
