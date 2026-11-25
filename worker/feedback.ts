@@ -5,10 +5,15 @@ export const VALID_FEEDBACK_STATUSES = ['new', 'planned', 'done', 'archived'] as
 
 export type FeedbackStatus = typeof VALID_FEEDBACK_STATUSES[number];
 
-export type FeedbackEnv = {
+import { sendTelegram, type TelegramEnv } from './telegram.ts';
+
+export type FeedbackEnv = TelegramEnv & {
   DB: D1Database;
   BUILDINGS: R2Bucket;
 };
+
+// Room for the page, email and inbox link inside Telegram's 4,096-character message limit.
+const TELEGRAM_FEEDBACK_EXCERPT = 3_000;
 
 export type ParsedFeedback = {
   description: string;
@@ -113,7 +118,21 @@ The annotated screenshot is stored in the private Feedback inbox at /analytics-f
 Reproduce the problem before changing code. Add a focused regression test, implement the smallest complete fix, run the repository checks, verify the behavior in Chrome, then ship it to production following AGENTS.md.`;
 }
 
-export async function submitFeedback(request: Request, env: FeedbackEnv): Promise<Response> {
+export function feedbackTelegramMessage(report: ParsedFeedback, inboxUrl: string): string {
+  const excerpt = report.description.length > TELEGRAM_FEEDBACK_EXCERPT
+    ? report.description.slice(0, TELEGRAM_FEEDBACK_EXCERPT) + '…'
+    : report.description;
+  return `New Techum feedback:
+
+${excerpt}
+
+Page: ${report.pageUrl}
+Email: ${report.reporterEmail || 'not given'}
+Inbox: ${inboxUrl}`;
+}
+
+export async function submitFeedback(request: Request, env: FeedbackEnv,
+  background: (work: Promise<unknown>) => void = () => {}): Promise<Response> {
   const contentLength = Number(request.headers.get('Content-Length') || 0);
   if (contentLength > MAX_FEEDBACK_SCREENSHOT_BYTES + 100_000) return response({ error: 'feedback upload is too large' }, 413);
 
@@ -146,6 +165,7 @@ export async function submitFeedback(request: Request, env: FeedbackEnv): Promis
     console.error(JSON.stringify({ event: 'feedback_submit_failed', id, error: error instanceof Error ? error.message : String(error) }));
     return response({ error: 'feedback could not be saved' }, 500);
   }
+  background(sendTelegram(env, feedbackTelegramMessage(parsed.value, new URL('/analytics-feedback', request.url).toString()), 'feedback'));
   return response({ reportId: id }, 201);
 }
 

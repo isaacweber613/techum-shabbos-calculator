@@ -42,19 +42,24 @@ Top-level exports from application, library, hook, context, and worker modules.
 | `FeedbackReportForPrompt` | `type` | `worker/feedback.ts` |
 | `feedbackScreenshot` | `(id: string, env: FeedbackEnv): Promise<Response>` | `worker/feedback.ts` |
 | `FeedbackStatus` | `type` | `worker/feedback.ts` |
+| `feedbackTelegramMessage` | `(report: ParsedFeedback, inboxUrl: string): string` | `worker/feedback.ts` |
 | `listFeedback` | `(env: FeedbackEnv): Promise<Response>` | `worker/feedback.ts` |
 | `MAX_FEEDBACK_DESCRIPTION_LENGTH` | `inferred` | `worker/feedback.ts` |
 | `MAX_FEEDBACK_DIAGNOSTICS_LENGTH` | `inferred` | `worker/feedback.ts` |
 | `MAX_FEEDBACK_SCREENSHOT_BYTES` | `inferred` | `worker/feedback.ts` |
 | `ParsedFeedback` | `type` | `worker/feedback.ts` |
 | `parseFeedbackForm` | `(form: FormData): ParseResult` | `worker/feedback.ts` |
-| `submitFeedback` | `(request: Request, env: FeedbackEnv): Promise<Response>` | `worker/feedback.ts` |
+| `submitFeedback` | `(request: Request, env: FeedbackEnv, background: (work: Promise<unknown>)` | `worker/feedback.ts` |
 | `updateFeedbackStatus` | `(request: Request, id: string, reviewer: string, env: FeedbackEnv): Promise<Response>` | `worker/feedback.ts` |
 | `VALID_FEEDBACK_STATUSES` | `inferred` | `worker/feedback.ts` |
+| `alertGoogleLimitReached` | `(env: GoogleMapConfigEnv, day: string, kind: LimitKind, cap: number): Promise<void>` | `worker/map-config.ts` |
+| `Background` | `type` | `worker/map-config.ts` |
+| `claimGoogleExportSlot` | `(request: Request, env: GoogleMapConfigEnv, background: Background = ()` | `worker/map-config.ts` |
 | `DEFAULT_GOOGLE_MAPS_DAILY_CAP` | `inferred` | `worker/map-config.ts` |
+| `googleLimitMessage` | `(kind: LimitKind, cap: number): string` | `worker/map-config.ts` |
 | `GoogleMapConfigEnv` | `interface` | `worker/map-config.ts` |
 | `googleQuotaDay` | `(now = new Date()` | `worker/map-config.ts` |
-| `issueGoogleMapConfig` | `(request: Request, env: GoogleMapConfigEnv): Promise<Response>` | `worker/map-config.ts` |
+| `issueGoogleMapConfig` | `(request: Request, env: GoogleMapConfigEnv, background: Background = ()` | `worker/map-config.ts` |
 | `isTrustedMapConfigRequest` | `(request: Request): boolean` | `worker/map-config.ts` |
 | `normalizeGoogleMapsBrowserKey` | `(value?: string): string` | `worker/map-config.ts` |
 | `parseGoogleMapsDailyCap` | `(value?: string): number` | `worker/map-config.ts` |
