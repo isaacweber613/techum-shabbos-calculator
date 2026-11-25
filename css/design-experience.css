@@ -464,7 +464,7 @@ html[data-design="10"] #simple-quick-settings { border-radius:8px; }
     box-shadow:0 -15px 42px rgba(18,50,34,.14);
   }
   html[data-design="9"] #simple-map-key,html[data-design="10"] #simple-map-key {
-    left:auto; right:10px; bottom:40px; display:block; transform:none; padding:0; border-radius:10px; font-size:9px;
+    left:auto; right:10px; bottom:66px; display:block; transform:none; padding:0; border-radius:10px; font-size:9px;
   }
   /* The answer card overlaps the map's bottom 26px; keep the map key and credits above it. */
   html[data-design="9"] #map .leaflet-bottom,html[data-design="10"] #map .leaflet-bottom { bottom:26px; }

@@ -116,6 +116,9 @@
         const open = mapKey.classList.toggle('open');
         mapKeyToggle.setAttribute('aria-expanded', String(open));
       });
+      // The key lives inside the map. Without this, tapping it counts as a map click, which
+      // moves the starting pin there and throws away the drawn techum.
+      if (window.L) { L.DomEvent.disableClickPropagation(mapKey); L.DomEvent.disableScrollPropagation(mapKey); }
       document.getElementById('map')?.append(mapKey);
 
       const results = document.getElementById('results');
