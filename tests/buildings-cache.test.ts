@@ -23,6 +23,7 @@ import {
   tilesForOvertureBBox,
   overtureArchiveUrl,
   resolveOvertureRelease,
+  latestOvertureRelease,
   OVERTURE_STAC_CATALOG,
   _resetOvertureReleaseCache,
   MAX_OVERTURE_TILES,
@@ -227,6 +228,16 @@ testAsync('a deleted pinned Overture release falls back to the catalog latest re
   assert.equal(await resolveOvertureRelease(impl, 2000), '2099-01-01.0', 'resolution is cached');
   assert.equal(calls.length, before);
   _resetOvertureReleaseCache();
+});
+
+testAsync('the release catalog request names a User-Agent (its CDN rejects requests without one)', async () => {
+  let userAgent: string | null = null;
+  const impl = async (_input: string, init?: RequestInit) => {
+    userAgent = new Headers(init?.headers).get('User-Agent');
+    return Response.json({ latest: '2099-01-01.0' });
+  };
+  assert.equal(await latestOvertureRelease(impl), '2099-01-01.0');
+  assert.ok(userAgent, 'catalog fetch must send a User-Agent header');
 });
 
 testAsync('a published pinned release is used without consulting the catalog', async () => {

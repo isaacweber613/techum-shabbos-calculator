@@ -221,12 +221,16 @@
       crossOrigin: true,
       attribution: 'Imagery © Esri | Map data © OpenStreetMap contributors',
     });
-    const imageryLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
-      maxZoom: 20, opacity: 0.9, crossOrigin: true, attribution: '© CARTO',
+    // CARTO's free basemaps began answering every tile with an "API KEY REQUIRED" stamp
+    // (seen 2026-11-25). Place names come from Esri's reference layer, the same service
+    // family as the imagery; the illustrated map is OpenStreetMap's own tile server, whose
+    // usage policy allows keyless web use with visible attribution.
+    const imageryLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 20, maxNativeZoom: 19, crossOrigin: true, attribution: 'Labels © Esri',
     });
-    const illustrated = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      maxZoom: 20, crossOrigin: true,
-      attribution: '© OpenStreetMap contributors © CARTO',
+    const illustrated = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 20, maxNativeZoom: 19, crossOrigin: true,
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     });
     const realistic = L.layerGroup([imagery, imageryLabels]);
     originalMapLayer = realistic;
