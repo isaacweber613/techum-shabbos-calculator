@@ -19,13 +19,13 @@
   const DWELLING_TAGS = new Set([
     'house', 'residential', 'apartments', 'detached', 'semidetached_house',
     'semi_detached', 'terrace', 'terraced_house', 'bungalow', 'dormitory',
-    'cabin', 'farm', 'ger', 'stilt_house',
+    'cabin', 'farm', 'stilt_house',
     // Rev. 21: Overture's own class names for a semi-detached house and a dwelling house.
     'semi', 'dwelling_house',
     // Rev. 20: wooden cabins count fully (SA OC 398:10, "of stone or of boards"); a
     // structure built as a dwelling counts even when nobody lives in it (MB 398:19), so
     // seasonal cottages tagged as houses count all year. houseboat and static_caravan
-    // moved to the special rules below.
+    // moved to the special rules below; rev. 23 moved ger (a yurt) there too.
   ]);
   const NON_DWELLING_TAGS = new Set([
     'garage', 'garages', 'shed', 'roof', 'carport', 'greenhouse', 'barn', 'stable',
@@ -34,7 +34,7 @@
     'train_station', 'transportation', 'parking', 'service', 'transformer_tower',
     'water_tower', 'storage_tank', 'silo', 'bunker', 'construction', 'grandstand',
     'stadium', 'sports_hall', 'sports_centre', 'pavilion', 'toilets', 'hangar',
-    'digester', 'slurry_tank', 'container', 'tent', 'gazebo', 'bridge',
+    'digester', 'slurry_tank', 'container', 'gazebo', 'bridge', // tent: special rules (rev. 23)
     // Rev. 20: a touring caravan is like the house on a ship (SA OC 398:6) — not counted.
     'caravan', 'touring_caravan',
   ]);
@@ -72,9 +72,10 @@
   };
   const SUBTYPE_REVIEW_TAGS = new Set(['farm_unclassified']);
 
-  // Rev. 20 special rules (spec rev. 20 notes). Both go to review so they are always flagged.
+  // Special rules (spec rev. 20 and 23 notes). All go to review so they are always flagged.
   //   excludeByDefault: left out unless a reviewer includes the building.
   //   noCityCount: joins a town in the 70⅔ chain but adds 0 to the count that forms a town.
+  //   noCityCountKind: which flag the engine raises for it ('static-caravan', 'fixed-tent').
   const SPECIAL_REVIEW_TAGS = {
     // A dwelling on a ship does not join the town (Eruvin 55b; Rambam Shabbos 28:4; SA OC
     // 398:6). Whether a boat that never leaves its berth is different is disputed.
@@ -90,6 +91,29 @@
       reason: 'building=static_caravan — joins an existing town but is not counted toward the minimum that forms a town; ' +
         'a seasonal caravan, or a site of caravans only, needs a rav.',
       noCityCount: true,
+      noCityCountKind: 'static-caravan',
+    },
+    // Rev. 23. A pitched tent is not a dwelling: tents of reeds and willows have no town status
+    // (SA OC 398:10), because they are not fixed in one place (Beis Yosef 398 quoting the
+    // Shibolei HaLeket). A tent fixed in one place is like a town (Magen Avraham 398:15; MB
+    // 398:49), which is disputed (the Levush as read by Eliyah Rabbah 398:14), so it gets the
+    // static-caravan treatment. The map cannot tell a pitched tent from a fixed one: a tent is
+    // left out by default and flagged, and a rav's include gives it the fixed-tent treatment.
+    tent: {
+      reason: 'building=tent — a pitched tent is not a dwelling and is left out (SA OC 398:10). A tent fixed in one place ' +
+        'joins an existing town but is not counted toward the minimum that forms one; the map cannot tell which this is, ' +
+        'so a rav may include it.',
+      excludeByDefault: true,
+      noCityCount: true,
+      noCityCountKind: 'fixed-tent',
+    },
+    // A ger (yurt) is a tent that stands in one place: the fixed-tent treatment, included by
+    // default like a static caravan.
+    ger: {
+      reason: 'building=ger (yurt) — a tent fixed in one place joins an existing town but is not counted toward the minimum ' +
+        'that forms one (Magen Avraham 398:15); a seasonal yurt, or a site of tents only, needs a rav.',
+      noCityCount: true,
+      noCityCountKind: 'fixed-tent',
     },
   };
 
@@ -108,7 +132,8 @@
     if (Object.prototype.hasOwnProperty.call(SPECIAL_REVIEW_TAGS, b)) {
       const rule = SPECIAL_REVIEW_TAGS[b];
       return { klass: 'review', reason: rule.reason,
-        excludeByDefault: !!rule.excludeByDefault, noCityCount: !!rule.noCityCount };
+        excludeByDefault: !!rule.excludeByDefault, noCityCount: !!rule.noCityCount,
+        noCityCountKind: rule.noCityCountKind || null };
     }
     if (DWELLING_TAGS.has(b)) return { klass: 'dwelling', reason: 'building=' + b };
     if (NON_DWELLING_TAGS.has(b)) return { klass: 'non', reason: 'building=' + b };

@@ -329,6 +329,30 @@
     return `${id}@${box.minX.toFixed(3)},${box.minY.toFixed(3)},${box.maxX.toFixed(3)},${box.maxY.toFixed(3)}`;
   }
 
+  // Structures that join a town in the 70⅔-amah chain but add 0 to the count that forms a
+  // town (building.noCityCount). Each kind raises its own pair of flags: `joined` when it
+  // chains onto a settlement with houses, `site` when a settlement would be a town only by
+  // counting it. A noCityCount footprint without a known kind is a static caravan, the only
+  // kind before rev. 23.
+  const UNCOUNTED_KINDS = {
+    'static-caravan': { // spec rev. 20
+      siteType: 'caravan-site',
+      site: (n) => `${n === 1 ? 'A settlement' : n + ' settlements'} would be a town only by counting static caravans. Caravans are not counted toward the minimum that forms a town, because whether caravans alone make a town is disputed (Magen Avraham 398:15 and Mishnah Berurah 398:49 against Eliyah Rabbah 398:14). A rav may record its town status.`,
+      joinedType: 'static-caravan',
+      joined: (n) => `${n} static caravan${n === 1 ? '' : 's'} joined the chain of houses. The map cannot show whether a caravan is lived in all year; a seasonal caravan needs a rav.`,
+    },
+    'fixed-tent': { // spec rev. 23
+      siteType: 'tent-site',
+      site: (n) => `${n === 1 ? 'A settlement' : n + ' settlements'} would be a town only by counting tents or yurts. Tents are not counted toward the minimum that forms a town: tents have no town status (SA OC 398:10), and whether tents fixed in one place make one is disputed (Magen Avraham 398:15 and Mishnah Berurah 398:49 against the Levush as read by Eliyah Rabbah 398:14). Three courtyards of two permanent houses each make the whole camp a town. A rav may record its town status.`,
+      joinedType: 'fixed-tent',
+      joined: (n) => `${n} tent${n === 1 ? '' : 's'} or yurt${n === 1 ? '' : 's'} joined the chain of houses. A tent counts only when it is fixed in one place (Magen Avraham 398:15), and how long makes it fixed is unsettled (Eshel Avraham 398:15: one summer or 30 days; Kaf HaChaim 398:66: 30 days). The map cannot show this; a rav should confirm.`,
+    },
+  };
+  function uncountedKindOf(building) {
+    return Object.prototype.hasOwnProperty.call(UNCOUNTED_KINDS, building.noCityCountKind)
+      ? building.noCityCountKind : 'static-caravan';
+  }
+
   // buildings: the caller's unrotated footprints (ids and joinOnly flags).
   // frameBuildings: the same footprints in the working frame, used only to recognise a
   // legacy v2 key saved under the same projection origin and squaring angle.
@@ -378,12 +402,18 @@
         ? record.basis : null;
       const evidence = record && typeof record === 'object' && typeof record.evidence === 'string'
         ? record.evidence.trim().slice(0, 1000) : '';
-      // A validated join perimeter and a static caravan (spec rev. 20) join in the chain but
-      // add nothing to the count that forms a town.
+      // A validated join perimeter, a static caravan (spec rev. 20) and a fixed tent or yurt
+      // (rev. 23) join in the chain but add nothing to the count that forms a town.
       cluster.houseCount = cluster.members.reduce((count, index) =>
         count + (buildings[index].joinOnly || buildings[index].noCityCount ? 0 : 1), 0);
-      cluster.caravanCount = cluster.members.reduce((count, index) =>
-        count + (buildings[index].noCityCount && !buildings[index].joinOnly ? 1 : 0), 0);
+      cluster.uncounted = {};
+      for (const index of cluster.members) {
+        const building = buildings[index];
+        if (!building.noCityCount || building.joinOnly) continue;
+        const kind = uncountedKindOf(building);
+        cluster.uncounted[kind] = (cluster.uncounted[kind] || 0) + 1;
+      }
+      cluster.uncountedCount = Object.values(cluster.uncounted).reduce((sum, count) => sum + count, 0);
       cluster.qualifiesAsCity = typeof decision === 'boolean'
         ? decision
         : cluster.houseCount >= minCityHouses;
@@ -1086,12 +1116,17 @@
       qualificationEvidence: cluster.qualificationEvidence,
       qualificationProvisional: cluster.qualificationProvisional,
     }));
-    // Static caravans (spec rev. 20): they chain onto a town but never make one by count.
-    const caravanSites = clusters.filter((cluster) => cluster.caravanCount > 0 && cluster.qualificationProvisional &&
-      cluster.houseCount < settings.minCityHouses && cluster.houseCount + cluster.caravanCount >= settings.minCityHouses);
-    if (caravanSites.length) warnings.push({ type: 'caravan-site', text: `${caravanSites.length === 1 ? 'A settlement' : caravanSites.length + ' settlements'} would be a town only by counting static caravans. Caravans are not counted toward the minimum that forms a town, because whether caravans alone make a town is disputed (Magen Avraham 398:15 and Mishnah Berurah 398:49 against Eliyah Rabbah 398:14). A rav may record its town status.` });
-    const caravansInTowns = clusters.reduce((sum, cluster) => sum + (cluster.caravanCount > 0 && cluster.houseCount > 0 ? cluster.caravanCount : 0), 0);
-    if (caravansInTowns) warnings.push({ type: 'static-caravan', text: `${caravansInTowns} static caravan${caravansInTowns === 1 ? '' : 's'} joined the chain of houses. The map cannot show whether a caravan is lived in all year; a seasonal caravan needs a rav.` });
+    // Static caravans (spec rev. 20) and fixed tents or yurts (rev. 23) chain onto a town but
+    // never make one by count. A settlement that would be a town only by counting them is
+    // flagged once for each kind it holds.
+    const uncountedSites = clusters.filter((cluster) => cluster.uncountedCount > 0 && cluster.qualificationProvisional &&
+      cluster.houseCount < settings.minCityHouses && cluster.houseCount + cluster.uncountedCount >= settings.minCityHouses);
+    for (const [kind, rule] of Object.entries(UNCOUNTED_KINDS)) {
+      const sites = uncountedSites.filter((cluster) => cluster.uncounted[kind] > 0).length;
+      if (sites) warnings.push({ type: rule.siteType, text: rule.site(sites) });
+      const joined = clusters.reduce((sum, cluster) => sum + (cluster.houseCount > 0 ? cluster.uncounted[kind] || 0 : 0), 0);
+      if (joined) warnings.push({ type: rule.joinedType, text: rule.joined(joined) });
+    }
     markStage('cityQualification');
 
     // 141⅓ and three-village mergers are applied to a fixed point. A three-village

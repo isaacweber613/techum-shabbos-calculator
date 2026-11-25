@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 22, 2026-11-25) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 23, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -73,7 +73,8 @@ under a roof.
 - **Does not count:** two walls without a roof, even if people live between them; cisterns,
   pits, dovecotes; a bare shul or other house of worship, warehouse, or barn with no
   resident; open cemeteries; a dwelling on a ship (a moored houseboat by default, rev. 20); a flimsy seasonal watchman's hut in a
-  theft/flood-prone area.
+  theft/flood-prone area; a pitched tent (a tent or yurt fixed in one place joins an existing
+  town but adds nothing toward forming one, rev. 23).
 - **Modern commercial/industrial structures are disputed, not categorically excluded.**
   Chazon Ish OC 110:28 (citation questioned, Part 7 Q12) and Shevet HaLevi 1:59 are cited for counting at least some factories
   containing offices and a workers' lunch room; Kiryat Ariel ch. 4, Machazeh Eliyahu 79,
@@ -388,6 +389,7 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 | Bow/L/gamma | **Rema-majority:** fill when confirmed chord <4000 or depth <2000; otherwise no-fill; unresolved endpoints use provisional no-fill | same default; reviewer may select another sourced shita | **Mechaber/Rambam:** narrow chord fills; wide remainder follows inhabited/curved edge; reviewer endpoints required |
 | Wholly enclosed ≥4000×4000-amah hole | **include + mandatory warning** (Beit Yitzchok / R' Shulem Weiss); strict exclusion available | same | same |
 | Unknown-use buildings | include, flagged for review (all profiles — data policy, not psak) | ” | ” |
+| Static caravans (rev. 20), fixed tents and yurts (rev. 23) | join an existing town, add 0 to the count that forms one, flagged; building=tent is left out unless a rav includes it | ” | ” |
 | Eruv-enclosure-as-city | **off unless rav-validated** — selected practice/data-confidence default, not settled consensus; validated *hukaf l'dirah* perimeter available | same | same |
 | 12-mil ring / second-shita comparison line | hidden / off (available in all profiles); the ring is 24,000 amos from the town's own squared edge, without the karpef (rev. 22) | ” | ” |
 
@@ -1003,6 +1005,52 @@ Golden tests in `tests/spec-golden.test.js` (ids `rev22-*`) cover one town, two 
 both amos, each profile, a validated enclosure, building mode and a multi-region town, with
 expected values worked out by hand.
 
+### Rev. 23 — 2026-11-25 (researched answer: tents and yurts; two default changes)
+
+From research Isaac ordered, not from a posek. Every place cited below was checked on Sefaria
+on 2026-11-25; the Levush itself is not there and is cited only as the Eliyah Rabbah reads it.
+The research put its confidence high for pitched tents and for camps with permanent houses,
+and medium for fixed tents.
+
+- **A pitched tent is not a dwelling; the table was right (Part 7 Q14).** Rav Huna (Eruvin
+  55b): hut-dwellers are measured only from the doors of their own houses; Rashi there: such
+  huts are not permanent, and Israel in the desert "were tent-dwellers who are not fixed".
+  Rambam Shabbos 28:10 and SA OC 398:10 rule that dwellers in tents of reeds and willows have
+  no town status. The Beis Yosef (398) quotes the Shibolei HaLeket: they are not fixed in one
+  place but stay until the pasture is used up, so even many tents together, such as an army's
+  camp, are each measured from their own tent. A camp fenced by a 10-tefach partition or
+  ditch is a different rule (Rema on SA OC 398:10, from the same Beis Yosef).
+- **A tent fixed in one place gets rev. 20's static-caravan treatment.** Magen Avraham 398:15
+  and Mishnah Berurah 398:49: tents fixed in one place are like a town; so also Chayei Adam
+  (Shabbos) 76:11 and Kaf HaChaim 398:66, who calls them fixed after 30 days. Against: the
+  Levush, as Eliyah Rabbah 398:14 reads him, excludes even fixed tents. How long makes a tent
+  fixed is unsettled: Eshel Avraham (Pri Megadim) 398:15 asks whether one summer or 30 days.
+  So a fixed tent chains in the 70⅔-amah join onto an existing town, adds 0 to the count that
+  forms a town, and is flagged: a `fixed-tent` warning when it joins a settlement with houses,
+  and a `tent-site` warning when a settlement would be a town only by counting its tents. A
+  rav may record that settlement's town status through the existing city-status review.
+- **A camp with three courtyards of two permanent houses each is a town, tents and all.**
+  Eruvin 55b (R' Chinana bar R' Kahana in the name of R' Ashi): with three such courtyards
+  "they are fixed"; Rashi: houses of stone or wood "fix all of them"; Rambam 28:10; SA OC
+  398:10. In the engine the camp's houses make the town (through the provisional six-footprint
+  proxy or a rav's record) and the tents chain on as part of it. With fewer permanent houses
+  the tents do not count toward a town, and the camp is flagged.
+- **Map classes.** The map data cannot tell a pitched tent from a fixed one. building=tent
+  (before: a non-dwelling, never flagged) now goes to review: it is still left out by default,
+  even when ambiguous structures are included, so it is always flagged, and a rav's
+  per-building include gives it the fixed-tent treatment. building=ger, a yurt (before: a full
+  dwelling), gets the fixed-tent treatment directly: review, included by default with the
+  other ambiguous structures, counted 0 toward a town. Overture's building classes (its schema,
+  checked 2026-11-25) include `ger` but not `tent`, so building=tent reaches the calculator
+  only from a snapshot saved from the older OpenStreetMap source. A footprint left out by
+  default (a tent, a houseboat) is also no longer offered as the starting building when the
+  pin is placed near it, unless a rav included it. The same rules apply in every profile.
+- **Replay note.** A snapshot holding a yurt or a tent can now give a different boundary than
+  when it was saved. Engine version 1.6.3.
+
+Golden tests in `tests/spec-golden.test.js` (ids `rev23-*`) cover each item with expected
+values worked out by hand.
+
 ## Part 3 — Product spec
 
 ### 3.0 Scope & users
@@ -1209,7 +1257,10 @@ the UI for building-level review is the bulk of the work.
 14. **Map classes with no ruling (rev. 21)** — Overture's `allotment_house` (a garden cottage,
     often seasonal), `beach_hut`, `hut`, `shelter`, `boathouse`, `trullo` and `presbytery`
     stay unknown use (included, flagged), and the table counts `tent` and `container` as
-    non-dwellings. Which of these is a beis dirah?
+    non-dwellings. Which of these is a beis dirah? **Rev. 23 answered tents (from research,
+    not a posek):** a pitched tent is not a dwelling; a tent or yurt fixed in one place joins
+    an existing town but adds 0 toward forming one, with flags; building=tent stays out unless
+    a rav includes it.
 15. **The 12-mil comparison ring (rev. 21)** — the engine draws the 24,000-amah ring beyond the
     Rema karpef, like the 2000. Is the d'oraisa 12 mil measured from the karpef or from the
     city's own edge? The ring is off by default. **Rev. 22 answered (from research, not a

@@ -152,9 +152,9 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   for (const b of ['garage', 'shed', 'barn', 'stable', 'warehouse', 'greenhouse', 'carport', 'shrine', 'retail', 'silo']) {
     check('1.3-b', 73, `building=${b} is not a dwelling`, k({ building: b }) === 'non', k({ building: b }));
   }
-  // The table also treats tents and shipping containers as non-dwellings; the spec says
-  // nothing about either (both can be lived in), so they are pending, not checks (rev. 21).
-  pend('1.3-b2', 73, 'The table classifies building=tent and building=container as not dwellings; the spec does not cover either. (Part 7 Q14)');
+  // Rev. 21 left tents and shipping containers pending. Tents are answered in rev. 23 (block
+  // below); containers stay pending here.
+  pend('1.3-b2', 73, 'The table classifies building=container as not a dwelling; the spec does not cover it. (Part 7 Q14)');
   // Lines 65-71, 76-81, rev 14/16: counts only with facts the map cannot show -> review.
   for (const b of ['synagogue', 'church', 'mosque', 'ruins', 'guardhouse', 'hotel', 'hospital', 'school', 'office', 'factory', 'industrial', 'commercial', 'fire_station', 'monastery']) {
     check('1.3-c', 76, `building=${b} needs beis-dirah review`, k({ building: b }) === 'review', k({ building: b }));
@@ -264,6 +264,93 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('rev20-q', 898, 'once a rav records the caravan site as a town, it squares as one: town x [0,50], techum x [-960, 1010]',
     ruled.mode === 'city' && approx(span(ruled.techumCorners).minX, -960) && approx(span(ruled.techumCorners).maxX, 1010) &&
     !has(ruled, 'caravan-site'), JSON.stringify(span(ruled.techumCorners)));
+}
+
+// =================================================================================
+// Rev. 23 — tents and yurts (lines 76, 392, 1008-1050; Part 7 Q14)
+// =================================================================================
+{
+  const cls = (building) => D.classify({ building });
+  const tent = cls('tent'), ger = cls('ger');
+  check('rev23-a', 1038, 'building=tent goes to review (always flagged), is left out by default, and gets the fixed-tent treatment if a rav includes it',
+    tent.klass === 'review' && tent.excludeByDefault === true && tent.noCityCount === true && tent.noCityCountKind === 'fixed-tent', JSON.stringify(tent));
+  check('rev23-b', 1041, 'building=ger (a yurt) goes to review, is included by default, and adds 0 to the town count',
+    ger.klass === 'review' && !ger.excludeByDefault && ger.noCityCount === true && ger.noCityCountKind === 'fixed-tent', JSON.stringify(ger));
+  check('rev23-c', 1038, 'the tent review text says a pitched tent is left out and a rav may include a fixed one',
+    /pitched tent is not a dwelling/.test(tent.reason) && /a rav may include it/.test(tent.reason), tent.reason);
+
+  // The app's inclusion rule (main.js isIncluded) with ambiguous structures included (the default).
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const src = main.slice(main.indexOf('  function isIncluded('), main.indexOf('  // Verified-only scenario'));
+  const overrides = new Map();
+  const isIncluded = require('node:vm').runInNewContext(`(${src})`,
+    { state: { overrides }, isTooSmall: () => false, sizeVerdict: () => 'ok', settings: { includeReview: true, includeUnknown: true } });
+  const tentB = { id: 'tent', ...tent }, gerB = { id: 'ger', ...ger };
+  const tentOut = isIncluded(tentB);
+  overrides.set('tent', 'include');
+  check('rev23-d', 1039, 'the app leaves a tent out by default even with ambiguous structures included; a rav\'s include counts it',
+    tentOut === false && isIncluded(tentB) === true);
+  check('rev23-e', 1042, 'the app includes a yurt by default', isIncluded(gerB) === true);
+  check('rev23-f', 1046, 'a footprint left out by default (tent, houseboat) is not offered as the starting building unless a rav included it',
+    /if \(b\.excludeByDefault && state\.overrides\.get\(b\.id\) !== 'include'\) return;/.test(main));
+  check('rev23-g', 1028, 'the app carries the kind of each uncounted structure into the engine, including the background worker',
+    /noCityCountKind: cls\.noCityCountKind \|\| null/.test(main) &&
+    /function workerSafeBuildings[\s\S]{0,300}noCityCountKind: b\.noCityCountKind \|\| null/.test(main));
+
+  // Engine runs with the flags the table gives, so the old table (tent a plain non-dwelling,
+  // ger a full dwelling) fails each of these.
+  const flags = (c) => (b) => ({ ...b, noCityCount: !!c.noCityCount, noCityCountKind: c.noCityCountKind });
+  const asTent = flags(tent), asGer = flags(ger);
+  // Town: six 10 m houses, walls x [0,50], y [0,30]. A tent a rav included at x [80,90]: 30 m < 33.92 m.
+  const withTent = run(town(0, 0).concat(asTent(box(80, 0, 90, 10))), {}, { x: 5, y: 5 });
+  check('rev23-h', 1023, 'a fixed tent 30 m from a six-house town chains on: town to x = 90, techum to 1050, count stays 6, fixed-tent flag only',
+    withTent.mode === 'city' && approx(span(withTent.cityCorners).maxX, 90) && approx(span(withTent.techumCorners).maxX, 1050) &&
+    withTent.clusters[0].houseCount === 6 && has(withTent, 'fixed-tent') && !has(withTent, 'tent-site'),
+    JSON.stringify({ t: span(withTent.techumCorners), n: withTent.clusters[0].houseCount, w: withTent.warnings.map((w) => w.type) }));
+  // Six yurts alone, in the same layout: no town by count.
+  const yurts = town(0, 0).map(asGer);
+  const ys = run(yurts, {}, { x: 5, y: 5 });
+  check('rev23-i', 1029, 'six yurts alone are not a town by count: building mode from the pin\'s yurt (techum x [-960, 970]), flagged for a rav',
+    ys.mode === 'building' && ys.clusters[0].houseCount === 0 && approx(span(ys.techumCorners).minX, -960) &&
+    approx(span(ys.techumCorners).maxX, 970) && has(ys, 'tent-site') && !has(ys, 'fixed-tent'),
+    JSON.stringify({ mode: ys.mode, w: ys.warnings.map((w) => w.type) }));
+  const ysKey = ys.qualificationClusters[0].key;
+  const ysRuled = run(yurts, { cityQualificationOverrides: { [ysKey]: true } }, { x: 5, y: 5 });
+  check('rev23-j', 1030, 'once a rav records the yurt site as a town, it squares as one: techum x [-960, 1010], no site flag',
+    ysRuled.mode === 'city' && approx(span(ysRuled.techumCorners).minX, -960) && approx(span(ysRuled.techumCorners).maxX, 1010) &&
+    !has(ysRuled, 'tent-site'), JSON.stringify(span(ysRuled.techumCorners)));
+  // A camp: three courtyards of two permanent houses (the six-house town) and four tents around
+  // it: x [80,90] and [110,120] on the south row (30 m and 20 m gaps), x [0,10] and [40,50] at
+  // y [50,60] (20 m north of the houses). All gaps are under 70⅔ amos (33.92 m).
+  const tents = [box(80, 0, 90, 10), box(110, 0, 120, 10), box(0, 50, 10, 60), box(40, 50, 50, 60)].map(asTent);
+  const camp = town(0, 0).concat(tents);
+  const cr = run(camp, {}, { x: 5, y: 5 });
+  check('rev23-k', 1032, 'a camp with three courtyards of two houses each is a town, tents and all: town x [0,120], y [0,60]; techum x [-960, 1080]',
+    cr.mode === 'city' && cr.clusters.length === 1 && cr.clusters[0].houseCount === 6 &&
+    sameSpan(span(cr.cityCorners), { minX: 0, maxX: 120, minY: 0, maxY: 60 }) && approx(span(cr.techumCorners).minX, -960) &&
+    approx(span(cr.techumCorners).maxX, 1080) && has(cr, 'fixed-tent') && !has(cr, 'tent-site'),
+    JSON.stringify({ c: span(cr.cityCorners), n: cr.clusters[0].houseCount }));
+  // Without the house at x [40,50], y [20,30] the camp has five permanent houses: 5 + 4 tents
+  // would be 9 by count, but tents add 0, so it is not a town.
+  const fiveCamp = camp.filter((b, i) => i !== 5);
+  const fr = run(fiveCamp, {}, { x: 5, y: 5 });
+  check('rev23-l', 1036, 'with five permanent houses the same tents do not make a town: building mode from the pin\'s house (techum x [-960, 970]), with both flags',
+    fr.mode === 'building' && fr.clusters.length === 1 && fr.clusters[0].houseCount === 5 &&
+    sameSpan(span(fr.techumCorners), { minX: -960, maxX: 970, minY: -960, maxY: 970 }) && has(fr, 'tent-site') && has(fr, 'fixed-tent'),
+    JSON.stringify({ mode: fr.mode, w: fr.warnings.map((w) => w.type) }));
+  // Same in every profile (line 1047): the Chazon Ish amah (40.704 m join) and the Mechaber
+  // profile (no karpef) give the same town status and flags for both camps.
+  const profiles = [{ amahM: CI, karpef: true }, { karpef: false, bowPolicy: 'mechaber-curve' }];
+  check('rev23-m', 1047, 'the same in every profile: six houses + tents is a town and five houses + tents is not, with the same flags',
+    profiles.every((p) => { const a = run(camp, p, { x: 5, y: 5 }), b = run(fiveCamp, p, { x: 5, y: 5 });
+      return a.mode === 'city' && !has(a, 'tent-site') && has(a, 'fixed-tent') && b.mode === 'building' && has(b, 'tent-site'); }));
+  // A static caravan and a tent in one site raise each kind's own site flag (line 1029). Four
+  // houses (walls x [0,30]), a caravan at x [50,60] and a tent at x [80,90], 20 m apart.
+  const mixed = town(0, 0).slice(0, 4).concat(flags(cls('static_caravan'))(box(50, 0, 60, 10)), asTent(box(80, 0, 90, 10)));
+  const mr = run(mixed, {}, { x: 5, y: 5 });
+  check('rev23-n', 1029, 'four houses + a static caravan + a tent: not a town by count; caravan and tent each get their own flags',
+    mr.mode === 'building' && has(mr, 'caravan-site') && has(mr, 'tent-site') && has(mr, 'static-caravan') && has(mr, 'fixed-tent'),
+    JSON.stringify(mr.warnings.map((w) => w.type)));
 }
 
 // =================================================================================
@@ -783,8 +870,8 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('2-12mil', 391, 'the 12-mil ring and second-shita line are hidden by default', SET.DEFAULTS.show12mil === false && SET.DEFAULTS.secondAmahCm === 0);
 }
 
-pend('7-q11', 1194, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
-pend('7-q12', 1197, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
+pend('7-q11', 1242, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
+pend('7-q12', 1245, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
 
 console.log(`\n${passed} passed, ${failed} failed, ${pending.length} pending`);
 for (const p of pending) console.log('  PENDING ' + p);
