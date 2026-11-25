@@ -1,4 +1,4 @@
-:root { --ink:#17201d; --muted:#5f6b66; --line:#dce4e0; --accent:#176b52; --soft:#f4f7f5; --warning:#7a1f1f; }
+:root { --ink:#17201d; --muted:#5f6b66; --line:#dce4e0; --accent:#176b52; --soft:#f4f7f5; --warning:#365f46; }
 * { box-sizing:border-box; }
 body { margin:0; color:var(--ink); background:#fff; font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif; }
 .warning { padding:8px 18px; color:#fff; background:var(--warning); text-align:center; font-size:13px; }
