@@ -38,7 +38,7 @@ npm run cf:dev
 ```
 
 Data: Overture Buildings PMTiles (fused OSM + ML footprint sources), Nominatim (geocoding through an identified/cached production
-proxy), Google Maps imagery (metered, with Esri World Imagery as the fallback), and CARTO label tiles.
+proxy), Google Maps imagery (metered, with Esri World Imagery and place labels as the fallback), and OpenStreetMap tiles for the illustrated map.
 
 ## Using it
 
