@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 20, 2026-11-25) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 21, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -917,6 +917,54 @@ says a rav decides, the calculator flags the case and does not rule on it.
 Golden tests in `tests/spec-golden.test.js` (ids `rev20-*`) cover each item with expected
 values worked out by hand.
 
+### Rev. 21 — 2026-11-25 (independent review of revs. 19–20; conformance fixes; no psak default changes)
+
+An independent review redid every golden value in `tests/spec-golden.test.js` by hand and broke
+the engine on purpose to see which tests notice. Every expected value was right. No profile
+default changed. Engine version 1.6.1.
+
+- **A pin in an unfilled pocket rests outside the city (§1.10a).** Membership tested the city's
+  whole squared rectangle, so a pin in the empty middle of an unfilled bow/L pocket, or of an
+  excluded hole, was treated as a resident, although §1.10a counts only the final starting
+  area. The techum drawn from the houses could then leave the pin itself outside. Now such a
+  pin rests outside that city (the open-field square, or building mode in a lone house), with
+  a `pin-in-excluded-pocket` warning. The pocket's review stays visible, and a reviewer fill
+  makes the pin a resident again. A pin in one of the city's houses, or inside the Rema karpef
+  of the houses facing the pocket, is a resident as before.
+- **Swallowed cities are flagged inside a validated enclosure too (§1.10a).** Rev. 19 covered
+  point, building and ordinary city mode, but not a resident of a rav-validated enclosure. A
+  city that does not touch the enclosure and lies wholly inside the techum now raises the same
+  `ir-muvlaas` warning. The boundary is unchanged.
+- **The rev. 20 Chazon Ish switch also reaches saves from before rev. 13.** Those saves held the
+  old yes/no `overlapMerge` switch (Chazon Ish default: on) and no bow or hole setting, so the
+  exact-match test missed them and an unchanged old profile kept joint redraw. The comparison
+  now reads the normalized values. It also runs only for a revision below 20, so a later
+  revision number never re-runs it. Explicit choices and snapshots are untouched, as before.
+- **Overture class names.** Overture's `semi` (semi-detached house) and `dwelling_house` were
+  read as unknown use; they are dwellings. The default boundary does not change, because unknown
+  use is included; the verified-dwellings-only line and the review queue do. Rev. 20 said
+  Overture has no seasonal-cottage tag. It has `allotment_house`, `beach_hut`, `hut` and
+  `shelter`; they stay unknown use (included, flagged) pending Part 7 Q14. `caravan` and
+  `touring_caravan` are not Overture classes; only an OSM-era snapshot can carry them.
+- **Replay note for rev. 19.** The narrowest-width size test also runs when an older snapshot
+  loads, so a snapshot holding a narrow footprint turned off the compass can now give a
+  different boundary than when it was saved.
+- **Engineering tolerances, disclosed.** Distances are compared exactly at every limit (70⅔,
+  141⅓, 2000, 4000, the 4-amah width), with equality on the side each rule states.
+  Floating-point error there is below a millionth of a millimetre, far under the 2–4 m footprint
+  error in Part 4. A point counts as on a ring within 1 cm: a pin within 1 cm of a wall, karpef
+  or city edge is inside it, a city corner within 1 cm outside a techum still counts as
+  swallowed, and two city rectangles within 1 cm of each other can count as overlapping. These
+  are engineering tolerances, not shiurim. Part 4's "show borderline joins as uncertain" is not
+  implemented, and no margin for it has been chosen.
+- **Golden tests.** Their thresholds are now written from this spec instead of read back from
+  the engine; before, changing the 4000-amah bow limit to 3999 failed no test. New cases cover
+  exact equality at 2000 amos for three villages (the older equality case rounded to just
+  inside 960 m), the Rema chord at exactly 4000 and depth at exactly 2000 amos, the swallowed-
+  city flag with a reviewer squaring angle and inside an enclosure, the pocket pin, and both
+  old-save switches. Three checks this spec does not settle became pending questions: the
+  12-mil ring beyond the karpef (Part 7 Q15), and tents and containers as non-dwellings (Q14).
+
 ## Part 3 — Product spec
 
 ### 3.0 Scope & users
@@ -1113,6 +1161,20 @@ the UI for building-level review is the bulk of the work.
     research report the Chazon Ish as not counting a factory, or counting only buildings
     with sleeping quarters. The researchers read the Chazon Ish only through later works.
     Factories stay in review; no ruling changed.
+13. **Narrow non-rectangular footprints (rev. 21)** — the size test asks whether an outline is
+    at least 4 amos wide in every direction, measured across its outer hull. An L- or U-shaped
+    structure whose walls are under 4 amos thick, or a small triangle, passes although no
+    4×4-amah square fits inside it (as it also did before rev. 19). Does "4 by 4 amos" (SA HaRav
+    398:10) need a 4×4 square inside the structure, an area of 16 square amos, or only that
+    width? Mishnah Berurah 398:33 also cites Sha'arei Teshuvah that watchmen's huts need not
+    have 4 amos at all, while the size test removes every footprint under 4 amos wide.
+14. **Map classes with no ruling (rev. 21)** — Overture's `allotment_house` (a garden cottage,
+    often seasonal), `beach_hut`, `hut`, `shelter`, `boathouse`, `trullo` and `presbytery`
+    stay unknown use (included, flagged), and the table counts `tent` and `container` as
+    non-dwellings. Which of these is a beis dirah?
+15. **The 12-mil comparison ring (rev. 21)** — the engine draws the 24,000-amah ring beyond the
+    Rema karpef, like the 2000. Is the d'oraisa 12 mil measured from the karpef or from the
+    city's own edge? The ring is off by default.
 
 **Validation benchmarks:** the tool is city-agnostic; these are continuing cross-checks,
 not scope or release blockers:

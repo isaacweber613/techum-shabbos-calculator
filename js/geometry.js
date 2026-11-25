@@ -1214,15 +1214,14 @@
     const validatedPerimeter = Array.isArray(settings.validatedCityPerimeter) && settings.validatedCityPerimeter.length >= 3
       ? settings.validatedCityPerimeter.map(rot) : null;
     const perimeterActive = !!(validatedPerimeter && pointInOrOnRing(workPin, validatedPerimeter));
-    const mode = perimeterActive || selectedClosures.length ? 'city' : homeBuilding >= 0 ? 'building' : 'point';
-    let home = selectedClosures.length === 1 ? cityModels[selectedClosures[0].indices[0]].clusterIndex : -1;
-    markStage('homeSelection');
 
     let squaring = null, cityPolygons = [], karpefPolygons = [], techumPolygons = [], mil12Polygons = [];
     let pointModeWorldFrame = false;
     const concavity = [];
     const regionDefToRing = (def, expansion) => rectCornersInFrame(expandRect(def.rect, expansion || 0), def.angleRad);
-    const applyShapeRules = (defs, sourceCluster, sourceAngle) => {
+    // `collected` receives this call's bow/hole warnings; only the closures that end up
+    // governing the result (or were rejected because of a pocket) report them.
+    const applyShapeRules = (defs, sourceCluster, sourceAngle, collected) => {
       if (!sourceCluster || !sourceCluster.members.length) return defs;
       const framedBuildings = work.map((building) => {
         const ring = building.ring.map((point) => toOrientedFrame(point, sourceAngle));
@@ -1274,7 +1273,7 @@
         }
         warning.appliedToBoundary = exclude;
         warning.frameAngleRad = sourceAngle;
-        concavity.push(warning);
+        collected.push(warning);
         if (exclude) {
           for (const mask of warning.maskRects || [warning.region]) {
             pieces = pieces.flatMap((piece) => subtractRect(piece.rect, mask)
@@ -1284,6 +1283,50 @@
       }
       return pieces;
     };
+    const buildClosureBoundary = (closure) => {
+      const found = [];
+      let defs;
+      if (closure.redraw) {
+        const members = closure.indices.flatMap((index) => cityModels[index].cluster.members);
+        const combined = { members, bbox: closure.redraw.rect };
+        defs = applyShapeRules([{ rect: closure.redraw.rect, angleRad: closure.redraw.angleRad }], combined, closure.redraw.angleRad, found);
+      } else {
+        defs = closure.indices.flatMap((index) => {
+          const model = cityModels[index];
+          return applyShapeRules([{ rect: model.sq.rect, angleRad: model.sq.angleRad }], model.cluster, model.sq.angleRad, found);
+        });
+      }
+      return {
+        defs,
+        concavity: found,
+        city: defs.map((def) => regionDefToRing(def, 0)),
+        karpef: settings.karpef ? defs.map((def) => regionDefToRing(def, karpefM)) : [],
+        techum: defs.map((def) => regionDefToRing(def, techumM + (settings.karpef ? karpefM : 0))),
+        mil12: defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0))),
+      };
+    };
+    const boundaryCache = new Map();
+    const boundaryOf = (closure) => {
+      if (!boundaryCache.has(closure)) boundaryCache.set(closure, buildClosureBoundary(closure));
+      return boundaryCache.get(closure);
+    };
+    // A pin outside every house is in a city only inside that city's FINAL starting area
+    // (spec §1.10a). The full squared rectangle can contain the pin while an unfilled
+    // bow/L pocket or an excluded hole removes that spot from the starting area; such a pin
+    // rests outside the city (rev. 21). A pin in one of the city's own houses stays a resident,
+    // and inside an active validated enclosure the enclosure itself is the person's city.
+    const pocketRejected = [];
+    if (physicalCityModel < 0 && !perimeterActive) {
+      selectedClosures = selectedClosures.filter((closure) => {
+        const boundary = boundaryOf(closure);
+        if ((settings.karpef ? boundary.karpef : boundary.city).some((ring) => pointInOrOnRing(workPin, ring))) return true;
+        pocketRejected.push(closure);
+        return false;
+      });
+    }
+    const mode = perimeterActive || selectedClosures.length ? 'city' : homeBuilding >= 0 ? 'building' : 'point';
+    let home = selectedClosures.length === 1 ? cityModels[selectedClosures[0].indices[0]].clusterIndex : -1;
+    markStage('homeSelection');
 
     if (mode === 'city' && perimeterActive) {
       squaring = deriveSquaring(validatedPerimeter, { reviewerAngleApplied: angle !== 0 });
@@ -1293,28 +1336,17 @@
       techumPolygons = defs.map((def) => regionDefToRing(def, techumM + (settings.karpef ? karpefM : 0)));
       mil12Polygons = defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0)));
       warnings.push({ type: 'validated-perimeter', text: 'A reviewer-supplied validated enclosure is being used as the city edge. The app did not infer its hukaf-l\'dira status; confirm the supplied perimeter and ruling.' });
-    } else if (mode === 'city') {
-      const buildClosureBoundary = (closure) => {
-        let defs;
-        if (closure.redraw) {
-          const members = closure.indices.flatMap((index) => cityModels[index].cluster.members);
-          const combined = { members, bbox: closure.redraw.rect };
-          defs = applyShapeRules([{ rect: closure.redraw.rect, angleRad: closure.redraw.angleRad }], combined, closure.redraw.angleRad);
-        } else {
-          defs = closure.indices.flatMap((index) => {
-            const model = cityModels[index];
-            return applyShapeRules([{ rect: model.sq.rect, angleRad: model.sq.angleRad }], model.cluster, model.sq.angleRad);
-          });
+      // Another city wholly inside this techum is flagged as in ordinary city mode (§1.10a,
+      // rev. 21). A city touching the validated enclosure belongs to the enclosed city itself.
+      for (const model of cityModels) {
+        if (ringsOverlap(model.ring, validatedPerimeter)) continue;
+        if (techumPolygons.some((region) => model.ring.every((point) => pointInOrOnRing(point, region)))) {
+          warnings.push({ type: 'ir-muvlaas', text: 'Another complete city lies inside this techum. Its route-specific ir muvla’at continuation is not represented by one universal permission polygon; check the destination with a rav.' });
         }
-        return {
-          defs,
-          city: defs.map((def) => regionDefToRing(def, 0)),
-          karpef: settings.karpef ? defs.map((def) => regionDefToRing(def, karpefM)) : [],
-          techum: defs.map((def) => regionDefToRing(def, techumM + (settings.karpef ? karpefM : 0))),
-          mil12: defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0))),
-        };
-      };
-      const boundaries = selectedClosures.map(buildClosureBoundary);
+      }
+    } else if (mode === 'city') {
+      const boundaries = selectedClosures.map(boundaryOf);
+      for (const boundary of boundaries) concavity.push(...boundary.concavity);
       // Several disjoint starting areas contain a pin that is in none of their houses.
       // Under every overlap policy the engine must not pick one by input order; the
       // conservative common area applies (spec §1.10a; rev. 17 extends it beyond no-join).
@@ -1381,6 +1413,12 @@
         }
       }
     }
+    // A city passed over because the pin rests in its unfilled pocket keeps its bow/hole
+    // review visible: confirming endpoints that fill the pocket would make the pin a resident.
+    if (pocketRejected.length) {
+      for (const closure of pocketRejected) concavity.push(...boundaryOf(closure).concavity);
+      warnings.push({ type: 'pin-in-excluded-pocket', text: 'The pin is inside a city’s squared rectangle but in an unfilled bow/L pocket or an excluded hole, which is not part of that city’s starting area, so it is measured as resting outside that city. If a reviewer fills the pocket or includes the hole, the pin becomes a resident.' });
+    }
     warnings.push(...concavity);
     markStage('boundaryAndWarnings');
 
@@ -1418,7 +1456,8 @@
       serializedClusters[home] = {
         ...serializedClusters[home],
         members: [...new Set(joinedModels.flatMap((model) => model.cluster.members))],
-        houseCount: joinedModels.reduce((sum, model) => sum + (model.cluster.houseCount || model.cluster.members.length), 0),
+        houseCount: joinedModels.reduce((sum, model) => sum +
+          (model.cluster.houseCount == null ? model.cluster.members.length : model.cluster.houseCount), 0),
         overlapJoinedClusterIndices: joinedModels.map((model) => model.clusterIndex),
       };
     }

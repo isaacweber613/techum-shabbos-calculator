@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.6.0 (2026-11-25)';
+  const ENGINE_VERSION = '1.6.1 (2026-11-25)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -1278,7 +1278,9 @@
       const isHome = index === res.homeCluster;
       const color = isHome ? '#00e676' : `hsl(${(index * 137.508) % 360}, 75%, 48%)`;
       const houses = cluster.houseCount == null ? cluster.members.length : cluster.houseCount;
-      const label = `Settlement #${index + 1}: ${houses} counted house${houses === 1 ? '' : 's'}; ${cluster.members.length - houses} join-only perimeter${cluster.members.length - houses === 1 ? '' : 's'}` +
+      // Validated join perimeters and static caravans (spec rev. 20) chain but are not counted.
+      const notCounted = cluster.members.length - houses;
+      const label = `Settlement #${index + 1}: ${houses} counted house${houses === 1 ? '' : 's'}; ${notCounted} joined but not counted (validated join perimeters or static caravans)` +
         (isHome ? '<br><b>This is the selected home city.</b>' : '') +
         `<br>Dashed box is its derived outer rectangle after 70⅔-amah chaining and settlement merges.`;
       L.polygon(cornersToLatLngs(cluster.corners), {

@@ -89,13 +89,16 @@
         }
         // Spec rev. 20 moved the Chazon Ish profile's overlap default from joint redraw to no
         // join. A saved setting that still matches the old profile exactly took that default
-        // rather than choosing it, so it follows the new default.
-        if (saved.profileRevision !== 20) {
-          const ci = PROFILES['chazon-ish'];
-          if (saved.profile === 'chazon-ish' && saved.overlapPolicy === 'join-redraw' &&
-            saved.amahCm === ci.amahCm && saved.karpef === ci.karpef &&
-            saved.squaringAngleDeg === ci.squaringAngleDeg && saved.largeHolePolicy === ci.largeHolePolicy &&
-            saved.bowPolicy === ci.bowPolicy && saved.minCityHouses === ci.minCityHouses) {
+        // rather than choosing it, so it follows the new default. The comparison reads the
+        // normalized values, so a save from before rev. 13 (binary overlapMerge switch, no
+        // bow or hole setting yet) is recognised too, and a save marked with any later
+        // revision is never switched again (rev. 21).
+        if (!((Number(saved.profileRevision) || 0) >= 20)) {
+          const ci = PROFILES['chazon-ish'], now = normalize(saved);
+          if (now.profile === 'chazon-ish' && now.overlapPolicy === 'join-redraw' &&
+            now.amahCm === ci.amahCm && now.karpef === ci.karpef &&
+            now.squaringAngleDeg === ci.squaringAngleDeg && now.largeHolePolicy === ci.largeHolePolicy &&
+            now.bowPolicy === ci.bowPolicy && now.minCityHouses === ci.minCityHouses) {
             saved.overlapPolicy = ci.overlapPolicy;
           }
           saved.profileRevision = 20;

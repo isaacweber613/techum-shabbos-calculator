@@ -20,6 +20,8 @@
     'house', 'residential', 'apartments', 'detached', 'semidetached_house',
     'semi_detached', 'terrace', 'terraced_house', 'bungalow', 'dormitory',
     'cabin', 'farm', 'ger', 'stilt_house',
+    // Rev. 21: Overture's own class names for a semi-detached house and a dwelling house.
+    'semi', 'dwelling_house',
     // Rev. 20: wooden cabins count fully (SA OC 398:10, "of stone or of boards"); a
     // structure built as a dwelling counts even when nobody lives in it (MB 398:19), so
     // seasonal cottages tagged as houses count all year. houseboat and static_caravan

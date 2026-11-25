@@ -51,7 +51,10 @@ const rotate = (deg) => { const a = deg * Math.PI / 180; return ([x, y]) => [x *
 const RCN = 0.48, CI = 0.576, RMF = 0.54;
 const S = { amahM: RCN, karpef: false, minCityHouses: 6, overlapPolicy: 'no-join',
   largeHolePolicy: 'include-with-warning', bowPolicy: 'rema-majority', squaringAngleDeg: 0 };
-const JOIN = G.AMOS.JOIN * RCN, T2 = G.AMOS.JOIN2 * RCN, TECHUM = G.AMOS.TECHUM * RCN, BOW = G.AMOS.BOW * RCN;
+// Spec values, written out here and never read back from the engine, so a changed engine
+// constant fails a test instead of moving the expectation with it (rev. 21).
+const SPEC_AMOS = { JOIN: 70 + 2 / 3, JOIN2: 141 + 1 / 3, KARPEF: 70 + 2 / 3, TECHUM: 2000, BOW: 4000, MIL12: 24000, PERSON: 4 };
+const JOIN = 33.92, T2 = 67.84, TECHUM = 960, BOW = 1920; // the same four at 48 cm
 const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(settings || {}) }, pin || { x: 0, y: 0 });
 
 // =================================================================================
@@ -68,6 +71,8 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
     approx(c.joinM, 40.704, 1e-9) && approx(c.t2, 81.408, 1e-9) && approx(c.techumM, 1152, 1e-9), JSON.stringify(c));
   check('1.2-c', 44, 'R\' Moshe 54 cm: 70⅔ = 38.16 m, 141⅓ = 76.32 m, 2000 = 1,080 m',
     approx(m.joinM, 38.16, 1e-9) && approx(m.t2, 76.32, 1e-9) && approx(m.techumM, 1080, 1e-9), JSON.stringify(m));
+  check('1.2-f', 52, 'every engine threshold in amos is the spec value (70⅔, 141⅓, karpef 70⅔, 2000, 4000, 24,000, 4)',
+    Object.entries(SPEC_AMOS).every(([key, amos]) => G.AMOS[key] === amos), JSON.stringify(G.AMOS));
 
   // §1.2 line 52: every threshold (4, 70⅔, 141⅓, 2000, 4000, 24,000) scales from the amah.
   const ciPoint = span(run([], { amahM: CI }).techumCorners);
@@ -77,9 +82,10 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const city = span(cityRes.cityCorners), mil = span(cityRes.mil12Corners);
   check('1.1-a', 31, '12-mil comparison ring = city + 24,000 amos (11,520 m) on every side',
     approx(mil.minX, city.minX - 11520, 1e-6) && approx(mil.maxY, city.maxY + 11520, 1e-6), JSON.stringify(mil));
-  const milK = span(run(town(0, 0), { karpef: true }).mil12Corners);
-  check('1.1-b', 31, '12-mil ring is measured beyond the same karpef as the 2000 (11,520 + 33.92 m per side)',
-    approx(milK.maxX, city.maxX + 11520 + 33.92, 1e-6), JSON.stringify(milK));
+  // The engine also draws the 12-mil ring beyond the Rema karpef (11,520 + 33.92 m per side).
+  // The spec never says whether the d'oraisa 12 mil starts at the karpef, so this stays a
+  // pending question (Part 7 Q15), not a check (rev. 21).
+  pend('1.1-b', 31, 'Is the 12-mil comparison ring measured beyond the Rema karpef, as the engine draws it, or from the city edge? (Part 7 Q15)');
 
   check('1.2-e', 53, 'default amah is 48 cm with the second comparison line off',
     SET.DEFAULTS.amahCm === 48 && SET.DEFAULTS.secondAmahCm === 0);
@@ -90,14 +96,17 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
 // =================================================================================
 {
   const k = (tags) => D.classify(tags).klass;
-  // Line 65: houses count.
-  for (const b of ['house', 'residential', 'apartments', 'detached', 'terrace', 'bungalow', 'dormitory', 'stilt_house']) {
+  // Line 65: houses count. 'semi' and 'dwelling_house' are Overture's own class names (rev. 21).
+  for (const b of ['house', 'residential', 'apartments', 'detached', 'terrace', 'bungalow', 'dormitory', 'stilt_house', 'semi', 'dwelling_house']) {
     check('1.3-a', 65, `building=${b} is a dwelling`, k({ building: b }) === 'dwelling', k({ building: b }));
   }
-  // Line 72-75: storage/bare structures do not count (barn/warehouse with no resident, shrine).
-  for (const b of ['garage', 'shed', 'barn', 'stable', 'warehouse', 'greenhouse', 'carport', 'shrine', 'retail', 'silo', 'container', 'tent']) {
+  // Line 72-75, rev 14 line 712, rev 16 line 765: storage/bare structures do not count.
+  for (const b of ['garage', 'shed', 'barn', 'stable', 'warehouse', 'greenhouse', 'carport', 'shrine', 'retail', 'silo']) {
     check('1.3-b', 73, `building=${b} is not a dwelling`, k({ building: b }) === 'non', k({ building: b }));
   }
+  // The table also treats tents and shipping containers as non-dwellings; the spec says
+  // nothing about either (both can be lived in), so they are pending, not checks (rev. 21).
+  pend('1.3-b2', 73, 'The table classifies building=tent and building=container as not dwellings; the spec does not cover either. (Part 7 Q14)');
   // Lines 65-71, 76-81, rev 14/16: counts only with facts the map cannot show -> review.
   for (const b of ['synagogue', 'church', 'mosque', 'ruins', 'guardhouse', 'hotel', 'hospital', 'school', 'office', 'factory', 'industrial', 'commercial', 'fire_station', 'monastery']) {
     check('1.3-c', 76, `building=${b} needs beis-dirah review`, k({ building: b }) === 'review', k({ building: b }));
@@ -262,7 +271,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const bridged = run(strip.concat(box(80, 10, 90, 20)), {}, { x: 5, y: 5 });
   check('1.9a-b', 292, 'a house in the strip 30 m from each side bridges it: one city', bridged.clusters.length === 1);
   const divided = run(strip, {}, { x: 5, y: 5 });
-  check('1.9-a', 276, 'water never extends the city: the western city\'s ribua ends at its own east wall (x = 50)',
+  check('1.9-a', 276, 'an empty strip (water) adds nothing to the city: the western city\'s ribua ends at its own east wall (x = 50)',
     approx(span(divided.cityCorners).maxX, 50, 1e-9));
 }
 
@@ -289,8 +298,19 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   const wide = triple(-20, 170, 130);
   check('1.4-p', 103, 'a middle village that does not fit inside the projected outer gap does not merge them',
     !has(wide, 'three-villages'), `clusters=${wide.clusters.length}`);
-  // Middle village must be within 2000 amos of each outer. Equality is tested in geometry.test.js;
-  // here B is 2000 amos + 1 cm from both outers (corner-to-corner).
+  // Line 102: the middle village within 2000 amos of each outer, "equality included". The
+  // geometry.test.js equality case is a diagonal whose rounding lands just inside 960 m, so a
+  // strict "<" passed it too. Here the distance is exactly 960 m, straight north: A walls
+  // x [-50,0], C walls x [70,120] (70 m apart, too far to merge directly), and B (x [0,70],
+  // y [990,1020]) fills the 70 m outer gap, leaving 0 m on each side (rev. 21).
+  {
+    const A = town(-50, 0), C = town(70, 0), B = [];
+    for (const x of [0, 30, 60]) B.push(box(x, 990, x + 10, 1000), box(x, 1010, x + 10, 1020));
+    const r = run(A.concat(C, B), {}, { x: -45, y: 5 });
+    check('1.4-q2', 102, 'middle village exactly 2000 amos (960 m) from each outer village: all three merge',
+      has(r, 'three-villages') && r.clusters.length === 1, `clusters=${r.clusters.length}`);
+  }
+  // Here B is 2000 amos + 1 cm from both outers (corner-to-corner).
   {
     const A = town(-50, 0), C = town(130, 0); // outer gap 130, B 50 wide leaves 40 each side
     const v = Math.sqrt(TECHUM * TECHUM - 40 * 40) + 0.01; // just beyond 960 m from each corner
@@ -383,9 +403,10 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('1.5-f', 198, 'sides 0.9° off parallel are still a trapezoid (1° classifier)', sq(trap(0.9)).method === 'trapezoid-extended');
   check('1.5-g', 198, 'sides 1.1° off parallel are an irregular shape: world directions', sq(trap(1.1)).method === 'world-aligned');
 
-  // Line 151, step 3: a triangle (even with a right angle) uses world directions by default.
+  // Step 3 (line 199): "everything else uses true world directions". Line 151 alone does not
+  // decide this triangle, because it has a right angle (line 146 leaves that to a rav).
   const tri = sq(pts([[0, 0], [300, 0], [0, 200]].map(rotate(20))));
-  check('1.5-h', 151, 'a triangular town turned 20° is squared to the compass bounding box', tri.method === 'world-aligned' && tri.angleRad === 0);
+  check('1.5-h', 199, 'a right-angled triangular town turned 20° is squared to the compass bounding box by default', tri.method === 'world-aligned' && tri.angleRad === 0);
 
   // Line 158-159 + step 4: one jutting house pulls its whole side out.
   const houses = town(0, 0);
@@ -413,7 +434,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
     bows(eq).length === 1 && eq.calculationStatus === 'provisional-no-fill', `bows=${bows(eq).length}`);
 
   // Reviewer endpoints with a chord of exactly 4000 amos (tiny amah: 4000 amos = 40 m, 2000 = 20 m).
-  const tiny = 0.01, bowT = G.AMOS.BOW * tiny;
+  const tiny = 0.01, bowT = 40;
   const shallow = [];
   for (let n = 0; n <= 10; n++) shallow.push(house(n * 10, 0));
   shallow.push(house(0, 10), house(100, 10));
@@ -425,7 +446,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('1.5-k', 162, 'Mechaber: a reviewed chord of exactly 4000 amos is not filled', status(withChord(bowT, 'mechaber-curve')) === 'reviewed-no-fill-applied', status(withChord(bowT, 'mechaber-curve')));
   check('1.5-l', 162, 'Mechaber: a reviewed chord just under 4000 amos is filled', status(withChord(bowT - 1e-6, 'mechaber-curve')) === 'reviewed-fill-applied');
   const filled = withChord(bowT - 1e-6, 'mechaber-curve');
-  check('1.5-m', 162, 'a filled bow leaves one starting region covering the whole squared city (x 0-105 incl. walls)',
+  check('1.5-m', 162, 'a filled bow leaves one starting region covering the whole squared city (walls x -5 to 105)',
     filled.cityRegions.length === 1 && approx(span(filled.cityRegions[0]).w, 110, 1e-6), JSON.stringify(span(filled.cityRegions[0])));
   check('1.5-n', 163, 'Rema: the same 4000-amah chord fills because the pocket is under 2000 amos deep', status(withChord(bowT, 'rema-majority')) === 'reviewed-fill-applied');
 
@@ -440,9 +461,40 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('1.5-p', 206, 'without reviewer endpoints even the exigency setting stays provisional no-fill',
     run(deep, { amahM: tiny, bowPolicy: 'emergency-fill' }, { x: 0, y: 50 }).calculationStatus === 'provisional-no-fill');
 
+  // Line 207-208: Rema fills when the chord is < 4000 OR the depth is < 2000; "equality belongs
+  // to the >= branch" for both. 1.5-n alone cannot tell "<" from "<=" (rev. 21).
+  const deepChord = run(deep, { amahM: tiny, concavityReviews: { [deepKey]: { endpoints: [{ x: 0, y: 100 }, { x: bowT, y: 100 }] } } }, { x: 0, y: 50 });
+  check('1.5-n2', 208, 'Rema: a reviewed chord of exactly 4000 amos over a pocket 9500 amos deep stays unfilled',
+    status(deepChord) === 'reviewed-no-fill-applied', status(deepChord));
+  // Bottom houses' walls end at y = 5; the arms end at y = 25: the pocket is exactly 20 m
+  // (2000 amos) deep under a 100 m (10,000-amah) chord along y = 25.
+  const twoThousand = [];
+  for (let n = 0; n <= 10; n++) twoThousand.push(house(n * 10, 0));
+  twoThousand.push(house(0, 10), house(0, 20), house(100, 10), house(100, 20));
+  const ttDraft = run(twoThousand, { amahM: tiny });
+  const ttKey = bows(ttDraft)[0] && bows(ttDraft)[0].reviewKey;
+  const tt = run(twoThousand, { amahM: tiny, concavityReviews: { [ttKey]: { endpoints: [{ x: 0, y: 25 }, { x: 100, y: 25 }] } } });
+  check('1.5-n3', 208, 'Rema: a reviewed pocket exactly 2000 amos deep under a wide chord stays unfilled',
+    status(tt) === 'reviewed-no-fill-applied' && approx(bows(tt)[0].depthM, 20, 1e-9),
+    JSON.stringify({ status: status(tt), depth: bows(tt)[0] && bows(tt)[0].depthM }));
+
+  // §1.10a lines 310-313: a pin is in a city only inside its FINAL starting area. The empty
+  // middle of an unfilled pocket is not part of it, though it lies inside the squared
+  // rectangle (rev. 21). Before rev. 21 this pin was called a resident and its drawn techum
+  // did not even reach it.
+  const pocketPin = run(deep, { amahM: tiny, karpef: true }, { x: 50, y: 70 });
+  check('1.10a-l', 310, 'a pin in the empty middle of an unfilled bow pocket rests outside the city: 4004-amah square, pocket review still shown',
+    pocketPin.mode === 'point' && has(pocketPin, 'pin-in-excluded-pocket') && has(pocketPin, 'large-concavity') &&
+    pocketPin.calculationStatus === 'provisional-no-fill' && approx(span(pocketPin.techumCorners).w, 4004 * tiny, 1e-9),
+    JSON.stringify({ mode: pocketPin.mode, w: pocketPin.techumCorners && span(pocketPin.techumCorners).w }));
+  const pocketFilled = run(deep, { amahM: tiny, karpef: true, bowPolicy: 'emergency-fill', concavityReviews: ends }, { x: 50, y: 70 });
+  check('1.10a-m', 310, 'once a reviewer fills that pocket, the same pin is a resident', pocketFilled.mode === 'city' && !has(pocketFilled, 'pin-in-excluded-pocket'));
+  const nearWall = run(deep, { amahM: tiny, karpef: true }, { x: 5.5, y: 50 }); // 0.5 m from the arm, karpef 0.71 m
+  check('1.10a-n', 312, 'a pin in the pocket but inside the Rema karpef of its houses is still a resident', nearWall.mode === 'city' && !has(nearWall, 'pin-in-excluded-pocket'));
+
   // Step 7 + §1.6.2: one karpef and then 2000 amos around EVERY region of a multi-region result.
   const multi = run(deep, { amahM: tiny, karpef: true }, { x: 0, y: 50 });
-  const k = G.AMOS.KARPEF * tiny, t = G.AMOS.TECHUM * tiny;
+  const k = (70 + 2 / 3) * tiny, t = 2000 * tiny;
   const ok = multi.cityRegions.length > 1 && multi.cityRegions.length === multi.karpefRegions.length &&
     multi.cityRegions.every((ring, i) => { const c = span(ring), kk = span(multi.karpefRegions[i]), tt = span(multi.techumRegions[i]);
       return approx(kk.minX, c.minX - k) && approx(kk.maxY, c.maxY + k) && approx(tt.minX, c.minX - k - t) && approx(tt.maxY, c.maxY + k + t); });
@@ -512,7 +564,7 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   // A is an L of houses: walls x [-5,310], y [-10,300]; B (inside A's square) is 60+ m from every house of A.
   const ciS = { amahM: CI, karpef: ci.karpef, overlapPolicy: ci.overlapPolicy, bowPolicy: ci.bowPolicy, largeHolePolicy: ci.largeHolePolicy };
   const ciAlone = run(A, ciS, { x: 0, y: 0 }), ciBoth = run(A.concat(B), ciS, { x: 0, y: 0 });
-  const ciEdge = 310 + G.AMOS.KARPEF * CI + G.AMOS.TECHUM * CI; // 310 + 40.704 + 1152 = 1502.704 m
+  const ciEdge = 310 + 40.704 + 1152; // walls + 70⅔ and 2000 amos at 57.6 cm = 1502.704 m
   check('rev20-s', 901, 'Chazon Ish profile: an overlapping city leaves the home techum unchanged (x max 1502.704 m), with the overlap warning',
     regionSig(ciAlone.techumRegions) === regionSig(ciBoth.techumRegions) && has(ciBoth, 'overlap-detected') &&
     approx(span(ciBoth.techumCorners).maxX, ciEdge, 1e-6) && approx(ciEdge, 1502.704, 1e-3),
@@ -537,6 +589,13 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('rev20-w', 910, 'saved custom Chazon Ish settings (karpef off) keep the joint redraw the user chose',
     loadWith({ ...oldCi, karpef: false }).overlapPolicy === 'join-redraw');
   check('rev20-x', 910, 'joint redraw chosen after rev. 20 is kept', loadWith({ ...oldCi, profileRevision: 20 }).overlapPolicy === 'join-redraw');
+  // Before rev. 13 (2026-07-14) the profile stored a yes/no overlapMerge switch and had no bow
+  // or hole setting; the Chazon Ish default was overlapMerge: true (rev. 21).
+  const preRev13 = { profile: 'chazon-ish', amahCm: 57.6, karpef: true, squaringAngleDeg: 0, overlapMerge: true, minCityHouses: 6, dataSourceVersion: 2 };
+  check('rev21-a', 938, 'an unchanged Chazon Ish profile saved before rev. 13 (old yes/no overlap switch) follows the new default too',
+    (() => { const l = loadWith(preRev13); return l.overlapPolicy === 'no-join' && SET.effectiveProfile(l) === 'chazon-ish' && !('overlapMerge' in l); })());
+  check('rev21-b', 938, 'the same old save with karpef turned off keeps the joint redraw the user had', loadWith({ ...preRev13, karpef: false }).overlapPolicy === 'join-redraw');
+  check('rev21-c', 938, 'a save marked with any later revision is never switched again', loadWith({ ...oldCi, profileRevision: 21 }).overlapPolicy === 'join-redraw');
   delete globalThis.localStorage;
 }
 
@@ -603,11 +662,24 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('1.10a-g', 331, 'point mode: a city wholly inside the 2000-amah square is flagged as swallowed', open.mode === 'point' && has(open, 'ir-muvlaas'),
     JSON.stringify(open.warnings.map((w) => w.type)));
   check('1.10a-h', 332, 'point mode: the square itself is not extended (still 4004 amos)', approx(span(open.techumCorners).w, 1921.92, 1e-9));
-  const edge = run(town(900, 0), {}, { x: 0, y: 0 }); // walls to x = 950 > 960.96? no: 950 < 960.96, but y [0,30] inside too
+  // The point square reaches 2 + 2000 amos = 960.96 m from the pin on each side.
+  const edge = run(town(900, 0), {}, { x: 0, y: 0 }); // walls x [900,950], y [0,30]: inside
   const beyond = run(town(940, 0), {}, { x: 0, y: 0 }); // walls to x = 990: crosses the 960.96 m edge
   check('1.10a-i', 323, 'point mode: a city crossing the edge of the reach is not flagged', !has(beyond, 'ir-muvlaas') && has(edge, 'ir-muvlaas'));
   const fromHouse = run([box(-5, -5, 5, 5)].concat(town(300, 300)), {}, { x: 0, y: 0 });
   check('1.10a-j', 331, 'building mode: a city wholly inside the reach is flagged too', fromHouse.mode === 'building' && has(fromHouse, 'ir-muvlaas'));
+  // Rev. 17 line 816: the point square ignores the reviewer's city-squaring angle, so the city
+  // must be compared in the square's own (compass) frame. town(850, 850) turned 30° into the
+  // engine's working frame would reach x' = 1219 m and look outside the 960.96 m square.
+  const turned = run(town(850, 850), { squaringAngleDeg: 30 }, { x: 0, y: 0 });
+  check('1.10a-k', 816, 'point mode with a 30° reviewer squaring angle: the square stays 4004 amos and a city inside it is still flagged',
+    turned.mode === 'point' && has(turned, 'ir-muvlaas') && approx(span(turned.techumCorners).w, 1921.92, 1e-9),
+    JSON.stringify(turned.warnings.map((w) => w.type)));
+  // A city resident inside a rav-validated enclosure (line 1019) gets the same flag (rev. 21).
+  const enclosure = [{ x: -10, y: -10 }, { x: 60, y: -10 }, { x: 60, y: 40 }, { x: -10, y: 40 }];
+  const enclosed = run(home.concat(small), { validatedCityPerimeter: enclosure }, { x: 5, y: 5 });
+  check('1.10a-o', 325, 'validated-enclosure city mode: another city wholly inside the techum is flagged too',
+    enclosed.validatedPerimeterActive && has(enclosed, 'ir-muvlaas'), JSON.stringify(enclosed.warnings.map((w) => w.type)));
 }
 
 // =================================================================================
@@ -663,8 +735,8 @@ const run = (buildings, settings, pin) => G.runPipeline(buildings, { ...S, ...(s
   check('2-12mil', 391, 'the 12-mil ring and second-shita line are hidden by default', SET.DEFAULTS.show12mil === false && SET.DEFAULTS.secondAmahCm === 0);
 }
 
-pend('7-q11', 1108, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
-pend('7-q12', 1111, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
+pend('7-q11', 1156, 'Citation only: §1.5 cites Minchas Yitzchak 8:32 for the joint redraw; other sources give 8:33.');
+pend('7-q12', 1159, 'Citation only: §1.3 cites Chazon Ish 110:28 for counting factories with a lunch room; two secondary sources report him as not counting a factory (or only buildings with sleeping quarters).');
 
 console.log(`\n${passed} passed, ${failed} failed, ${pending.length} pending`);
 for (const p of pending) console.log('  PENDING ' + p);
