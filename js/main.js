@@ -1489,7 +1489,7 @@
           ? 'This snapshot holds less map data than these settings need. Calculate again to load the rest.'
           : state.dataCapReason === 'snapshot-area-unknown'
             ? 'This snapshot does not record which area its map data covers, so it cannot be checked. Calculate again to load the data.'
-            : `The search stopped at the ${settings.maxBuildings.toLocaleString()}-building data limit. Raise “Max buildings” in settings and calculate again.`;
+            : `The search stopped at the ${settings.maxBuildings.toLocaleString()}-building data limit. Raise “Max buildings” in All settings → Buildings & data and calculate again.`;
       lines.push(`<div class="warn accuracy-status data-limit"><b>Incomplete: the map data ran out</b><span>The town, or a town that can join it, continues past the loaded map data. ` +
         `With the rest of the data this boundary could be larger or smaller, and the home town could be a different one, so do not rely on it. ` +
         `There is no halachic limit on a town's length. ${escapeHtml(capHelp)}</span></div>`);
@@ -1508,6 +1508,12 @@
     }
     if (provisionalHome.length) {
       lines.push(`<div class="warn accuracy-status"><b>City status needs rav review</b><span>${provisionalHome.length} component${provisionalHome.length === 1 ? '' : 's'} contributing to the home city ${provisionalHome.length === 1 ? 'uses' : 'use'} the provisional six-footprint proxy. Confirm the actual courtyard/resident basis before relying on this boundary.</span></div>`);
+    }
+    // When the pin sits between several cities, the drawing is only their common area. That is
+    // the most important flag on the page, so show it in the answer card, not in a closed list.
+    const homeAmbiguity = res.warnings.find((w) => w.type === 'multiple-home-candidates');
+    if (homeAmbiguity) {
+      lines.push(`<div class="warn accuracy-status"><b>Starting city needs rav review</b><span>${escapeHtml(homeAmbiguity.text)}</span></div>`);
     }
     if (uncertainCount && (uncertainRatio >= 0.25 || uncertainCount >= 100)) {
       lines.push(`<div class="warn accuracy-status"><b>Building classification can move this boundary</b><span>${uncertainCount.toLocaleString()} of ${state.buildings.length.toLocaleString()} footprints (${Math.round(uncertainRatio * 100)}%) have unknown or ambiguous use and are included automatically. Review the prioritized boundary and home-city structures first.</span></div>`);
@@ -1563,6 +1569,7 @@
       ? `${mergeGaps.length} pairs of settlements merged (gaps ${Math.min(...mergeGaps).toFixed(1)}–${Math.max(...mergeGaps).toFixed(1)} m, each within 141⅓ amos).`
       : null;
     for (const w of res.warnings) {
+      if (w === homeAmbiguity) continue;
       const key = w.type + '|' + (mergeSummary && w.type === 'city-merge' ? mergeSummary : w.text);
       if (mergeSummary && w.type === 'city-merge' && seenWarnings.has(key)) continue;
       seenWarnings.set(key, (seenWarnings.get(key) || 0) + 1);
