@@ -143,7 +143,9 @@
               <summary>How was this calculated? <span aria-hidden="true">i</span></summary>
               <p>${isCity
                 ? 'Nearby qualifying homes are joined into a halachic city, that city is squared, and the techum is measured outward from the square.'
-                : 'The map did not derive a qualifying city at this point, so the techum is measured from the shevisa point.'}</p>
+                : isBuilding
+                  ? 'No qualifying city joins this building, so the techum is measured outward from its mapped walls.'
+                  : 'The map did not derive a qualifying city at this point, so the techum is measured from the shevisa point.'}</p>
               ${confidence ? `<p>${confidence}</p>` : ''}
               <p>This remains a draft for review with a qualified rav.</p>
             </details>`;

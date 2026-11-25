@@ -315,6 +315,8 @@
   let suggestionRequest = 0;
   let suggestions = [];
   let activeSuggestion = -1;
+  // What the last finished lookup found, so Enter never asks people to wait for nothing.
+  let suggestionOutcome = 'pending';
 
   function closeSuggestions() {
     suggestions = [];
@@ -362,17 +364,23 @@
 
   async function fetchSuggestions() {
     const q = document.getElementById('address').value.trim();
-    if (q.length < 3) { closeSuggestions(); return; }
+    if (q.length < 3) { suggestionOutcome = 'empty'; closeSuggestions(); return; }
     const request = ++suggestionRequest;
     try {
       const results = await D.autocomplete(q, state.locationBias);
-      if (request === suggestionRequest && document.getElementById('address').value.trim() === q) renderSuggestions(results);
-    } catch { if (request === suggestionRequest) closeSuggestions(); }
+      if (request === suggestionRequest && document.getElementById('address').value.trim() === q) {
+        suggestionOutcome = results.length ? 'found' : 'empty';
+        renderSuggestions(results);
+      }
+    } catch {
+      if (request === suggestionRequest) { suggestionOutcome = 'error'; closeSuggestions(); }
+    }
   }
 
   function onAddressInput() {
     clearTimeout(suggestionTimer);
     suggestionRequest++;
+    suggestionOutcome = 'pending';
     closeSuggestions();
     suggestionTimer = setTimeout(fetchSuggestions, 650);
   }
@@ -396,9 +404,10 @@
       if (activeSuggestion >= 0 || (isSimplifiedDirection && suggestions.length)) {
         applyGeocodeResult(suggestions[Math.max(0, activeSuggestion)], document.getElementById('address').value.trim());
       }
-      else setStatus(suggestions.length
-        ? 'Choose one of the suggested addresses before continuing.'
-        : 'Wait for address suggestions, then choose the correct address.');
+      else if (suggestions.length) setStatus('Choose one of the suggested addresses before continuing.');
+      else if (suggestionOutcome === 'empty') setStatus('No place matches that. Check the spelling, add the town or country, or click the map.');
+      else if (suggestionOutcome === 'error') setStatus('Address search is not reachable. Check your connection, or click the map to set the point.');
+      else setStatus('Looking up that address… choose it from the list when it appears.');
     }
   }
 
@@ -532,7 +541,10 @@
             prepMs: 0, engineMs: 0, engineStages: null, failed: true });
           break;
         }
-        setStatus('Map-data error: ' + String(e.message).replace(/^map-data error:\s*/i, '') + ' — try again in a minute.');
+        // A fetch that never reaches the server throws a TypeError ("Failed to fetch").
+        setStatus(e instanceof TypeError
+          ? 'Could not reach the map-data service. Check your connection, then press Try again.'
+          : 'Map-data error: ' + String(e.message).replace(/^map-data error:\s*/i, '') + ' — try again in a minute.');
         finishCalculationProgress(false);
         return;
       } finally {
