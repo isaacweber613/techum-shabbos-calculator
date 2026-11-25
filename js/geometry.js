@@ -503,6 +503,29 @@
     return { method: 'world-aligned', angleRad: 0, rect: bboxOfRing(points), rectangularity };
   }
 
+  // Beis-dirah size test (SA OC 398:6; SA HaRav 398:10): under 4 amos wide is not a
+  // dwelling even if very long. "Wide" is the footprint's narrowest width in any
+  // direction (rotating calipers over the convex hull), so a narrow structure turned off
+  // the compass is not mistaken for a wide one by its north-south/east-west box.
+  function minimumWidth(ring) {
+    const hull = convexHull(ring || []);
+    if (hull.length < 3) return 0;
+    let best = Infinity;
+    for (let i = 0; i < hull.length; i++) {
+      const a = hull[i], b = hull[(i + 1) % hull.length];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (!len) continue;
+      const nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
+      let reach = 0;
+      for (const p of hull) reach = Math.max(reach, Math.abs((p.x - a.x) * nx + (p.y - a.y) * ny));
+      best = Math.min(best, reach);
+    }
+    return best === Infinity ? 0 : best;
+  }
+  function belowMinDwellingSize(ring, amahM) {
+    return minimumWidth(ring) < 4 * amahM;
+  }
+
   function rectIntersection(a, b) {
     const out = {
       minX: Math.max(a.minX, b.minX), maxX: Math.min(a.maxX, b.maxX),
@@ -1336,6 +1359,17 @@
       squaring = { method: pointAngle === 0 ? 'world-aligned-point' : 'reviewer-angle-point', angleRad: pointAngle, rectangularity: null };
       warnings.push({ type: 'point-mode', text: 'No city starting area contains this point — treated as open-field shevisa: a 4-amah square plus 2000 amos on every side.' });
     }
+    // A person outside every city (point or lone-building shevisa) can also have a whole
+    // city swallowed by his reach (SA 408:1; spec §1.10a). Flag it; never draw an extension.
+    if (mode === 'point' || mode === 'building') {
+      const inTechumFrame = (point) => (pointModeWorldFrame ? unrot(point) : point);
+      for (const model of cityModels) {
+        const ring = model.ring.map(inTechumFrame);
+        if (techumPolygons.some((region) => ring.every((point) => pointInOrOnRing(point, region)))) {
+          warnings.push({ type: 'ir-muvlaas', text: 'A complete city lies inside this techum. Its route-specific ir muvla’at continuation is not represented by one universal permission polygon; check the destination with a rav.' });
+        }
+      }
+    }
     warnings.push(...concavity);
     markStage('boundaryAndWarnings');
 
@@ -1412,7 +1446,7 @@
   }
 
   return {
-    AMOS, makeProjection, runPipeline, bufferRing,
+    AMOS, makeProjection, runPipeline, bufferRing, belowMinDwellingSize,
     // exported for tests
     _internals: {
       bboxOfRing, bboxGap, expandRect, ringDist,

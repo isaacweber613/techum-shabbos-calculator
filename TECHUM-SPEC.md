@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 18, 2026-11-09) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 19, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -839,6 +839,24 @@ both orders, a 900-village field, the point square, and the antimeridian.
   with no rectangularity score, so the result text called a preserved rectangle "irregular
   city squared to the world directions." The drawn boundary was already correct. The label
   now says joint redraw only when two or more cities were redrawn together. Engine version 1.5.4.
+
+### Rev. 19 — 2026-11-25 (spec-traced golden tests; two conformance fixes; no psak default changes)
+
+- **Spec-traced golden suite.** `tests/spec-golden.test.js` ties each case to the spec line
+  it proves, with expected values worked out by hand: exact equality at 70⅔, 141⅓, 2000
+  (three villages), 4000 (bow mouth and reviewed chord) and the 94% classifier; 1 mm past
+  each limit; straight-line corner gaps; amah scaling of every threshold; the karpef on all
+  four sides; building-mode karpef; profile values. Questions the spec does not settle are
+  listed as pending, never encoded as a ruling.
+- **The 4×4-amah size test measures true width (§1.3).** The filter compared the
+  footprint's north-south and east-west box with 4 amos, so a 1.5 m wide, 50 m long shed
+  turned 45° (box about 36 × 36 m) counted as a dwelling. SA HaRav 398:10 says under 4 amos
+  wide is not a dwelling even if very long. The test now uses the narrowest width in any
+  direction. Compass-aligned footprints are unaffected.
+- **Swallowed cities are flagged for a person outside every city (§1.10a).** The
+  ir-muvla'at warning was raised only in city mode. A person in point mode, or resting in a
+  lone house, whose 2000 amos wholly contain a city now gets the same warning. The boundary
+  is unchanged; no extension is drawn. Engine version 1.5.5.
 
 ## Part 3 — Product spec
 

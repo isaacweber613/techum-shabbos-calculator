@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.5.4 (2026-11-09)';
+  const ENGINE_VERSION = '1.5.5 (2026-11-25)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -890,8 +890,8 @@
   // dwelling even if very long"). Amah-dependent, so evaluated per run.
   function isTooSmall(b) {
     if (!settings.minSizeFilter) return false;
-    const min = 4 * (settings.amahCm / 100);
-    return (b.bbox.maxX - b.bbox.minX) < min || (b.bbox.maxY - b.bbox.minY) < min;
+    // Narrowest width in any direction, so a narrow shed turned off the compass still counts as narrow.
+    return G.belowMinDwellingSize(b.ring, settings.amahCm / 100);
   }
   function isIncluded(b) {
     if (b.joinOnly) return true;
