@@ -1235,7 +1235,7 @@ Node with saved map data. No halachic default changed.
 Golden tests in `tests/spec-golden.test.js` (ids `rev26-*`) cover each item with expected
 values worked out by hand.
 
-### Rev. 27 — 2026-11-25 (independent review of rev. 26; three fixes; one result back to the safer side)
+### Rev. 27 — 2026-11-25 (independent review of rev. 26; two fixes; one result back to the safer side; one loading question open)
 
 An independent review of rev. 26 tested its claim that nothing outside the loaded map data can
 change a result, ran six places from two pins each and with the profiles in both orders, and tried
@@ -1248,24 +1248,31 @@ the street rule on open ground beside a town. No psak default changed.
   so from a 1200 m start it stopped after one pass with the home town's 6 houses; from 3000 m it
   found all 71. On 300 made-up maps with such joins, the result changed with where the search
   started in 138 maps (274 of 900 runs). Every one of those results was too small, none too large.
-- **Now (two 2000-amah steps).** The loaded area must also hold, in full: every group of houses
-  within 2000 amos of the town's own groups, with everything within 2000 amos of each of them, and
-  every group within 2000 amos of one of those. A group counts when it is a town or when the
-  loaded edge may cut it, because a cut town can look like a few houses. On the same made-up maps
-  the result no longer depended on the start (0 of 900 runs; 0 of 4,500 more on other maps).
-  Monsey now loads 22,843 buildings in 5 passes instead of 14,261 in 4, and gives the same town,
-  2,818 houses in 54 parts.
-- **What is still not proven.** Two things can reach further than two steps. A far village enters
-  the three-villages test together with the towns joined to it by 141⅓ amos, and that chain can
-  run on; following it to its end pushed Monsey to the 40,000-building data limit, so only the
-  part within the two steps is loaded. And a chain of joins can change one of the town's partners
-  before the town's own test. A partner wrongly joined from partial data becomes part of the town
+- **Tried and not used: two 2000-amah steps.** Loading in full every group of houses within 2000
+  amos of the town's own groups, with everything within 2000 amos of each, and every group within
+  2000 amos of one of those, removed that start dependence on the same made-up maps (0 of 900
+  runs; 0 of 4,500 more). On real data it does not fit the 40,000-building data limit: around
+  New Square (Mishna Berurah) it stops at the limit after 39,257 buildings, where the rev. 26 rule
+  finishes at 25,120 with the same 6,193 houses, and Monsey under the Chazon Ish profile needs
+  187,805 buildings in 36 passes to finish, with the same 6,415 houses the rev. 26 rule finds in
+  22,022. One outer town there is a single 70⅔-amah group of up to 30,277 houses, and while it is
+  partly loaded it can join the home town falsely (13,119 and 41,901 houses on the way). Loading
+  such a town only until it is known to be a town left that false join in place. So the rev. 26
+  rule stays: its known error is a town that comes out smaller, and the stricter rule would show
+  "Incomplete" for New Square. This is an open engineering question, not a halachic one
+  (golden test `rev27-a2`, open).
+- **What is still not proven.** A chain of joins can change one of the town's partners before
+  the town's own test, and a far village enters the three-villages test together with the towns
+  joined to it by 141⅓ amos. A partner wrongly joined from partial data becomes part of the town
   and is then loaded whole, which undoes the error; a join wrongly missed leaves the town too
-  small, and can make it too large only if it lets a later join through that it would have
-  blocked. Proving every case means loading every town linked to the town by 2000-amah steps.
+  small. Proving every case means loading every town linked to the town by 2000-amah steps.
   Around Monsey that set passed 132,116 buildings and 28 km across without ending, and the Monsey
   town stayed the same 2,818 houses all the way. The calculator does not load that far. This is a
   data limit, not a halachic question.
+- **Released on its own (2026-11-25).** The two rev. 26 fixes, loading all the map data a result
+  needs (with the rev. 26 rule above) and a street pin inside a town's walls being in that town,
+  went live from master as spec rev. 18.1 (pull request #66, engine 1.5.5) with this review's
+  fixes for incomplete results, without the rest of revs. 19–27.
 - **The strip beside a town's outermost houses (§1.10a; Part 7 Q20).** Rev. 26 also put a pin in a
   town when it was outside the town's squared walls but within half the 70⅔-amah gap (16.96 m at
   48 cm) of one of its houses, in its karpef. That strip can be open field. Where another town's
@@ -1282,11 +1289,10 @@ the street rule on open ground beside a town. No psak default changed.
   map and in the answer, and listed in the audit block. An exported image of an incomplete result
   says so in its caption. A snapshot that does not record which area its map data covers is
   marked incomplete instead of keeping its saved flag.
-- Engine version 1.7.2.
+- Engine version 1.7.3 (1.7.2 had the two-step rule).
 
-Golden tests `rev27-a`, `rev27-b` and `rev27-d` to `rev27-g` cover each item with expected values
-worked out by hand; `rev27-b` replaces `rev26-g` and `rev27-d` replaces `rev26-c`, whose
-expectations changed.
+Golden tests `rev27-a` and `rev27-d` to `rev27-g` cover each item with expected values worked
+out by hand; `rev27-a2` is open; `rev27-d` replaces `rev26-c`, whose expectations changed.
 
 ## Part 3 — Product spec
 
