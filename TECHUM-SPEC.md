@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 24, 2026-11-25) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 25, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -61,7 +61,10 @@ SA HaRav 398:8–14) — never the civil boundary.
 **Beis-dirah predicate — a structure counts if it is ≥ 4×4 amos and inhabited or attended,
 with either a roof or three walls** (SA OC 398:6; SA HaRav 398:8, 10; under 4 amos wide is not
 a dwelling even if very long). Three walls count even without a roof; two walls count only
-under a roof.
+under a roof. How the 4×4 amos is measured is disputed (rev. 25): under 16 square amos is never
+a dwelling; the Mechaber profile counts 16 square amos in any shape, and the Mishna Berurah and
+Chazon Ish profiles need a real 4×4-amah square inside and send 16 square amos without one to
+review.
 
 - **Counts (extends the city):** houses; a shul **with** an attendant's residence, and
   likewise any house of worship with living quarters for its clergy (SA OC 398:6); a
@@ -390,6 +393,7 @@ Rev-2 corrections (after external review, GPT-5.6 2026-07-10):
 | Bow/L/gamma | **Rema-majority:** fill when confirmed chord <4000 or depth <2000; otherwise no-fill; unresolved endpoints use provisional no-fill | same default; reviewer may select another sourced shita | **Mechaber/Rambam:** narrow chord fills; wide remainder follows inhabited/curved edge; reviewer endpoints required |
 | Wholly enclosed ≥4000×4000-amah hole | **include + mandatory warning** (Beit Yitzchok / R' Shulem Weiss); strict exclusion available | same | same |
 | Unknown-use buildings | include, flagged for review (all profiles — data policy, not psak) | ” | ” |
+| Minimum dwelling size (rev. 25) | under 16 square amos is not a dwelling; a 4×4-amah square must fit inside, in some rotation; 16 square amos without one goes to review | same | under 16 square amos is not a dwelling; 16 square amos in any shape counts |
 | Static caravans (rev. 20), fixed tents and yurts (rev. 23), lived-in containers (rev. 24) | join an existing town, add 0 to the count that forms one, flagged; building=tent is left out unless a rav includes it; building=container is a non-dwelling, not flagged, until a rav includes it | ” | ” |
 | Eruv-enclosure-as-city | **off unless rav-validated** — selected practice/data-confidence default, not settled consensus; validated *hukaf l'dirah* perimeter available | same | same |
 | 12-mil ring / second-shita comparison line | hidden / off (available in all profiles); the ring is 24,000 amos from the town's own squared edge, without the karpef (rev. 22) | ” | ” |
@@ -1096,6 +1100,72 @@ for storage containers and medium for lived-in ones.
 Golden tests in `tests/spec-golden.test.js` (ids `rev24-*`) cover each item with expected
 values worked out by hand.
 
+### Rev. 25 — 2026-11-25 (researched answer: the shape of a 4×4-amah dwelling; two default changes)
+
+From research Isaac ordered, not from a posek. Every place cited below was checked on Sefaria
+on 2026-11-25. The Chazon Ish is not there and was not read. The research put its confidence
+high on what the texts say and medium on which profile follows which.
+
+- **No opinion uses the outline's overall width (Part 7 Q13).** Rev. 19 counted a footprint
+  when it was at least 4 amos wide in every direction across its outer hull. That let an L- or
+  U-shaped building with walls under 4 amos thick count, though no 4×4 square fits inside it.
+- **Under 16 square amos is never a dwelling, in every profile.** The baraita in Sukkah 3a–b:
+  a house without 4 by 4 amos is not made an ibur between two towns, because people do not
+  live in it. SA OC 398:6 needs the house to be 4 by 4 amos. Less floor than 16 square amos
+  fails every reading.
+- **Mechaber / Sefardi: 16 square amos in any shape counts.** Rambam (Mezuzah 6:2) and SA YD
+  286:13: a house with enough room to square 4 by 4 amos counts even if it is round,
+  five-cornered or longer than it is wide. Kaf HaChaim 398:29 applies this to techum: by the
+  Rambam and the Shulchan Aruch, a house under 4 amos wide is still a house. Machatzis HaShekel
+  398:6 says the same follows for every law in that baraita. This reverses rev. 19's
+  long-narrow rule for this profile only: a 1.5 m wide, 50 m long structure now counts there.
+- **Mishna Berurah and Chazon Ish: a real 4×4-amah square must fit inside, in some rotation.**
+  The Rosh (Hilchos Mezuzah 16) needs 4 by 4 amos and rejects the Rambam's reading; the Shach
+  (YD 286:23) follows the Rosh enough to put up a mezuzah without a blessing. Magen Avraham
+  398:6, Shulchan Aruch HaRav 398:10 and Aruch HaShulchan 398:15: under 4 amos wide is not a
+  house, however long. Eshel Avraham 398:6 reads the Magen Avraham as needing a real square,
+  not enough area to make one, and Machatzis HaShekel 398:6 concludes one should be strict and
+  require a square for ibur.
+- **16 square amos with no such square goes to review in those two profiles.** Pri Megadim
+  (Eshel Avraham 398:7) asks why the Magen Avraham needs a square here but not in 366:6, and
+  leaves it open. Biur Halacha 398:6 says the Mishnah Berurah left the Magen Avraham's rule out
+  because later authorities challenged it, and that it depends on the dispute in YD 286:13.
+  Mishnah Berurah 366:22 says the poskim differ. Magen Avraham 366:6 itself cites the Ralbach
+  that enough room to square suffices, and Chayei Adam 76:12 questions the Magen Avraham, "all
+  the more in a rabbinic matter" (he names the two sides the other way round from the texts
+  above). Such a building is treated like the other ambiguous buildings: it follows the
+  "include ambiguous buildings" setting (on by default), is listed in the review queue and drawn
+  in the review colour, and the verified-dwellings line leaves it out. Before, one at least 4
+  amos wide in every direction counted as an ordinary dwelling, and a narrower one was left out.
+- **How the test works.** The floor area is the outline's area less any holes. The square test
+  is exact for any outline: concave (L, U and T shapes), round, or with holes. It looks at every
+  rotation and settles each case to within a millionth of a metre; a building inside that
+  margin counts, like one exactly 4×4 amos.
+- **Walls.** A map outline is the outside face of the walls. Machatzis HaShekel 398:6 measures
+  the 4 by 4 amos inside the walls, without their thickness. The calculator cannot see how thick
+  a wall is and takes nothing off for it, so a building that passes by less than its walls'
+  thickness may fail when measured inside. A rav checking such a building should measure it
+  inside. No wall thickness is assumed.
+- **Holes.** The building data keeps only each building's outer outline (inner rings are
+  dropped when the map tiles are read and when a footprint file is imported), so a closed
+  courtyard is measured as floor for now. That matters only when every wing around the
+  courtyard is under 4 amos wide. Carrying courtyards through would mean fetching every stored
+  map tile again; that was not done here.
+- **Profiles and saved settings.** Each profile now carries its size rule (the setting "Shape of
+  a 4×4-amah dwelling"): a 4×4 square for the Mishna Berurah and Chazon Ish profiles, 16 square
+  amos for the Mechaber profile. A save or snapshot from before rev. 25 has no size rule and
+  takes its own profile's rule, as rev. 20 did for an unchanged profile, so a saved Mechaber
+  profile moves to the area rule. Nothing a user chose is changed, including the size filter's
+  on/off switch. Choosing the other rule makes the profile Custom.
+- **Still open (Part 7 Q18).** The Chazon Ish's own words on the shape of a 4×4 dwelling were
+  not read.
+- **Replay note.** The size test also runs when an older snapshot loads, so a snapshot holding
+  a thin, L-shaped or U-shaped footprint can now give a different boundary than when it was
+  saved. Engine version 1.7.0.
+
+Golden tests in `tests/spec-golden.test.js` (ids `rev25-*`) cover each item with expected
+values worked out by hand.
+
 ## Part 3 — Product spec
 
 ### 3.0 Scope & users
@@ -1299,6 +1369,10 @@ the UI for building-level review is the bulk of the work.
     398:10) need a 4×4 square inside the structure, an area of 16 square amos, or only that
     width? Mishnah Berurah 398:33 also cites Sha'arei Teshuvah that watchmen's huts need not
     have 4 amos at all, while the size test removes every footprint under 4 amos wide.
+    **Rev. 25 answered the shape (from research, not a posek):** no opinion uses the outline's
+    width; under 16 square amos is never a dwelling; the Mechaber profile counts 16 square amos
+    in any shape; the Mishna Berurah and Chazon Ish profiles need a real 4×4 square and send 16
+    square amos without one to review. The watchmen's-hut point and Q18 stay open.
 14. **Map classes with no ruling (rev. 21)** — Overture's `allotment_house` (a garden cottage,
     often seasonal), `beach_hut`, `hut`, `shelter`, `boathouse`, `trullo` and `presbytery`
     stay unknown use (included, flagged), and the table counts `tent` and `container` as
@@ -1322,6 +1396,9 @@ the UI for building-level review is the bulk of the work.
     Mishnah Berurah 398:30 says that is why it counts as a dwelling (when it has 4×4 amos and
     stands within 70⅔ amos of the town). Does this reach a port warehouse or containers on a
     quay? Both stay non-dwellings.
+18. **The Chazon Ish on the shape of a 4×4 dwelling (rev. 25)** — the Chazon Ish profile
+    follows the Mishna Berurah profile's square rule. The Chazon Ish's own words on whether 16
+    square amos must hold a real 4×4 square were not read; they are not on Sefaria.
 
 **Validation benchmarks:** the tool is city-agnostic; these are continuing cross-checks,
 not scope or release blockers:

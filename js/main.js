@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.6.4 (2026-11-25)';
+  const ENGINE_VERSION = '1.7.0 (2026-11-25)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -57,7 +57,8 @@
     'bow-policy': 'Selects the sourced bow/L rule after a reviewer confirms the real-city endpoints.',
     'inc-unknown': 'Includes detected structures whose dwelling use is not identified.',
     'inc-review': 'Includes hotels, schools, shuls and similar places that need individual review.',
-    'min-size': 'Leaves out structures smaller than four by four amos.',
+    'min-size': 'Leaves out structures under 16 square amos and applies the dwelling-shape rule.',
+    'size-rule': 'Chooses how four by four amos is measured: a real 4×4 square inside the building, or 16 square amos in any shape.',
     'fetch-radius': 'How far from the pin the first building-data search reaches.',
     'max-buildings': 'Safety limit for the number of building footprints downloaded.',
     'layer-buildings': 'Shows the building footprints used by the calculation.',
@@ -70,9 +71,9 @@
     'audit-rings': 'Shows exactly how nearby buildings connect into settlements and the home city.',
   };
   const PROFILE_EXPLANATIONS = {
-    'mishna-berura': '<b>Mishna Berurah / Ashkenazi:</b> R\' Chaim Naeh amah (18.90 in), Rema\'s 70⅔-amah karpef, shape-aware SA/MB squaring, and the stricter view that overlapping city rectangles do not automatically merge.',
-    'chazon-ish': '<b>Chazon Ish scenario:</b> larger 22.68-inch amah. Overlapping city rectangles stay separate by default: the Chazon Ish (OC 110:16) argues for redrawing one rectangle around both but ends that the matter needs a ruling, so turning that option on is a rav\'s decision. A reviewer may also set a controlling natural angle.',
-    mechaber: '<b>Mechaber / Sefardi:</b> 18.90-inch amah here, no extra single-city karpef, shape-aware SA squaring, and no automatic overlapping-rectangle merge.',
+    'mishna-berura': '<b>Mishna Berurah / Ashkenazi:</b> R\' Chaim Naeh amah (18.90 in), Rema\'s 70⅔-amah karpef, shape-aware SA/MB squaring, the stricter view that overlapping city rectangles do not automatically merge, and a building counts as a dwelling only when a 4×4-amah square fits inside it.',
+    'chazon-ish': '<b>Chazon Ish scenario:</b> larger 22.68-inch amah. Overlapping city rectangles stay separate by default: the Chazon Ish (OC 110:16) argues for redrawing one rectangle around both but ends that the matter needs a ruling, so turning that option on is a rav\'s decision. A reviewer may also set a controlling natural angle. A building counts as a dwelling only when a 4×4-amah square fits inside it.',
+    mechaber: '<b>Mechaber / Sefardi:</b> 18.90-inch amah here, no extra single-city karpef, shape-aware SA squaring, no automatic overlapping-rectangle merge, and 16 square amos in any shape count as a dwelling.',
     custom: '<b>Custom:</b> one or more choices differ from the selected profile. Review every changed shita with a rav.',
   };
   const MAP_PALETTE = {
@@ -888,24 +889,29 @@
     return { minX, minY, maxX, maxY };
   }
 
-  // Minimum dwelling size: 4x4 amos (SA HaRav 398:10 — "under 4 amos wide is not a
-  // dwelling even if very long"). Amah-dependent, so evaluated per run.
-  function isTooSmall(b) {
-    if (!settings.minSizeFilter) return false;
-    // Narrowest width in any direction, so a narrow shed turned off the compass still counts as narrow.
-    return G.belowMinDwellingSize(b.ring, settings.amahCm / 100);
+  // Minimum dwelling size (spec rev. 25): under 16 square amos is never a dwelling ('small');
+  // under the 4×4-square rule (Mishna Berurah and Chazon Ish profiles), 16 square amos with no
+  // 4×4-amah square inside is disputed ('no-square') and is treated like an ambiguous building.
+  // Depends on the amah and the rule, so it is kept per building for the current pair.
+  function sizeVerdict(b) {
+    if (!settings.minSizeFilter || b.joinOnly) return 'ok';
+    const key = `${settings.amahCm}|${settings.sizeRule}`;
+    if (b.sizeKey !== key) { b.sizeKey = key; b.sizeVerdict = G.dwellingSize(b.ring, settings.amahCm / 100, settings.sizeRule); }
+    return b.sizeVerdict;
   }
+  function isTooSmall(b) { return sizeVerdict(b) === 'small'; }
   function isIncluded(b) {
     if (b.joinOnly) return true;
     const ov = state.overrides.get(b.id);
     if (ov === 'include') return true;
     if (ov === 'exclude') return false;
-    if (isTooSmall(b)) return false;
-    if (b.klass === 'dwelling') return true;
     if (b.klass === 'non') return false;
+    if (isTooSmall(b)) return false;
     if (b.excludeByDefault) return false; // e.g. houseboat (spec rev. 20): include only by override
-    if (b.klass === 'review') return settings.includeReview;
-    return settings.includeUnknown; // 'unknown'
+    const useIncluded = b.klass === 'dwelling' ? true
+      : b.klass === 'review' ? settings.includeReview : settings.includeUnknown; // 'unknown'
+    // A building with no 4×4-amah square inside follows the ambiguous-buildings setting too.
+    return useIncluded && (sizeVerdict(b) !== 'no-square' || settings.includeReview);
   }
   // Verified-only scenario: only clearly residential structures (and manual includes).
   // NOT "machmir" vs "meikil" — a changed join can alter the city topology either way;
@@ -915,8 +921,7 @@
     const ov = state.overrides.get(b.id);
     if (ov === 'include') return true;
     if (ov === 'exclude') return false;
-    if (isTooSmall(b)) return false;
-    return b.klass === 'dwelling';
+    return b.klass === 'dwelling' && sizeVerdict(b) === 'ok';
   }
 
   // ---------------- pipeline + render ----------------
@@ -1021,6 +1026,8 @@
     return out;
   }
 
+  // Spec rev. 25: shown on a footprint with 16 square amos but no 4×4-amah square inside.
+  const NO_SQUARE_REASON = '16 square amos or more, but no 4×4-amah square fits inside. The poskim differ (Rambam and SA YD 286:13 count it; the Rosh and Magen Avraham 398:6 do not; Biur Halacha 398:6 leaves it open), so a rav should decide.';
   const KLASS_STYLE = {
     dwelling: { color: '#2ecc40', fillColor: '#2ecc40' },
     unknown: { color: '#ff9f1a', fillColor: '#ff9f1a' },
@@ -1044,7 +1051,8 @@
     if (res.mode === 'building' && res.homeBuilding >= 0) homeMembers.add(res.homeBuilding);
     state.buildings.forEach((b, i) => {
       if (b.bbox.maxX < view.minX || b.bbox.minX > view.maxX || b.bbox.maxY < view.minY || b.bbox.minY > view.maxY) return;
-      const st = { ...(KLASS_STYLE[b.klass] || KLASS_STYLE.unknown) };
+      const noSquare = b.klass !== 'non' && sizeVerdict(b) === 'no-square';
+      const st = { ...(KLASS_STYLE[noSquare ? 'review' : b.klass] || KLASS_STYLE.unknown) };
       if (b.joinOnly) { st.color = '#00b8a9'; st.fillColor = '#b7f3e8'; }
       const ov = state.overrides.get(b.id);
       let dash = null, weight = 1, fillOpacity = b.included ? 0.45 : 0.12, opacity = b.included ? 0.9 : 0.45;
@@ -1056,6 +1064,7 @@
       });
       b.mapLayer = poly;
       poly.bindTooltip(`<b>${b.joinOnly ? 'RAV-VALIDATED JOIN PERIMETER' : escapeHtml(b.klass.toUpperCase())}</b> — ${escapeHtml(b.reason)}` +
+        (noSquare ? `<br><b>Size:</b> ${NO_SQUARE_REASON}` : '') +
         (b.joinOnly ? '<br>Participates in 70⅔/141⅓ geometry; house count +0.' : '') +
         (ov ? `<br>manual correction: ${escapeHtml(ov)}` : '') + `<br><i>Optional: click to correct include/exclude</i>`, { sticky: true });
       poly.on('click', async (e) => {
@@ -1502,9 +1511,12 @@
       const homeBuilding = state.buildings[res.homeBuilding];
       lines.push(`<div class="stat"><b>Starting structure:</b> mapped footprint ${escapeHtml(homeBuilding && homeBuilding.id ? homeBuilding.id : String(res.homeBuilding + 1))}</div>`);
     }
-    const smallCount = settings.minSizeFilter
-      ? state.buildings.filter((b) => isTooSmall(b) && state.overrides.get(b.id) !== 'include').length : 0;
-    if (smallCount) lines.push(`<div class="stat"><b>Below 4×4 amos (excluded):</b> ${smallCount} structures</div>`);
+    const sized = settings.minSizeFilter
+      ? state.buildings.filter((b) => b.klass !== 'non' && !b.joinOnly && state.overrides.get(b.id) !== 'include') : [];
+    const smallCount = sized.filter(isTooSmall).length;
+    const noSquareCount = sized.filter((b) => sizeVerdict(b) === 'no-square').length;
+    if (smallCount) lines.push(`<div class="stat"><b>Under 16 square amos (excluded):</b> ${smallCount} structures</div>`);
+    if (noSquareCount) lines.push(`<div class="stat"><b>No 4×4-amah square inside (review):</b> ${noSquareCount} structures</div>`);
     lines.push(`<div class="stat"><b>Thresholds:</b> join 70⅔ amos = ${(70.667 * amahM).toFixed(1)} m · ` +
       `city-merge 141⅓ = ${(141.333 * amahM).toFixed(1)} m · techum 2000 = ${(2000 * amahM).toFixed(0)} m` +
       (settings.karpef ? ` · karpef +${(70.667 * amahM).toFixed(1)} m` : '') + `</div>`);
@@ -1570,14 +1582,16 @@
       maxX: Math.max(box.maxX, bbox.maxX), maxY: Math.max(box.maxY, bbox.maxY),
     }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }) : null;
     const items = state.buildings.map((building, index) => ({ building, index })).filter(({ building }) =>
-      building.klass === 'unknown' || building.klass === 'review').map((item) => {
+      building.klass === 'unknown' || building.klass === 'review' ||
+      (building.klass === 'dwelling' && sizeVerdict(building) === 'no-square')).map((item) => {
       const inHome = homeMembers.has(item.index);
       const b = item.building;
       const outerEdge = inHome && extent && (Math.abs(b.bbox.minX - extent.minX) < 2 ||
         Math.abs(b.bbox.maxX - extent.maxX) < 2 || Math.abs(b.bbox.minY - extent.minY) < 2 ||
         Math.abs(b.bbox.maxY - extent.maxY) < 2);
       const starting = (res && res.homeBuilding === item.index) || (state.pinReview && state.pinReview.buildingId === b.id);
-      const score = (starting ? 1000 : 0) + (outerEdge ? 500 : 0) + (inHome ? 250 : 0) + (b.klass === 'review' ? 50 : 0);
+      const score = (starting ? 1000 : 0) + (outerEdge ? 500 : 0) + (inHome ? 250 : 0) +
+        (b.klass === 'review' || sizeVerdict(b) === 'no-square' ? 50 : 0);
       return { ...item, score, impact: starting ? 'starting place' : outerEdge ? 'outer edge' : inHome ? 'home city' : 'nearby' };
     }).sort((a, b) => b.score - a.score || String(a.building.id).localeCompare(String(b.building.id)));
     const bows = (state.result && state.result.concavityAudit) || [];
@@ -1592,7 +1606,9 @@
     });
     items.slice(0, 20).forEach(({ building: b, impact }) => {
       const button = document.createElement('button'); button.type = 'button';
-      button.innerHTML = `<span class="sw ${b.klass === 'unknown' ? 'un' : 'rv'}"></span><b>${escapeHtml(impact)}</b><small>${escapeHtml(b.klass)} · ${escapeHtml(b.reason)}</small>`;
+      const noSquare = sizeVerdict(b) === 'no-square';
+      const why = `${b.klass} · ${b.reason}` + (noSquare ? ` · ${NO_SQUARE_REASON}` : '');
+      button.innerHTML = `<span class="sw ${b.klass === 'unknown' && !noSquare ? 'un' : 'rv'}"></span><b>${escapeHtml(impact)}</b><small>${escapeHtml(why)}</small>`;
       button.addEventListener('click', () => {
         const sw = state.proj.toLatLon(b.bbox.minX, b.bbox.minY), ne = state.proj.toLatLon(b.bbox.maxX, b.bbox.maxY);
         map.fitBounds([[sw.lat, sw.lon], [ne.lat, ne.lon]], { maxZoom: 20, padding: [40, 40] });
@@ -1648,7 +1664,9 @@
       `Large enclosed-hole policy: ${settings.largeHolePolicy}`,
       `Bow/L policy: ${settings.bowPolicy}`,
       `City minimum: actual rule is 3 courtyards × 2 houses (or sourced resident-count route); unreviewed components use a PROVISIONAL ${settings.minCityHouses}-footprint proxy`,
-      `Min dwelling size 4x4 amos filter: ${settings.minSizeFilter ? 'on' : 'off'}`,
+      `Min dwelling size: ${!settings.minSizeFilter ? 'off'
+        : settings.sizeRule === 'area' ? 'on: under 16 square amos excluded; 16 square amos in any shape counts (Rambam; SA YD 286:13)'
+        : 'on: under 16 square amos excluded; a 4×4-amah square must fit inside, and 16 square amos without one goes to review (Rosh; MA 398:6)'}`,
       `Untagged buildings: ${settings.includeUnknown ? 'included (flagged)' : 'excluded'}; ambiguous: ${settings.includeReview ? 'included (flagged)' : 'excluded'}`,
       '== Audit / reproducibility ==',
       `Engine version: ${ENGINE_VERSION} (deterministic: same data + same settings = same output)`,
@@ -2184,6 +2202,7 @@
       $('overlap').value = settings.overlapPolicy;
       $('large-hole-policy').value = settings.largeHolePolicy;
       $('bow-policy').value = settings.bowPolicy;
+      $('size-rule').value = settings.sizeRule;
       $('inc-unknown').checked = settings.includeUnknown;
       $('inc-review').checked = settings.includeReview;
       $('min-size').checked = settings.minSizeFilter;
@@ -2211,6 +2230,7 @@
     $('overlap').addEventListener('change', (e) => { settings.overlapPolicy = e.target.value; refreshInputs(); onChange(); });
     $('large-hole-policy').addEventListener('change', (e) => { settings.largeHolePolicy = e.target.value; refreshInputs(); onChange(); });
     $('bow-policy').addEventListener('change', (e) => { settings.bowPolicy = e.target.value; refreshInputs(); onChange(); });
+    $('size-rule').addEventListener('change', (e) => { settings.sizeRule = e.target.value; refreshInputs(); onChange(); });
     $('inc-unknown').addEventListener('change', (e) => { settings.includeUnknown = e.target.checked; onChange(); });
     $('inc-review').addEventListener('change', (e) => { settings.includeReview = e.target.checked; onChange(); });
     $('min-size').addEventListener('change', (e) => { settings.minSizeFilter = e.target.checked; onChange(); });

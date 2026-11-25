@@ -20,6 +20,7 @@
     BOW: 4000,               // bow-endpoint limit — SA OC 398:3
     MIL12: 24000,            // 12 mil d'oraisa view — Rambam
     PERSON: 4,               // 4 amos of a person in a field
+    DWELLING: 4,             // 4×4-amah beis dirah — Sukkah 3a-b; SA OC 398:6 (spec rev. 25)
   };
 
   // ---------- Local projection (lat/lon <-> local meters, true-north aligned) ----------
@@ -544,10 +545,7 @@
     return { method: 'world-aligned', angleRad: 0, rect: bboxOfRing(points), rectangularity };
   }
 
-  // Beis-dirah size test (SA OC 398:6; SA HaRav 398:10): under 4 amos wide is not a
-  // dwelling even if very long. "Wide" is the footprint's narrowest width in any
-  // direction (rotating calipers over the convex hull), so a narrow structure turned off
-  // the compass is not mistaken for a wide one by its north-south/east-west box.
+  // Narrowest width in any direction (rotating calipers over the convex hull).
   function minimumWidth(ring) {
     const hull = convexHull(ring || []);
     if (hull.length < 3) return 0;
@@ -563,8 +561,245 @@
     }
     return best === Infinity ? 0 : best;
   }
-  function belowMinDwellingSize(ring, amahM) {
-    return minimumWidth(ring) < 4 * amahM;
+
+  // ---------- Beis-dirah size (spec rev. 25) ----------
+  // Under 16 square amos of floor is never a dwelling (Sukkah 3a-b; SA OC 398:6). Rule 'area'
+  // (Mechaber profile): 16 square amos in any shape counts (Rambam Mezuzah 6:2; SA YD 286:13;
+  // Kaf HaChaim 398:29). Rule 'square' (Mishnah Berurah and Chazon Ish profiles): a real
+  // 4×4-amah square must fit inside, in some rotation (Rosh, Hilchos Mezuzah 16; MA 398:6;
+  // SA HaRav 398:10); 16 square amos without one is disputed and goes to review. The outline is
+  // the outside of the walls, and nothing is taken off for their thickness. holes: inner rings,
+  // such as a closed courtyard. Returns 'ok', 'small' (not a dwelling) or 'no-square' (review).
+  // Before rev. 25 the test was the narrowest width of the outer hull (rev. 19).
+  const SIZE_SLACK_M = 1e-9;        // floating-point slack in a single check
+  const SIZE_ROTATION_TOL_M = 1e-6; // the search over rotations settles each case to a micron
+  function dwellingSize(ring, amahM, rule, holes) {
+    if (!Array.isArray(ring) || ring.length < 3) return 'small';
+    const rings = [ring].concat((holes || []).filter((hole) => Array.isArray(hole) && hole.length >= 3));
+    const side = AMOS.DWELLING * amahM;
+    const floor = rings.slice(1).reduce((area, hole) => area - ringArea(hole), ringArea(ring));
+    if (!(Math.sqrt(Math.max(floor, 0)) >= side - SIZE_SLACK_M)) return 'small';
+    if (rule === 'area') return 'ok';
+    return squareFitsInside(rings, side) ? 'ok' : 'no-square';
+  }
+
+  // Whether a side × side square fits inside the floor (rings[0] the outer wall, the rest
+  // holes) at some rotation, for any outline, concave or with holes.
+  function squareFitsInside(rings, side) {
+    // Most buildings: a circle of radius side/√2 around the floor's centre holds the square at
+    // any angle.
+    const centre = ringCentroid(rings[0]);
+    if (centre && floorDistance(centre, rings) >= side / Math.SQRT2) return true;
+    // A square is at least `side` wide in every direction, so a narrower outline holds none.
+    if (minimumWidth(rings[0]) < side - SIZE_SLACK_M) return false;
+    // A square holds a circle of radius side/2 and fits inside one of radius side/√2.
+    const circle = inscribedCircle(rings, side / 2 - SIZE_SLACK_M, side / Math.SQRT2);
+    if (circle !== 'unsure') return circle === 'yes';
+    return squareFitsAtSomeAngle(rings, side / 2);
+  }
+
+  function ringCentroid(ring) {
+    const area = polygonSignedArea(ring);
+    if (!area) return null;
+    let cx = 0, cy = 0;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[j], b = ring[i], f = a.x * b.y - b.x * a.y;
+      cx += (a.x + b.x) * f; cy += (a.y + b.y) * f;
+    }
+    return { x: cx / (6 * area), y: cy / (6 * area) };
+  }
+
+  // Signed distance from p to the nearest wall: positive on the floor, negative off it.
+  function floorDistance(p, rings) {
+    let inside = pointInRing(p, rings[0]);
+    for (let k = 1; inside && k < rings.length; k++) if (pointInRing(p, rings[k])) inside = false;
+    let d = Infinity;
+    for (const ring of rings) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) d = Math.min(d, pointSegDist(p, ring[j], ring[i]));
+    }
+    return inside ? d : -d;
+  }
+
+  // Best-first search over square cells for the point of the floor farthest from every wall
+  // (the method of Mapbox's polylabel), stopped once the question is settled: 'yes' when some
+  // point is at least `high` from every wall, 'no' when none is `low`, else 'unsure'. It only
+  // saves time: the exact search below decides every 'unsure' case.
+  function inscribedCircle(rings, low, high) {
+    const box = bboxOfRing(rings[0]);
+    const size = Math.min(box.maxX - box.minX, box.maxY - box.minY);
+    if (!(size > 0)) return 'no';
+    const heap = []; // max-heap on each cell's upper bound
+    const up = (i) => {
+      while (i > 0) {
+        const parent = (i - 1) >> 1;
+        if (heap[parent].max >= heap[i].max) break;
+        [heap[parent], heap[i]] = [heap[i], heap[parent]]; i = parent;
+      }
+    };
+    const pop = () => {
+      const top = heap[0], last = heap.pop();
+      if (heap.length) {
+        heap[0] = last;
+        for (let i = 0; ;) {
+          const l = 2 * i + 1, r = l + 1;
+          let m = i;
+          if (l < heap.length && heap[l].max > heap[m].max) m = l;
+          if (r < heap.length && heap[r].max > heap[m].max) m = r;
+          if (m === i) break;
+          [heap[m], heap[i]] = [heap[i], heap[m]]; i = m;
+        }
+      }
+      return top;
+    };
+    let best = -Infinity, unresolved = false;
+    // No point in a cell is farther from the walls than its centre's distance plus h·√2.
+    const consider = (x, y, h) => {
+      const d = floorDistance({ x, y }, rings);
+      if (d > best) best = d;
+      const max = d + h * Math.SQRT2;
+      if (max >= low) { heap.push({ x, y, h, max }); up(heap.length - 1); }
+    };
+    const h0 = size / 2;
+    for (let x = box.minX; x < box.maxX; x += size) {
+      for (let y = box.minY; y < box.maxY; y += size) consider(x + h0, y + h0, h0);
+    }
+    const centre = ringCentroid(rings[0]);
+    if (centre) consider(centre.x, centre.y, 0);
+    // Cells this small are left to the exact search; the bound only limits the work here.
+    const smallest = (high - low) / 64;
+    while (heap.length) {
+      if (best >= high) return 'yes';
+      const cell = pop();
+      if (cell.max < high && best >= low) return 'unsure'; // nothing left can reach `high`
+      if (cell.h <= smallest) { unresolved = true; continue; }
+      const h = cell.h / 2;
+      consider(cell.x - h, cell.y - h, h); consider(cell.x + h, cell.y - h, h);
+      consider(cell.x - h, cell.y + h, h); consider(cell.x + h, cell.y + h, h);
+    }
+    if (best >= high) return 'yes';
+    return best >= low || unresolved ? 'unsure' : 'no';
+  }
+
+  // Upper bound on the half-side of a square turned anywhere within `half` of `mid` that fits in
+  // the hull: such a square is 2g wide along its sides and 2g·√2 along its diagonals, and the
+  // hull is at least as wide in every direction. The hull's widest extent over a range of
+  // directions comes from its vertex pairs: |pq|·cos of the angle from pq to the nearest one.
+  function hullSquareBound(hull, mid, half) {
+    const widest = (direction) => {
+      let best = 0;
+      for (let i = 0; i < hull.length; i++) {
+        for (let j = i + 1; j < hull.length; j++) {
+          const dx = hull[j].x - hull[i].x, dy = hull[j].y - hull[i].y;
+          const turn = ((Math.atan2(dy, dx) - direction) % Math.PI + Math.PI) % Math.PI;
+          const off = Math.max(0, Math.min(turn, Math.PI - turn) - half);
+          best = Math.max(best, Math.hypot(dx, dy) * Math.cos(off));
+        }
+      }
+      return best;
+    };
+    return Math.min(widest(mid) / 2, widest(mid + Math.PI / 2) / 2,
+      widest(mid + Math.PI / 4) / (2 * Math.SQRT2), widest(mid - Math.PI / 4) / (2 * Math.SQRT2));
+  }
+
+  // Exact search over rotations; 0°-90° covers every square. If a square of half-side g fits
+  // at angle θ, a square of half-side g / (cos δ + sin δ) with the same centre fits at θ + δ
+  // (|δ| ≤ 45°). So when no square of half-side r / (cos Δ + sin Δ) fits at the middle of an
+  // interval of half-width Δ, no square of half-side r fits anywhere in that interval.
+  function squareFitsAtSomeAngle(rings, r) {
+    const quarter = Math.PI / 2;
+    const fold = (angle) => ((angle % quarter) + quarter) % quarter;
+    const hull = convexHull(rings[0]);
+    const tooNarrow = (mid, half) => hullSquareBound(hull, mid, half) < r - SIZE_SLACK_M;
+    if (tooNarrow(quarter / 2, quarter / 2)) return false; // e.g. a round outline just too small
+    // A building's largest square usually lies along its walls, so try those angles first.
+    const first = [];
+    const rect = minimumAreaRect(rings[0]);
+    if (rect) first.push(fold(rect.angleRad));
+    let longest = 0;
+    for (let i = 0, j = rings[0].length - 1; i < rings[0].length; j = i++) {
+      const a = rings[0][j], b = rings[0][i], length = Math.hypot(b.x - a.x, b.y - a.y);
+      if (length > longest) { longest = length; first[1] = fold(Math.atan2(b.y - a.y, b.x - a.x)); }
+    }
+    for (const angle of first) {
+      if (angle != null && !tooNarrow(angle, 0) && squareFitsAtAngle(rings, angle, r)) return true;
+    }
+    const stack = [[quarter / 2, quarter / 2]];
+    while (stack.length) {
+      const [mid, half] = stack.pop();
+      if (tooNarrow(mid, half)) continue;
+      const shrink = Math.cos(half) + Math.sin(half);
+      if (!squareFitsAtAngle(rings, mid, r / shrink)) continue;
+      if (squareFitsAtAngle(rings, mid, r)) return true;
+      // Within a micron of 4 amos: counts, like a building exactly 4×4 amos.
+      if (r - r / shrink <= SIZE_ROTATION_TOL_M) return true;
+      stack.push([mid - half / 2, half / 2], [mid + half / 2, half / 2]);
+    }
+    return false;
+  }
+
+  // L∞ distance from c to segment ab: the half-side of the largest axis-aligned square centred
+  // on c that does not reach the segment. The minimum lies at an end or a break point of
+  // max(|u - t·dx|, |v - t·dy|).
+  function squareDistToSeg(c, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, u = c.x - a.x, v = c.y - a.y;
+    const at = (t) => Math.max(Math.abs(u - t * dx), Math.abs(v - t * dy));
+    let best = Math.min(at(0), at(1));
+    for (const [num, den] of [[u, dx], [v, dy], [u - v, dx - dy], [u + v, dx + dy]]) {
+      if (den !== 0) { const t = num / den; if (t > 0 && t < 1) best = Math.min(best, at(t)); }
+    }
+    return best;
+  }
+  function segmentCrossing(p, q, s, t) {
+    const rx = q.x - p.x, ry = q.y - p.y, sx = t.x - s.x, sy = t.y - s.y;
+    const den = rx * sy - ry * sx;
+    if (den === 0) return null; // parallel: where they meet is already a corner
+    const wx = s.x - p.x, wy = s.y - p.y;
+    const a = (wx * sy - wy * sx) / den, b = (wx * ry - wy * rx) / den;
+    const e = 1e-12; // parameter rounding at a shared corner
+    if (a < -e || a > 1 + e || b < -e || b > 1 + e) return null;
+    return { x: p.x + a * rx, y: p.y + a * ry };
+  }
+
+  // Whether a square of half-side r, turned by `angle`, fits inside the floor. In the turned
+  // frame the square is axis-aligned. The centres where it fits form a closed region whose edge
+  // is made of the outlines each wall sweeps with the square (a hexagon per wall). If that
+  // region is not empty, its lowest point is a corner of one outline or a crossing of two, so
+  // those points are checked one by one.
+  function squareFitsAtAngle(rings, angle, r) {
+    const turned = rings.map((ring) => ring.map((p) => toOrientedFrame(p, angle)));
+    const walls = [];
+    for (const ring of turned) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) walls.push([ring[j], ring[i]]);
+    const box = bboxOfRing(turned[0]);
+    const lo = { x: box.minX + r - SIZE_SLACK_M, y: box.minY + r - SIZE_SLACK_M };
+    const hi = { x: box.maxX - r + SIZE_SLACK_M, y: box.maxY - r + SIZE_SLACK_M };
+    if (lo.x > hi.x || lo.y > hi.y) return false;
+    const fitsAt = (c) => {
+      if (c.x < lo.x || c.x > hi.x || c.y < lo.y || c.y > hi.y) return false;
+      for (const [a, b] of walls) if (squareDistToSeg(c, a, b) < r - SIZE_SLACK_M) return false;
+      if (!pointInRing(c, turned[0])) return false;
+      for (let k = 1; k < turned.length; k++) if (pointInRing(c, turned[k])) return false;
+      return true;
+    };
+    const sides = [];
+    for (const [a, b] of walls) {
+      const swept = convexHull([a, b].flatMap((p) => [
+        { x: p.x - r, y: p.y - r }, { x: p.x + r, y: p.y - r }, { x: p.x + r, y: p.y + r }, { x: p.x - r, y: p.y + r }]));
+      for (let i = 0; i < swept.length; i++) {
+        const p = swept[i], q = swept[(i + 1) % swept.length];
+        if (fitsAt(p)) return true;
+        sides.push({ p, q, minX: Math.min(p.x, q.x), maxX: Math.max(p.x, q.x), minY: Math.min(p.y, q.y), maxY: Math.max(p.y, q.y) });
+      }
+    }
+    for (let i = 0; i < sides.length; i++) {
+      const s = sides[i];
+      for (let j = i + 1; j < sides.length; j++) {
+        const t = sides[j];
+        if (t.minX > s.maxX || t.maxX < s.minX || t.minY > s.maxY || t.maxY < s.minY) continue;
+        const crossing = segmentCrossing(s.p, s.q, t.p, t.q);
+        if (crossing && fitsAt(crossing)) return true;
+      }
+    }
+    return false;
   }
 
   function rectIntersection(a, b) {
@@ -1539,7 +1774,7 @@
   }
 
   return {
-    AMOS, makeProjection, runPipeline, bufferRing, belowMinDwellingSize,
+    AMOS, makeProjection, runPipeline, bufferRing, dwellingSize,
     // exported for tests
     _internals: {
       bboxOfRing, bboxGap, expandRect, ringDist,
@@ -1548,6 +1783,7 @@
       ringsOverlap,
       convexHull, minimumAreaRect, deriveSquaring, toOrientedFrame, fromOrientedFrame,
       intersectConvexPolygons, intersectPolygonSets,
+      minimumWidth, squareFitsInside, squareFitsAtAngle, inscribedCircle,
     },
   };
 });

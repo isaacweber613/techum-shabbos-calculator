@@ -16,6 +16,9 @@
       largeHolePolicy: 'include-with-warning', // Beit Yitzchok / R' Shulem Weiss
       bowPolicy: 'rema-majority', // Tosafos/Rosh/Rema; reviewer supplies real-city endpoints
       minCityHouses: 6,    // provisional footprint proxy for MB 398:38, not the rule itself
+      // Spec rev. 25: a real 4×4-amah square must fit inside (Rosh; MA 398:6); 16 square amos
+      // without one goes to review (Biur Halacha 398:6 leaves it open).
+      sizeRule: 'square',
     },
     'chazon-ish': {
       label: 'Chazon Ish',
@@ -28,6 +31,7 @@
       largeHolePolicy: 'include-with-warning',
       bowPolicy: 'rema-majority',
       minCityHouses: 6,
+      sizeRule: 'square',  // spec rev. 25; the Chazon Ish's own words on shape were not read
     },
     'mechaber': {
       label: 'Mechaber / Sefardi',
@@ -38,6 +42,7 @@
       largeHolePolicy: 'include-with-warning',
       bowPolicy: 'mechaber-curve',
       minCityHouses: 6,
+      sizeRule: 'area',    // spec rev. 25: 16 square amos in any shape (Rambam; SA YD 286:13)
     },
   };
 
@@ -47,7 +52,7 @@
     includeUnknown: true,   // data policy (just-works default); flagged in UI
     includeReview: true,    // hotels/shuls/schools etc — flagged, open question Q5
     showVerifiedOnly: false, // optional reviewer scenario; ordinary users get one automatic result
-    minSizeFilter: true,    // exclude structures below 4x4 amos (SA HaRav 398:10)
+    minSizeFilter: true,    // apply the minimum dwelling size of 4×4 amos (spec rev. 25)
     secondAmahCm: 0,        // 0 = off; draws a comparison techum line
     show12mil: false,
     pointRotationDeg: 0,    // open-field square rotation (SA 399 — person may orient)
@@ -72,6 +77,11 @@
       settings.overlapPolicy = settings.overlapMerge ? 'join-redraw' : 'no-join';
     }
     delete settings.overlapMerge;
+    // Rev. 25 added the size rule. A save or snapshot from before it takes the rule of its own
+    // profile, so a Mechaber save gets the area rule; no choice a user made is changed.
+    if (settings.sizeRule !== 'square' && settings.sizeRule !== 'area') {
+      settings.sizeRule = (PROFILES[settings.profile] || PROFILES[DEFAULTS.profile]).sizeRule;
+    }
     return { ...DEFAULTS, ...settings };
   }
 
@@ -120,7 +130,7 @@
     return { ...s, profile: profileKey, amahCm: p.amahCm, karpef: p.karpef,
       squaringAngleDeg: p.squaringAngleDeg, overlapPolicy: p.overlapPolicy,
       largeHolePolicy: p.largeHolePolicy, bowPolicy: p.bowPolicy,
-      minCityHouses: p.minCityHouses };
+      minCityHouses: p.minCityHouses, sizeRule: p.sizeRule };
   }
   // Reviewer records (free-text evidence, member ids, endpoints) never go to analytics; only
   // how many exist.
@@ -146,7 +156,7 @@
     const same = p.amahCm === s.amahCm && p.karpef === s.karpef &&
       p.squaringAngleDeg === s.squaringAngleDeg && p.overlapPolicy === s.overlapPolicy &&
       p.largeHolePolicy === s.largeHolePolicy && p.bowPolicy === s.bowPolicy &&
-      p.minCityHouses === s.minCityHouses;
+      p.minCityHouses === s.minCityHouses && p.sizeRule === s.sizeRule;
     return same ? s.profile : 'custom';
   }
 

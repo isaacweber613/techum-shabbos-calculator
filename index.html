@@ -137,6 +137,12 @@
             <option value="emergency-fill">Rashba / Ritva extenuating-circumstances fill</option>
           </select>
         </label>
+        <label>Shape of a 4×4-amah dwelling <small>Under 16 square amos is never a dwelling. With the first rule, a building with 16 square amos but no 4×4-amah square inside is flagged for a rav.</small>
+          <select id="size-rule">
+            <option value="square">A 4×4-amah square must fit inside (Rosh; Magen Avraham 398:6) — default</option>
+            <option value="area">16 square amos in any shape (Rambam; SA YD 286:13) — Mechaber</option>
+          </select>
+        </label>
         <p class="fixed-rule"><b>City status:</b> the sourced rule is 3 courtyards × 2 houses (or the sourced resident-count basis). Six mapped footprints are only a provisional fallback; record the factual basis in the calculation review.</p>
       </details>
 
@@ -147,7 +153,7 @@
         <label class="check"><input id="inc-review" type="checkbox" />
           Include ambiguous buildings <small>(purple — hotels, shuls, schools… ask a rav)</small></label>
         <label class="check"><input id="min-size" type="checkbox" checked />
-          Exclude structures under 4×4 amos <small>(SA HaRav 398:10 — scales with the amah)</small></label>
+          Exclude structures under 16 square amos <small>(4×4 amos, Sukkah 3a — scales with the amah)</small></label>
         <button id="btn-clear-overrides">Clear manual overrides</button>
         <small class="muted">The calculator automatically uses the configured immutable
           Overture release and shared reviewed corrections. Refresh bypasses both caches.</small>
@@ -264,12 +270,12 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="js/track.js"></script>
-  <script src="js/geometry.js?v=20261125-3"></script>
+  <script src="js/geometry.js?v=20261125-4"></script>
   <script src="js/data.js?v=20261125-3"></script>
-  <script src="js/settings.js?v=20261125-1"></script>
+  <script src="js/settings.js?v=20261125-2"></script>
   <script src="js/kml.js?v=20261109-1"></script>
   <script src="js/map-export.js?v=20261023-1"></script>
-  <script src="js/main.js?v=20261125-3"></script>
+  <script src="js/main.js?v=20261125-4"></script>
   <script src="js/design-experience.js?v=20261110-1"></script>
   <script src="js/feedback.js?v=20261109-1"></script>
 </body>
