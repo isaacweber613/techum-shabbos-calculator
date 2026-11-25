@@ -12,7 +12,7 @@ export interface GoogleMapConfigEnv extends TelegramEnv {
 export type Background = (work: Promise<unknown>) => void;
 type LimitKind = 'map' | 'static';
 
-export const DEFAULT_GOOGLE_MAPS_DAILY_CAP = 10;
+export const DEFAULT_GOOGLE_MAPS_DAILY_CAP = 30;
 
 // Google resets Maps quotas at midnight Pacific time, so this counter uses the same day.
 export function googleQuotaDay(now = new Date()): string {
