@@ -34,25 +34,31 @@
     validatedJoinPerimeters: [], // rav-confirmed residential yards/perimeters; geometry-only, house count = 0
   };
   const layerGroups = {
-    buildings: null, rects: null, second: null, settlements: null, audit: null, perimeter: null,
+    buildings: null, rects: null, second: null, settlements: null, audit: null, perimeter: null, highlight: null,
   };
   const auditCache = new Map(); // building id + join dist -> buffer loops (pure geometry)
   let drawing = null;
   let bowCapture = null;
+  let aimCornerMode = false;
+  let movePinMode = false;
+  let destinationPopup = null;
   let analysisWorker = null;
   let analysisRequestId = 0;
   let latestAnalysisId = 0;
   let activeCalculationId = 0;
   let automaticCalculationTimer = null;
   let mapExportInProgress = false;
+  let registryLoadedOnce = false;
   const analysisPending = new Map();
   function track(type, data) { if (window.TechumTrack) window.TechumTrack.send(type, data); }
 
   const SETTING_HELP = {
     profile: 'Choose a documented bundle of shitos; the explanation below states what changes and why.',
     amah: 'Sets the length of an amah. This changes distances and can change which buildings connect.',
+    'shevisa-mode': 'Automatic uses a city or building when present. Eruv techumin forces a 4-amah point square around the pin.',
     karpef: 'Adds 70⅔ amos around a single city before measuring the 2,000-amah techum.',
     'sq-angle': 'Automatic ribua preserves a clearly rectangular city in its existing direction; irregular cities are squared to true north. A nonzero value is a reviewer override.',
+    'point-angle': 'Rotates the 4-amah square in open-field or eruv-techumin mode (0° cardinal, 45° diagonal). Confirm with a rav.',
     overlap: 'Selects one of the three sourced approaches to overlapping city rectangles.',
     'large-hole-policy': 'Controls a wholly surrounded empty area at least 4,000 amos in both governing directions.',
     'bow-policy': 'Selects the sourced bow/L rule after a reviewer confirms the real-city endpoints.',
@@ -94,6 +100,9 @@
         .filter((node) => node.nodeType === Node.TEXT_NODE)
         .map((node) => node.textContent.trim()).filter(Boolean).join(' ');
       if (accessibleName && !input.hasAttribute('aria-label')) input.setAttribute('aria-label', accessibleName);
+      // Production layout displays inline <small> descriptions directly; omit duplicate ? circles there.
+      if (isSimplifiedDirection && label.querySelector('small')) return;
+      if (isSimplifiedDirection) return;
       const help = document.createElement('button');
       help.type = 'button';
       help.className = 'setting-help';
@@ -190,9 +199,38 @@
     });
   }
 
+  function shouldCollapseLayerControl() {
+    return !isSimplifiedDirection || window.innerWidth <= 900;
+  }
+
+  function mountBaseLayerControl(includeGoogle) {
+    if (baseLayerControl) baseLayerControl.remove();
+    const layers = {};
+    if (includeGoogle && googleBaseLayer) layers['Google Maps'] = googleBaseLayer;
+    layers.Satellite = originalMapLayer;
+    layers['Street map'] = illustratedMapLayer;
+    baseLayerControl = L.control.layers(layers, null, {
+      collapsed: shouldCollapseLayerControl(),
+      position: 'topright',
+    }).addTo(map);
+    const toggle = baseLayerControl.getContainer().querySelector('.leaflet-control-layers-toggle');
+    if (toggle) {
+      toggle.setAttribute('aria-label', 'Map style');
+      toggle.setAttribute('title', 'Map style');
+    }
+    baseLayerControl.getContainer().addEventListener('change', () => { userSelectedBaseLayer = true; });
+  }
+
   async function preferGoogleMap() {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const configTimeout = window.setTimeout(() => controller?.abort(), 2500);
     try {
-      const response = await fetch('/api/map-config', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      const response = await fetch('/api/map-config', {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+        signal: controller ? controller.signal : undefined,
+      });
+      window.clearTimeout(configTimeout);
       if (!response.ok) throw new Error('map configuration returned ' + response.status);
       const config = await response.json();
       if (!config || config.provider !== 'google' || typeof config.key !== 'string') throw new Error('invalid map configuration');
@@ -200,11 +238,133 @@
       await loadGoogleMaps(config.key);
 
       googleBaseLayer = L.layerGroup();
-      baseLayerControl.addBaseLayer(googleBaseLayer, 'Google Maps');
+      mountBaseLayerControl(true);
       if (!userSelectedBaseLayer) switchBaseLayer(googleBaseLayer);
-      console.info('Google Maps enabled; the original map remains available as fallback.');
+      console.info('Google Maps enabled; Satellite and Street map remain available as fallback.');
     } catch (error) {
+      window.clearTimeout(configTimeout);
       disableGoogleMap(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function setMapModeBarMessage(message) {
+    const label = document.querySelector('#map-mode-bar > span');
+    if (label) label.textContent = message;
+  }
+
+  function closeDestinationPopup() {
+    if (destinationPopup && map) map.closePopup(destinationPopup);
+    destinationPopup = null;
+  }
+
+  function showDestinationCheck(latlng) {
+    if (!state.result || !state.proj) return;
+    const pt = state.proj.toXY(latlng.lat, latlng.lng);
+    const check = G.checkDestination(state.result, pt);
+    if (!check) return;
+    const m = Math.round(check.edgeDistanceM);
+    const ft = Math.round(check.edgeDistanceM * 3.28084);
+    const mi = (check.edgeDistanceM / 1609.344).toFixed(2);
+    const distLabel = m >= 1000
+      ? `${m.toLocaleString()} m (${mi} mi)`
+      : `${m.toLocaleString()} m (${ft.toLocaleString()} ft)`;
+    const headline = check.inCity
+      ? (state.result.mode === 'city' ? 'Inside starting city' : 'Inside starting place')
+      : check.inKarpef
+        ? 'Inside karpef (+70⅔ amos)'
+        : check.inside
+          ? 'Inside draft techum'
+          : 'Outside draft techum';
+    const detail = check.inside
+      ? `${distLabel} inside the boundary edge`
+      : `${distLabel} past the boundary edge`;
+
+    const container = document.createElement('div');
+    container.className = 'destination-check-card';
+    const badge = document.createElement('strong');
+    badge.className = check.inside ? 'dest-inside' : 'dest-outside';
+    badge.textContent = headline;
+    const meta = document.createElement('span');
+    meta.className = 'dest-distance';
+    meta.textContent = detail;
+    const moveBtn = document.createElement('button');
+    moveBtn.type = 'button';
+    moveBtn.className = 'popup-move-pin';
+    moveBtn.textContent = 'Move starting pin here';
+    moveBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeDestinationPopup();
+      setPin(latlng.lat, latlng.lng, { invalidateResult: !!(state.result || state.rawBuildings.length), confirmed: true });
+      if (isSimplifiedDirection) {
+        setStatus('Starting pin moved — updating your techum…');
+        scheduleAutomaticCalculation();
+      }
+    });
+    container.append(badge, meta, moveBtn);
+    if (window.L?.DomEvent) L.DomEvent.disableClickPropagation(container);
+    destinationPopup = L.popup({ className: 'destination-check-popup', maxWidth: 260, closeButton: true })
+      .setLatLng(latlng)
+      .setContent(container)
+      .openOn(map);
+  }
+
+  function startMovePinMode() {
+    if (!state.result) return;
+    cancelMapMode(false);
+    closeDestinationPopup();
+    movePinMode = true;
+    setMapModeBarMessage('Click anywhere on the map to move your starting pin');
+    const finish = document.getElementById('btn-finish-building');
+    if (finish) finish.hidden = true;
+    const cancel = document.getElementById('btn-cancel-map-mode');
+    if (cancel) cancel.hidden = false;
+    document.body.classList.add('map-mode-active');
+    setStatus('Click the map to move your starting pin, or press Cancel.');
+  }
+
+  function startAimCornerMode() {
+    if (!state.result || state.result.mode !== 'point') return;
+    cancelMapMode(false);
+    closeDestinationPopup();
+    aimCornerMode = true;
+    setMapModeBarMessage('Click your destination on the map to aim a corner diagonal toward it');
+    const finish = document.getElementById('btn-finish-building');
+    if (finish) finish.hidden = true;
+    const cancel = document.getElementById('btn-cancel-map-mode');
+    if (cancel) cancel.hidden = false;
+    document.body.classList.add('map-mode-active');
+    setStatus('Click a destination on the map to aim a corner of the 4-amah square toward it.');
+  }
+
+  function applyAimCornerClick(latlng) {
+    if (!state.pin || !state.proj) return;
+    const pinXY = state.proj.toXY(state.pin.lat, state.pin.lon);
+    const targetXY = state.proj.toXY(latlng.lat, latlng.lng);
+    const deg = G.cornerAimAngleDeg(pinXY, targetXY);
+    cancelMapMode(false);
+    setPointRotation(deg, { live: false });
+    setStatus(`Square rotated to ${deg}° so a corner aims toward your selected destination.`);
+  }
+
+  let liveRotateFrame = null;
+  function setPointRotation(deg, options = {}) {
+    const parsed = Math.max(-89, Math.min(89, Math.round(Number(deg) || 0)));
+    settings.pointRotationDeg = parsed;
+    const input = document.getElementById('point-angle');
+    if (input) input.value = String(parsed);
+    if (!options.live) saveSettings();
+    if (!state.result) return;
+    if (options.live) {
+      if (liveRotateFrame) cancelAnimationFrame(liveRotateFrame);
+      liveRotateFrame = requestAnimationFrame(async () => {
+        liveRotateFrame = null;
+        preservePanelOnRender = true;
+        try { await recompute(false); } finally { preservePanelOnRender = false; }
+      });
+    } else {
+      preservePanelOnRender = false;
+      void recompute(false);
     }
   }
 
@@ -236,13 +396,8 @@
     const realistic = L.layerGroup([imagery, imageryLabels]);
     originalMapLayer = realistic;
     illustratedMapLayer = illustrated;
-    activeBaseLayer = realistic;
-    realistic.addTo(map);
-    baseLayerControl = L.control.layers({
-      'Original satellite map': realistic,
-      'Original illustrated map': illustrated,
-    }, null, { collapsed: !isSimplifiedDirection, position: 'topright' }).addTo(map);
-    baseLayerControl.getContainer().addEventListener('change', () => { userSelectedBaseLayer = true; });
+    activeBaseLayer = null;
+    mountBaseLayerControl(false);
     map.on('baselayerchange', (event) => {
       activeBaseLayer = event.layer;
       const googleActive = event.layer === googleBaseLayer;
@@ -261,13 +416,29 @@
     layerGroups.settlements = L.layerGroup().addTo(map);
     layerGroups.audit = L.layerGroup().addTo(map);
     layerGroups.perimeter = L.layerGroup().addTo(map);
+    layerGroups.highlight = L.layerGroup().addTo(map);
     map.on('click', (e) => {
       if (drawing) { addDrawingVertex(e.latlng); return; }
       if (bowCapture) { addBowEndpoint(e.latlng); return; }
+      if (aimCornerMode) { applyAimCornerClick(e.latlng); return; }
+      if (movePinMode) {
+        cancelMapMode(false);
+        closeDestinationPopup();
+        setPin(e.latlng.lat, e.latlng.lng, { invalidateResult: !!(state.result || state.rawBuildings.length), confirmed: true });
+        if (isSimplifiedDirection) {
+          setStatus('Starting pin moved — updating your techum…');
+          scheduleAutomaticCalculation();
+        }
+        return;
+      }
+      if (state.result && isSimplifiedDirection) {
+        showDestinationCheck(e.latlng);
+        return;
+      }
       const invalidatesResult = !!(state.result || state.rawBuildings.length);
       setPin(e.latlng.lat, e.latlng.lng, { invalidateResult: invalidatesResult, confirmed: true });
       if (isSimplifiedDirection) {
-        setStatus('Pin moved — updating your techum automatically…');
+        setStatus('Pin placed — calculating your techum…');
         scheduleAutomaticCalculation();
       } else if (!invalidatesResult) setStatus('Pin set from the map. Confirm its position, then Calculate. Click elsewhere to move it.');
     });
@@ -328,8 +499,21 @@
     document.getElementById('address').removeAttribute('aria-activedescendant');
   }
 
+  function updateAddressClearButton() {
+    const input = document.getElementById('address');
+    const clearBtn = document.getElementById('btn-clear-address');
+    if (clearBtn && input) clearBtn.hidden = !input.value.length;
+  }
+
+  function setAddressLoading(loading) {
+    const combobox = document.querySelector('.address-combobox');
+    if (combobox) combobox.classList.toggle('address-loading', !!loading);
+  }
+
   function applyGeocodeResult(r, query) {
     document.getElementById('address').value = r.label;
+    updateAddressClearButton();
+    setAddressLoading(false);
     state.lastQuery = query || r.label;
     state.lastLabel = r.label;
     setPin(r.lat, r.lon, { invalidateResult: !!(state.result || state.rawBuildings.length) });
@@ -364,8 +548,9 @@
 
   async function fetchSuggestions() {
     const q = document.getElementById('address').value.trim();
-    if (q.length < 3) { suggestionOutcome = 'empty'; closeSuggestions(); return; }
+    if (q.length < 3) { suggestionOutcome = 'empty'; setAddressLoading(false); closeSuggestions(); return; }
     const request = ++suggestionRequest;
+    setAddressLoading(true);
     try {
       const results = await D.autocomplete(q, state.locationBias);
       if (request === suggestionRequest && document.getElementById('address').value.trim() === q) {
@@ -374,15 +559,50 @@
       }
     } catch {
       if (request === suggestionRequest) { suggestionOutcome = 'error'; closeSuggestions(); }
+    } finally {
+      if (request === suggestionRequest) setAddressLoading(false);
+    }
+  }
+
+  async function submitAddressQuery(q) {
+    clearTimeout(suggestionTimer);
+    const request = ++suggestionRequest;
+    setAddressLoading(true);
+    setStatus(`Finding ${q}…`);
+    try {
+      const results = await D.geocode(q, state.locationBias);
+      if (request !== suggestionRequest) return;
+      if (results.length) {
+        if (isSimplifiedDirection || results.length === 1) applyGeocodeResult(results[0], q);
+        else {
+          suggestionOutcome = 'found';
+          renderSuggestions(results);
+          setStatus('Choose one of the suggested addresses before continuing.');
+        }
+      } else {
+        suggestionOutcome = 'empty';
+        closeSuggestions();
+        setStatus('No place matches that. Check the spelling, add the town or country, or click the map.');
+      }
+    } catch {
+      if (request === suggestionRequest) {
+        suggestionOutcome = 'error';
+        closeSuggestions();
+        setStatus('Address search is not reachable. Check your connection, or click the map to choose a spot.');
+      }
+    } finally {
+      if (request === suggestionRequest) setAddressLoading(false);
     }
   }
 
   function onAddressInput() {
+    updateAddressClearButton();
     clearTimeout(suggestionTimer);
     suggestionRequest++;
     suggestionOutcome = 'pending';
+    setAddressLoading(false);
     closeSuggestions();
-    suggestionTimer = setTimeout(fetchSuggestions, 650);
+    suggestionTimer = setTimeout(fetchSuggestions, 260);
   }
 
   function onAddressKeydown(e) {
@@ -401,13 +621,14 @@
     if (e.key === 'Escape') { closeSuggestions(); return; }
     if (e.key === 'Enter') {
       e.preventDefault();
+      const q = document.getElementById('address').value.trim();
       if (activeSuggestion >= 0 || (isSimplifiedDirection && suggestions.length)) {
-        applyGeocodeResult(suggestions[Math.max(0, activeSuggestion)], document.getElementById('address').value.trim());
+        applyGeocodeResult(suggestions[Math.max(0, activeSuggestion)], q);
+      } else if (suggestions.length) {
+        setStatus('Choose one of the suggested addresses before continuing.');
+      } else if (q.length >= 2) {
+        void submitAddressQuery(q);
       }
-      else if (suggestions.length) setStatus('Choose one of the suggested addresses before continuing.');
-      else if (suggestionOutcome === 'empty') setStatus('No place matches that. Check the spelling, add the town or country, or click the map.');
-      else if (suggestionOutcome === 'error') setStatus('Address search is not reachable. Check your connection, or click the map to set the point.');
-      else setStatus('Looking up that address… choose it from the list when it appears.');
     }
   }
 
@@ -452,6 +673,7 @@
     state.lastQuery = 'My current location';
     state.lastLabel = label;
     document.getElementById('address').value = label;
+    updateAddressClearButton();
     setPin(lat, lon, { invalidateResult: !!(state.result || state.rawBuildings.length) });
     map.setView([lat, lon], 17);
     closeSuggestions();
@@ -617,23 +839,21 @@
     renderPerformanceReport(perf);
     const resultBounds = techumBounds();
     if (resultBounds) map.fitBounds(resultBounds);
-    const ageDays = state.fetchedAt ? ((Date.now() - Date.parse(state.fetchedAt)) / 86400000) : 0;
-    const ageLabel = ageDays < 1 ? 'today' : ageDays.toFixed(0) + ' days old';
-    const releaseLabel = state.dataRelease ? `Overture ${state.dataRelease}` : 'Overture';
-    const cacheLabel = state.fromCache
-      ? `${releaseLabel} data from cache (${ageLabel}).`
-      : `Fresh ${releaseLabel} footprints.`;
-    setStatus((state.dataCapHit
-      ? `Incomplete — stopped after ${state.rawBuildings.length} buildings; the town continues past the loaded map data. `
-      : `Done — ${state.rawBuildings.length} buildings analyzed. `) +
-      (state.result && state.result.mode === 'city'
-        ? 'Techum drawn from the squared city. '
-        : state.result && state.result.mode === 'building'
-          ? 'Techum drawn from the mapped building walls. '
-          : 'Point-shevisa techum drawn. ') +
-      cacheLabel +
-      (expansionError ? ` ⚠ Could not load the wider area the city may extend into (${expansionError.message}); ` +
-        'the boundary may be too large or too small — recalculate to retry.' : ''));
+    if (state.dataCapHit || expansionError || !isSimplifiedDirection) {
+      setStatus((state.dataCapHit
+        ? `Incomplete — stopped after ${state.rawBuildings.length} buildings; the town continues past the loaded map data. `
+        : `Done — ${state.rawBuildings.length} buildings analyzed. `) +
+        (state.result && state.result.mode === 'city'
+          ? 'Techum drawn from the squared city.'
+          : state.result && state.result.mode === 'building'
+            ? 'Techum drawn from the mapped building walls.'
+            : 'Point-shevisa techum drawn.') +
+        (expansionError ? ` ⚠ Could not load the wider area the city may extend into (${expansionError.message}); ` +
+          'the boundary may be too large or too small — recalculate to retry.' : ''));
+    } else {
+      // Reserve #status for active progress, errors, and confirmations; Overture data provenance lives in Calculation details.
+      setStatus('');
+    }
     finishCalculationProgress(true);
     track('calc', {
       q: state.lastQuery || null, label: state.lastLabel || null,
@@ -767,8 +987,12 @@
   function startDrawing(mode = 'polygon') {
     if (!state.result) { setStatus('Set an address and calculate before drawing on the map.'); return; }
     cancelMapMode(false);
+    closeDestinationPopup();
     drawing = { points: [], layer: null, mode };
     map.doubleClickZoom.disable();
+    setMapModeBarMessage(mode === 'rectangle'
+      ? 'Click two opposite corners of the missing roof'
+      : 'Click each corner on the map, then press Finish shape');
     const finish = document.getElementById('btn-finish-building'); finish.hidden = mode === 'rectangle'; finish.disabled = true;
     document.getElementById('btn-cancel-map-mode').hidden = false;
     document.body.classList.add('map-mode-active');
@@ -832,10 +1056,11 @@
   }
 
   function cancelMapMode(announce = true) {
-    const hadMode = !!drawing || !!bowCapture;
+    const hadMode = !!drawing || !!bowCapture || aimCornerMode || movePinMode;
     if (drawing && drawing.layer) drawing.layer.remove();
-    drawing = null; bowCapture = null;
+    drawing = null; bowCapture = null; aimCornerMode = false; movePinMode = false;
     if (map) map.doubleClickZoom.enable();
+    setMapModeBarMessage('Click the map to place points');
     const finish = document.getElementById('btn-finish-building');
     if (finish) { finish.hidden = true; finish.disabled = true; }
     const cancel = document.getElementById('btn-cancel-map-mode'); if (cancel) cancel.hidden = true;
@@ -940,6 +1165,7 @@
       largeHolePolicy: settings.largeHolePolicy,
       bowPolicy: settings.bowPolicy,
       squaringAngleDeg: settings.squaringAngleDeg,
+      shevisaMode: settings.shevisaMode || 'auto',
       pointRotationDeg: settings.pointRotationDeg,
       cityQualificationOverrides: settings.cityQualificationOverrides || {},
       concavityReviews: settings.concavityReviews || {},
@@ -1096,12 +1322,15 @@
     });
   }
 
+  let preservePanelOnRender = false;
   // Removes every trace of a result that no longer applies (moved pin, failed re-analysis).
   function clearResultDisplay() {
-    document.body.classList.remove('has-result', 'key-comparison', 'key-12mil', 'key-concavity');
+    closeDestinationPopup();
+    document.body.classList.remove('has-result', 'key-karpef', 'key-verified', 'key-comparison', 'key-12mil', 'key-concavity');
     layerGroups.buildings.clearLayers();
     layerGroups.rects.clearLayers(); layerGroups.second.clearLayers(); layerGroups.settlements.clearLayers();
     layerGroups.audit.clearLayers(); layerGroups.perimeter.clearLayers();
+    if (layerGroups.highlight) layerGroups.highlight.clearLayers();
     document.getElementById('results').replaceChildren();
     document.getElementById('confidence').hidden = true;
     document.getElementById('review-queue').hidden = true;
@@ -1122,6 +1351,33 @@
       && state.buildings.length <= COMPARISON_SCENARIO_MAX_BUILDINGS;
   }
 
+  function shouldShowPinConfirmation(res) {
+    if (!state.pinReview || !res || res.eruvPointMode) return false;
+    if (res.mode === 'city' && res.homeCluster >= 0 && (res.homeCandidates || []).length <= 1) {
+      const homeCluster = res.clusters[res.homeCluster];
+      if (homeCluster && Array.isArray(homeCluster.members)) {
+        const idx = state.buildings.findIndex((b) => b.id === state.pinReview.buildingId);
+        if (idx >= 0 && homeCluster.members.includes(idx)) return false;
+      }
+    }
+    return true;
+  }
+
+  function renderPinCandidateHighlight(res) {
+    if (!layerGroups.highlight) return;
+    layerGroups.highlight.clearLayers();
+    if (!shouldShowPinConfirmation(res) || !state.proj) return;
+    const candidate = state.buildings.find((b) => b.id === state.pinReview.buildingId);
+    if (!candidate || !candidate.ring || candidate.ring.length < 3) return;
+    const latlngs = candidate.ring.map((p) => { const ll = state.proj.toLatLon(p.x, p.y); return [ll.lat, ll.lon]; });
+    L.polygon(latlngs, {
+      color: '#ffffff', weight: 6, fill: false, opacity: 0.9, interactive: false,
+    }).addTo(layerGroups.highlight);
+    L.polygon(latlngs, {
+      color: '#d97706', weight: 3, dashArray: '5 4', fillColor: '#fbbf24', fillOpacity: 0.42, interactive: false,
+    }).bindTooltip(`Nearby mapped building (${state.pinReview.distanceM.toFixed(1)} m from pin)`).addTo(layerGroups.highlight);
+  }
+
   function render() {
     const res = state.result;
     if (!res) { clearResultDisplay(); return; }
@@ -1132,6 +1388,7 @@
     layerGroups.perimeter.clearLayers();
 
     renderBuildings();
+    renderPinCandidateHighlight(res);
 
     if (state.validatedPerimeter) {
       L.polygon(state.validatedPerimeter.map((p) => [p.lat, p.lon]), {
@@ -1225,15 +1482,19 @@
         'Comparison: techum @ ' + (settings.secondAmahCm / 2.54).toFixed(2) + ' in amah' + (res2Incomplete ? cutLabel : ''), layerGroups.second);
     }
 
-    // The map key lists these extra lines only while they are drawn.
+    // The map key lists each optional line only while it is drawn.
+    document.body.classList.toggle('key-karpef', (res.karpefRegions || []).length > 0 && document.getElementById('layer-karpef').checked);
+    document.body.classList.toggle('key-verified', !!settings.showVerifiedOnly && res.mode === 'city' && canRenderVerifiedScenario);
     document.body.classList.toggle('key-comparison', canRunComparisonAmah());
     document.body.classList.toggle('key-12mil', !!settings.show12mil);
     document.body.classList.toggle('key-concavity', (res.concavityRegions || []).length > 0);
 
     renderAuditRings();
     renderAuditGuide();
-    renderPanel();
-    renderReviewQueue();
+    if (!preservePanelOnRender) {
+      renderPanel();
+      renderReviewQueue();
+    }
   }
 
   function closestPointOnRing(point, ring) {
@@ -1515,32 +1776,36 @@
         `There is no halachic limit on a town's length. ${escapeHtml(capHelp)}</span></div>`);
     }
     if (res.calculationStatus === 'provisional-no-fill') {
-      lines.push('<div class="warn"><b>Provisional smaller boundary:</b> a material bow/L pocket has not yet received reviewer-confirmed endpoints. The app has not filled that pocket.</div>');
+      lines.push('<div class="warn accuracy-status provisional-bow"><b>Provisional smaller boundary:</b> a material bow/L pocket has not yet received reviewer-confirmed endpoints. The app has not filled that pocket.</div>');
     }
-    if (state.pinReview) {
+    if (shouldShowPinConfirmation(res)) {
       const pinBuildingWords = { dwelling: 'home', unknown: 'building whose use is not known',
         review: 'building that needs a rav’s review', non: 'non-dwelling building' }[state.pinReview.klass] || 'building';
-      lines.push(`<div class="warn pin-confirmation"><b>Confirm your starting place</b><span title="${escapeHtml(state.pinReview.reason)}">The address pin is ${state.pinReview.distanceM.toFixed(1)} m from a mapped ${escapeHtml(pinBuildingWords)}. The calculator has <b>not moved it</b>.</span><span class="pin-confirm-actions"><button type="button" id="btn-use-mapped-pin">Use mapped building</button><button type="button" id="btn-keep-exact-pin">Keep exact pin</button></span></div>`);
-    } else if (state.snapInfo) {
+      lines.push(`<div class="warn pin-confirmation"><b>Confirm your starting place</b><span title="${escapeHtml(state.pinReview.reason)}">The address pin is ${state.pinReview.distanceM.toFixed(1)} m from a highlighted mapped ${escapeHtml(pinBuildingWords)}. The calculator has <b>not moved it</b>.</span><span class="pin-confirm-actions"><button type="button" id="btn-use-mapped-pin">Use mapped building</button><button type="button" id="btn-keep-exact-pin">Keep exact pin</button></span></div>`);
+    } else if (state.snapInfo && !state.pinReview) {
       if (state.snapInfo.confirmedMapped) lines.push(`<div class="note"><b>Starting building confirmed</b> — you moved the pin ${state.snapInfo.distanceM.toFixed(1)} m to the mapped ${escapeHtml(state.snapInfo.klass)} footprint.</div>`);
       else if (state.snapInfo.alreadyInside) lines.push(`<div class="note"><b>Pin check:</b> the pin is inside a mapped ${escapeHtml(state.snapInfo.klass)} footprint (${escapeHtml(state.snapInfo.reason)}).</div>`);
       else lines.push(`<div class="note"><b>Exact pin kept:</b> ${escapeHtml(state.snapInfo.reason || 'No mapped building was substituted.')}</div>`);
     }
     if (provisionalHome.length) {
-      lines.push(`<div class="warn accuracy-status"><b>City status needs rav review</b><span>${provisionalHome.length} component${provisionalHome.length === 1 ? '' : 's'} contributing to the home city ${provisionalHome.length === 1 ? 'uses' : 'use'} the provisional six-footprint proxy. Confirm the actual courtyard/resident basis before relying on this boundary.</span></div>`);
+      lines.push(`<div class="warn rav-caveat"><b>City status needs rav review</b><span>${provisionalHome.length} component${provisionalHome.length === 1 ? '' : 's'} contributing to the home city ${provisionalHome.length === 1 ? 'uses' : 'use'} the provisional six-footprint proxy. Confirm the actual courtyard/resident basis before relying on this boundary.</span></div>`);
     }
     // When the pin sits between several cities, the drawing is only their common area. That is
     // the most important flag on the page, so show it in the answer card, not in a closed list.
     const homeAmbiguity = res.warnings.find((w) => w.type === 'multiple-home-candidates');
     if (homeAmbiguity) {
-      lines.push(`<div class="warn accuracy-status"><b>Starting city needs rav review</b><span>${escapeHtml(homeAmbiguity.text)}</span></div>`);
+      lines.push(`<div class="warn accuracy-status home-ambiguity"><b>Starting city needs rav review</b><span>${escapeHtml(homeAmbiguity.text)}</span></div>`);
     }
     if (uncertainCount && (uncertainRatio >= 0.25 || uncertainCount >= 100)) {
-      lines.push(`<div class="warn accuracy-status"><b>Building classification can move this boundary</b><span>${uncertainCount.toLocaleString()} of ${state.buildings.length.toLocaleString()} footprints (${Math.round(uncertainRatio * 100)}%) have unknown or ambiguous use and are included automatically. Review the prioritized boundary and home-city structures first.</span></div>`);
+      lines.push(`<div class="warn rav-caveat"><b>Building classification can move this boundary</b><span>${uncertainCount.toLocaleString()} of ${state.buildings.length.toLocaleString()} footprints (${Math.round(uncertainRatio * 100)}%) have unknown or ambiguous use and are included automatically. Review the prioritized boundary and home-city structures first.</span></div>`);
     }
     const modeLabel = res.mode === 'city'
       ? 'city (whole city = 4 amos)'
-      : res.mode === 'building' ? 'building shevisa (measured from mapped walls)' : 'open field (point shevisa)';
+      : res.mode === 'building'
+        ? 'building shevisa (measured from mapped walls)'
+        : res.eruvPointMode
+          ? `eruv techumin (4-amah point, ${settings.pointRotationDeg || 0}° rotation)`
+          : `open field (point shevisa, ${settings.pointRotationDeg || 0}° rotation)`;
     lines.push(`<div class="stat"><b>Mode:</b> ${modeLabel}</div>`);
     if (res.mode === 'city' && res.squaring) {
       const angleText = `${Math.abs(res.squaring.angleDeg || 0).toFixed(1)}°`;
@@ -1580,6 +1845,8 @@
     lines.push(`<div class="stat"><b>Thresholds:</b> join 70⅔ amos = ${(70.667 * amahM).toFixed(1)} m · ` +
       `city-merge 141⅓ = ${(141.333 * amahM).toFixed(1)} m · techum 2000 = ${(2000 * amahM).toFixed(0)} m` +
       (settings.karpef ? ` · karpef +${(70.667 * amahM).toFixed(1)} m` : '') + `</div>`);
+    const releaseLabel = state.dataRelease ? `Overture ${state.dataRelease}` : 'Overture';
+    lines.push(`<div class="stat"><b>Map data:</b> ${escapeHtml(releaseLabel)} (${state.fromSnapshot ? 'snapshot' : state.fromCache ? 'cached locally' : 'fresh download'})</div>`);
     const seenWarnings = new Map();
     // A big town merges dozens of settlement pairs, each with its own gap. One line per gap
     // buried every other warning (about 100 lines for Monsey), so list them as one range.
@@ -1681,7 +1948,9 @@
 
   function recordConcavityEndpoints(reviewKey) {
     cancelMapMode(false);
+    closeDestinationPopup();
     bowCapture = { reviewKey, points: [] };
+    setMapModeBarMessage('Bow review: click the two halachic endpoints on the map');
     document.getElementById('btn-cancel-map-mode').hidden = false;
     document.body.classList.add('map-mode-active');
     setStatus('Bow review mode: click the first halachic endpoint. Press Escape or Cancel to stop. The selected bow rule will be recalculated after the second point.');
@@ -1713,9 +1982,11 @@
     return [
       '== Psak configuration ==',
       `Profile: ${eff === 'custom' ? 'CUSTOM' : S.PROFILES[settings.profile].label}`,
+      `Starting mode: ${settings.shevisaMode === 'eruv-point' ? 'Eruv techumin (forced 4-amah point)' : 'Automatic (city / building / point)'}`,
       `Amah: ${settings.amahCm} cm (2000 amos = ${(20 * settings.amahCm).toFixed(0)} m)`,
       `Single-city karpef: ${settings.karpef ? 'ON (Rema / MB 398:36)' : 'OFF (Mechaber)'}`,
       `Squaring orientation: ${squaringAudit}`,
+      `Point-shevisa square rotation: ${settings.pointRotationDeg || 0}°`,
       `Overlapping-ribua policy: ${settings.overlapPolicy}`,
       `Large enclosed-hole policy: ${settings.largeHolePolicy}`,
       `Bow/L policy: ${settings.bowPolicy}`,
@@ -1779,6 +2050,8 @@
       || `Snapshot pin (${Number(snap.pin.lat).toFixed(5)}, ${Number(snap.pin.lon).toFixed(5)})`;
     state.lastQuery = null; state.lastLabel = label;
     document.getElementById('address').value = label;
+    const clearBtn = document.getElementById('btn-clear-address');
+    if (clearBtn) clearBtn.hidden = !label;
     state.pin = snap.pin; state.fetchedAt = snap.fetchedAt; state.fetchBBox = snap.fetchBBox; state.fromSnapshot = true;
     state.dataRelease = snap.dataRelease || null; state.dataSource = snap.dataSource || 'snapshot';
     state.dataCapHit = !!snap.dataCapHit; state.rawBuildings = snap.rawBuildings;
@@ -1798,23 +2071,50 @@
   }
 
   async function browseRegistry() {
-    const el = document.getElementById('registry-list'); el.textContent = 'Loading reviewed cities…';
+    const el = document.getElementById('registry-list');
+    const badge = document.getElementById('registry-count-badge');
+    registryLoadedOnce = true;
+    el.textContent = 'Loading reviewed cities…';
     try {
       const response = await fetch('/api/registry'); if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json(); el.replaceChildren();
-      if (!data.entries || !data.entries.length) { el.textContent = 'No published reviewed snapshots yet.'; return; }
-      data.entries.forEach((entry) => {
+      const entries = Array.isArray(data.entries) ? data.entries : [];
+      if (badge) {
+        badge.textContent = String(entries.length);
+        badge.hidden = entries.length === 0;
+      }
+      if (!entries.length) { el.textContent = 'No published reviewed snapshots yet.'; return; }
+      const loadEntry = async (entry, button) => {
+        button.disabled = true;
+        button.textContent = 'Loading…';
+        try {
+          const detail = await fetch(`/api/registry/${encodeURIComponent(entry.slug)}`);
+          if (!detail.ok) throw new Error(`HTTP ${detail.status}`);
+          const full = await detail.json();
+          applySnapshot(full.snapshot, full);
+        } catch (e) {
+          setStatus('Registry load failed: ' + e.message);
+          button.disabled = false;
+          button.textContent = 'Load reviewed map';
+        }
+      };
+      entries.forEach((entry) => {
         const row = document.createElement('div'); row.className = 'registry-entry';
         const info = document.createElement('span'); info.innerHTML = `<b>${escapeHtml(entry.cityLabel)}</b><small>${escapeHtml(entry.review.reviewerName)} · ${escapeHtml(entry.review.reviewedAt)} · revision ${entry.revision}</small>`;
         const load = document.createElement('button'); load.type = 'button'; load.textContent = 'Load reviewed map';
-        load.addEventListener('click', async () => {
-          if (!confirm(`Replace the current calculation with the published reviewed snapshot for ${entry.cityLabel}?`)) return;
-          try {
-            const detail = await fetch(`/api/registry/${encodeURIComponent(entry.slug)}`);
-            if (!detail.ok) throw new Error(`HTTP ${detail.status}`);
-            const full = await detail.json();
-            applySnapshot(full.snapshot, full);
-          } catch (e) { setStatus('Registry load failed: ' + e.message); }
+        load.addEventListener('click', () => {
+          if (!state.result) { void loadEntry(entry, load); return; }
+          const existing = row.querySelector('.inline-confirm');
+          if (existing) { existing.remove(); return; }
+          const confirmBox = document.createElement('div');
+          confirmBox.className = 'inline-confirm';
+          confirmBox.innerHTML = `<span>Replace current map?</span><button type="button" class="confirm-yes">Replace</button><button type="button" class="confirm-no">Cancel</button>`;
+          confirmBox.querySelector('.confirm-no').addEventListener('click', () => confirmBox.remove());
+          confirmBox.querySelector('.confirm-yes').addEventListener('click', () => {
+            confirmBox.remove();
+            void loadEntry(entry, load);
+          });
+          row.append(confirmBox);
         });
         row.append(info, load); el.appendChild(row);
       });
@@ -2237,21 +2537,90 @@
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  function showExportOverlay(message) {
+    let overlay = document.getElementById('export-progress-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'export-progress-overlay';
+      overlay.setAttribute('role', 'status');
+      overlay.setAttribute('aria-live', 'polite');
+      overlay.innerHTML = '<div class="export-progress-card"><span class="export-spinner" aria-hidden="true"></span><strong id="export-progress-text"></strong></div>';
+      document.body.append(overlay);
+    }
+    const text = overlay.querySelector('#export-progress-text');
+    if (text) text.textContent = message;
+    overlay.hidden = false;
+  }
+
+  function hideExportOverlay() {
+    const overlay = document.getElementById('export-progress-overlay');
+    if (overlay) overlay.hidden = true;
+  }
+
+  function setExportFeedback(message, isError = false) {
+    ['result-export-feedback', 'drawer-export-feedback'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = message || '';
+      el.classList.toggle('error', !!isError);
+      el.hidden = !message;
+    });
+  }
+
+  function setExportButtonsBusy(format, busy) {
+    const mapBtns = [
+      { id: 'btn-image', fmt: 'png', busyText: 'Preparing PNG…' },
+      { id: 'result-btn-png', fmt: 'png', busyText: 'Preparing PNG…' },
+      { id: 'btn-pdf', fmt: 'pdf', busyText: 'Preparing PDF…' },
+      { id: 'result-btn-pdf', fmt: 'pdf', busyText: 'Preparing PDF…' },
+    ];
+    mapBtns.forEach(({ id, fmt, busyText }) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      if (busy) {
+        if (!btn.dataset.idleLabel) btn.dataset.idleLabel = btn.textContent;
+        btn.disabled = true;
+        if (fmt === format) btn.textContent = busyText;
+      } else {
+        btn.disabled = false;
+        if (btn.dataset.idleLabel) {
+          btn.textContent = btn.dataset.idleLabel;
+          delete btn.dataset.idleLabel;
+        }
+      }
+    });
+  }
+
   async function exportPNG() {
+    setExportButtonsBusy('png', true);
+    setExportFeedback('Preparing PNG…');
     setStatus('Rendering the visible map as a PNG image…');
+    showExportOverlay('Preparing high-resolution PNG…');
     try {
       const { canvas, fallbackBasemap } = await captureMapCanvas({ caption: true });
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
       if (!blob) throw new Error('Browser could not encode the map image.');
       downloadBlob('techum-review-map.png', blob); track('export', { format: 'png', fallbackBasemap });
-      setStatus(fallbackBasemap
-        ? 'PNG exported with the original satellite map because Google export was unavailable. The calculated boundaries are unchanged.'
-        : 'PNG exported — a square map of the whole techum with the visible audit layers.');
-    } catch (e) { setStatus('PNG export failed: ' + e.message); }
+      const msg = fallbackBasemap
+        ? 'PNG downloaded using Satellite map (Google export unavailable). Calculated boundaries are unchanged.'
+        : 'PNG downloaded — framed square map of the whole techum.';
+      setStatus(msg);
+      setExportFeedback(msg);
+    } catch (e) {
+      const msg = 'PNG export failed: ' + e.message;
+      setStatus(msg);
+      setExportFeedback(msg, true);
+    } finally {
+      hideExportOverlay();
+      setExportButtonsBusy('png', false);
+    }
   }
 
   async function exportPDF() {
+    setExportButtonsBusy('pdf', true);
+    setExportFeedback('Preparing PDF…');
     setStatus('Rendering a print-ready PDF review sheet…');
+    showExportOverlay('Preparing print-ready PDF review sheet…');
     try {
       await loadExportLibrary('jspdf');
       const { canvas, fallbackBasemap } = await captureMapCanvas();
@@ -2311,13 +2680,82 @@
         pdf.text(`Page ${i} of ${pages} - generated ${new Date().toISOString()}`, pageW - margin, pageH - 4, { align: 'right' });
       }
       pdf.save('techum-review.pdf'); track('export', { format: 'pdf', fallbackBasemap });
-      setStatus(fallbackBasemap
-        ? 'PDF exported with the original satellite map because Google export was unavailable. The calculated boundaries are unchanged.'
-        : 'PDF exported — it includes the map, warnings, confidence limits, and active configuration.');
+      const msg = fallbackBasemap
+        ? 'PDF downloaded using Satellite map (Google export unavailable). Calculated boundaries are unchanged.'
+        : 'PDF downloaded — includes the map, warnings, and active configuration.';
+      setStatus(msg);
+      setExportFeedback(msg);
     } catch (e) {
-      setStatus('PDF export failed: ' + e.message);
+      const msg = 'PDF export failed: ' + e.message;
+      setStatus(msg);
+      setExportFeedback(msg, true);
+    } finally {
+      hideExportOverlay();
+      setExportButtonsBusy('pdf', false);
     }
   }
+
+  function setAuditMode(enabled) {
+    const next = !!enabled;
+    settings.showAuditRings = next;
+    const rings = document.getElementById('audit-rings');
+    const buildings = document.getElementById('layer-buildings');
+    if (rings) rings.checked = next;
+    if (buildings) buildings.checked = next;
+    saveSettings();
+    if (state.result) {
+      render();
+      if (next) {
+        const queue = document.getElementById('review-queue');
+        if (queue && !queue.hidden) queue.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+    return next;
+  }
+
+  function getResultMeta() {
+    const res = state.result;
+    if (!res) return null;
+    const eff = S.effectiveProfile(settings);
+    const profileNames = {
+      'mishna-berura': 'Mishna Berurah',
+      'chazon-ish': 'Chazon Ish',
+      mechaber: 'Mechaber',
+      custom: 'Custom',
+    };
+    const amahM = settings.amahCm / 100;
+    const techumM = Math.round(2000 * amahM);
+    return {
+      mode: res.mode,
+      eruvPointMode: !!res.eruvPointMode,
+      incomplete: !!state.dataCapHit,
+      amahCm: settings.amahCm,
+      amahIn: (settings.amahCm / 2.54).toFixed(2),
+      techumM,
+      techumFt: Math.round(techumM * 3.28084),
+      techumMi: (techumM / 1609.344).toFixed(2),
+      karpefApplied: res.mode === 'city' && !!settings.karpef,
+      profileLabel: profileNames[eff] || 'Custom',
+      pointRotationDeg: settings.pointRotationDeg || 0,
+      auditMode: !!settings.showAuditRings,
+      pinConfirmationShown: shouldShowPinConfirmation(res),
+      homeClusterCount: res.homeCluster >= 0 && res.clusters[res.homeCluster]
+        ? (res.clusters[res.homeCluster].houseCount == null ? res.clusters[res.homeCluster].members.length : res.clusters[res.homeCluster].houseCount) : 0,
+    };
+  }
+
+  window.TechumApp = {
+    getResultMeta,
+    setPointRotation: (deg, opts) => setPointRotation(deg, opts),
+    startAimCornerMode,
+    startMovePinMode,
+    toggleAuditMode: () => setAuditMode(!settings.showAuditRings),
+    enableAuditMode: () => setAuditMode(true),
+    exportPNG: () => void exportPNG(),
+    exportPDF: () => void exportPDF(),
+    saveSnapshot: () => saveSnapshot(),
+    browseRegistryIfNeeded: () => { if (!registryLoadedOnce) void browseRegistry(); },
+  };
 
   // ---------------- settings UI ----------------
   let refreshSettingsInputs = () => {};
@@ -2327,6 +2765,7 @@
       $('profile').value = S.effectiveProfile(settings) === 'custom' ? 'custom' : settings.profile;
       $('profile-explanation').innerHTML = PROFILE_EXPLANATIONS[S.effectiveProfile(settings)] || PROFILE_EXPLANATIONS.custom;
       $('amah').value = String(settings.amahCm);
+      $('shevisa-mode').value = settings.shevisaMode || 'auto';
       $('karpef').checked = settings.karpef;
       $('sq-angle').value = settings.squaringAngleDeg;
       $('point-angle').value = settings.pointRotationDeg;
@@ -2354,6 +2793,7 @@
       refreshInputs(); onChange();
     });
     $('amah').addEventListener('change', (e) => { settings.amahCm = parseFloat(e.target.value); refreshInputs(); onChange(); });
+    $('shevisa-mode').addEventListener('change', (e) => { settings.shevisaMode = e.target.value === 'eruv-point' ? 'eruv-point' : 'auto'; refreshInputs(); onChange(); });
     $('karpef').addEventListener('change', (e) => { settings.karpef = e.target.checked; refreshInputs(); onChange(); });
     $('sq-angle').addEventListener('change', (e) => { settings.squaringAngleDeg = parseFloat(e.target.value) || 0; refreshInputs(); onChange(); });
     $('point-angle').addEventListener('change', (e) => { settings.pointRotationDeg = parseFloat(e.target.value) || 0; refreshInputs(); onChange(); });
@@ -2394,6 +2834,25 @@
     document.getElementById('address').addEventListener('input', onAddressInput);
     document.getElementById('address').addEventListener('keydown', onAddressKeydown);
     document.getElementById('address').addEventListener('blur', () => setTimeout(closeSuggestions, 100));
+    const clearAddressBtn = document.getElementById('btn-clear-address');
+    if (clearAddressBtn) {
+      clearAddressBtn.addEventListener('click', () => {
+        const input = document.getElementById('address');
+        input.value = '';
+        updateAddressClearButton();
+        clearTimeout(suggestionTimer);
+        suggestionRequest++;
+        setAddressLoading(false);
+        closeSuggestions();
+        input.focus();
+      });
+    }
+    const snapshotsSection = document.getElementById('drawer-snapshots-section');
+    if (snapshotsSection) {
+      snapshotsSection.addEventListener('toggle', () => {
+        if (snapshotsSection.open && !registryLoadedOnce) void browseRegistry();
+      });
+    }
     document.getElementById('btn-location').addEventListener('click', useMyLocation);
     document.getElementById('btn-calc').addEventListener('click', () => calculate(false));
     document.getElementById('btn-retry').addEventListener('click', () => calculate(false));
@@ -2417,9 +2876,20 @@
     document.getElementById('btn-draw-join-perimeter').addEventListener('click', () => startDrawing('join-perimeter'));
     document.getElementById('btn-finish-building').addEventListener('click', () => void finishDrawing());
     document.getElementById('btn-cancel-map-mode').addEventListener('click', () => cancelMapMode());
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (drawing || bowCapture)) cancelMapMode(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (drawing || bowCapture || aimCornerMode || movePinMode)) cancelMapMode(); });
     let resizeTimer;
-    window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => map.invalidateSize(), 100); });
+    let lastMobileControl = window.innerWidth <= 900;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        map.invalidateSize();
+        const isMobile = window.innerWidth <= 900;
+        if (isSimplifiedDirection && baseLayerControl && isMobile !== lastMobileControl) {
+          lastMobileControl = isMobile;
+          mountBaseLayerControl(!!googleBaseLayer);
+        }
+      }, 100);
+    });
     document.getElementById('btn-import-buildings').addEventListener('click', () => document.getElementById('building-file').click());
     document.getElementById('building-file').addEventListener('change', (e) => {
       if (e.target.files && e.target.files[0]) importBuildings(e.target.files[0]);
@@ -2470,6 +2940,7 @@
           else setStatus('We could not find that place — try a more specific address.');
         }).catch(() => setStatus('We could not find that place — check the address and try again.'));
       }
-    } else setStatus('Enter an address (or click the map) to set the shevisa point.');
+    } else setStatus('Enter an address or click the map to choose where you\'ll be for Shabbos.');
+    updateAddressClearButton();
   });
 })();
