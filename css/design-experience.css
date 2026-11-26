@@ -422,6 +422,16 @@ html[data-design="9"] .key-line.techum,html[data-design="10"] .key-line.techum {
 html[data-design="9"] .key-line.city,html[data-design="10"] .key-line.city { border-color:#4f713d; background:#c8df97; }
 html[data-design="9"] .key-line.karpef,html[data-design="10"] .key-line.karpef { border:2px dashed #4f713d; background:#e5efc8; }
 html[data-design="9"] .key-line.alternate,html[data-design="10"] .key-line.alternate { border-color:#e5a000; border-top-style:dashed; }
+html[data-design] .key-line.comparison { border:2px dashed #e040fb; }
+html[data-design] .key-line.concavity { border:2px dashed #e0c000; background:#fff6bf; }
+html[data-design] .key-line.mil12 { border:2px dotted #666; }
+/* Extra lines can make the key wider than the map; let it wrap inside the map. */
+html[data-design] #simple-map-key { max-width:calc(100% - 24px); }
+html[data-design] .map-key-items { flex-wrap:wrap; justify-content:center; row-gap:6px; }
+#simple-map-key .key-extra { display:none !important; }
+body.key-comparison #simple-map-key .key-extra-comparison,
+body.key-concavity #simple-map-key .key-extra-concavity,
+body.key-12mil #simple-map-key .key-extra-12mil { display:flex !important; }
 html[data-design="9"] .leaflet-control-layers,html[data-design="10"] .leaflet-control-layers {
   border:1px solid rgba(24,35,30,.12); border-radius:12px; box-shadow:0 8px 25px rgba(20,45,33,.12); font:700 10px/1.35 Inter,system-ui,sans-serif;
 }
@@ -464,8 +474,10 @@ html[data-design="10"] #simple-quick-settings { border-radius:8px; }
     box-shadow:0 -15px 42px rgba(18,50,34,.14);
   }
   html[data-design="9"] #simple-map-key,html[data-design="10"] #simple-map-key {
-    left:auto; right:10px; bottom:14px; display:block; transform:none; padding:0; border-radius:10px; font-size:9px;
+    left:auto; right:10px; bottom:66px; display:block; transform:none; padding:0; border-radius:10px; font-size:9px;
   }
+  /* The answer card overlaps the map's bottom 26px; keep the map key and credits above it. */
+  html[data-design="9"] #map .leaflet-bottom,html[data-design="10"] #map .leaflet-bottom { bottom:26px; }
   html[data-design="9"] #simple-map-key b,html[data-design="10"] #simple-map-key b { display:none; }
   html[data-design="9"] .map-key-toggle,html[data-design="10"] .map-key-toggle {
     display:block; min-height:42px; padding:0 13px; border:0; border-radius:10px; background:#fffaf0; color:var(--dx-ink); font-size:11px; font-weight:800;
@@ -506,3 +518,7 @@ html[data-design="9"] .pin-confirm-actions button,html[data-design="10"] .pin-co
   html[data-design="9"] #simple-quick-settings > summary,html[data-design="10"] #simple-quick-settings > summary { padding-right:58px; }
   html[data-design="9"] #sidebar,html[data-design="10"] #sidebar { padding-bottom:90px; }
 }
+
+/* In the settings drawer these sections start closed, so show they open like the others. */
+html[data-design] #design-drawer .settings-grid summary { cursor:pointer; }
+html[data-design] #design-drawer .settings-grid summary:after { display:block; }

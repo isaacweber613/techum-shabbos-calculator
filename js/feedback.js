@@ -55,6 +55,8 @@
         windowHeight: window.innerHeight,
         scrollX: -window.scrollX,
         scrollY: -window.scrollY,
+        // Without this the map's boundary shapes are drawn offset from the map in the screenshot.
+        onclone: (clonedDocument) => { if (window.TechumNormalizeMapClone) window.TechumNormalizeMapClone(clonedDocument); },
       });
     } finally {
       document.documentElement.classList.remove('feedback-capturing');

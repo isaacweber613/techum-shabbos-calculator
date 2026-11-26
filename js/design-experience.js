@@ -110,12 +110,18 @@
           <span><i class="key-line city"></i><strong>Green</strong> Starting place (city, building, or 4 amos)</span>
           <span><i class="key-line karpef"></i><strong>Pale green</strong> Extra city space</span>
           <span><i class="key-line alternate"></i><strong>Amber</strong> Alternate, when shown</span>
+          <span class="key-extra key-extra-comparison"><i class="key-line comparison"></i><strong>Purple</strong> Comparison amah</span>
+          <span class="key-extra key-extra-concavity"><i class="key-line concavity"></i><strong>Yellow</strong> Pocket for rav review</span>
+          <span class="key-extra key-extra-12mil"><i class="key-line mil12"></i><strong>Gray</strong> 12 mil</span>
         </div>`;
       const mapKeyToggle = mapKey.querySelector('.map-key-toggle');
       mapKeyToggle.addEventListener('click', () => {
         const open = mapKey.classList.toggle('open');
         mapKeyToggle.setAttribute('aria-expanded', String(open));
       });
+      // The key lives inside the map. Without this, tapping it counts as a map click, which
+      // moves the starting pin there and throws away the drawn techum.
+      if (window.L) { L.DomEvent.disableClickPropagation(mapKey); L.DomEvent.disableScrollPropagation(mapKey); }
       document.getElementById('map')?.append(mapKey);
 
       const results = document.getElementById('results');
@@ -140,7 +146,9 @@
               <summary>How was this calculated? <span aria-hidden="true">i</span></summary>
               <p>${isCity
                 ? 'Nearby qualifying homes are joined into a halachic city, that city is squared, and the techum is measured outward from the square.'
-                : 'The map did not derive a qualifying city at this point, so the techum is measured from the shevisa point.'}</p>
+                : isBuilding
+                  ? 'No qualifying city joins this building, so the techum is measured outward from its mapped walls.'
+                  : 'The map did not derive a qualifying city at this point, so the techum is measured from the shevisa point.'}</p>
               ${confidence ? `<p>${confidence}</p>` : ''}
               <p>This remains a draft for review with a qualified rav.</p>
             </details>`;

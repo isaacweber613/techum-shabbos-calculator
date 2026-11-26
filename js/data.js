@@ -119,8 +119,20 @@
     };
   }
 
+  // Typed or pasted "lat, lon" (as Google Maps copies them). The place search reads the
+  // numbers as street names, so "39.5, -117.0" used to jump to 117 Avenue in Edmonton.
+  function parseCoordinates(query) {
+    const m = /^\s*(-?\d{1,2}(?:\.\d+)?)\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/.exec(String(query || ''));
+    if (!m) return null;
+    const lat = Number(m[1]), lon = Number(m[2]);
+    if (!(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180)) return null;
+    return { lat, lon, label: `Coordinates ${lat.toFixed(6)}, ${lon.toFixed(6)}` };
+  }
+
   // ---------- Nominatim geocoding ----------
   async function geocode(query, bias) {
+    const coordinates = parseCoordinates(query);
+    if (coordinates) return [coordinates];
     // Production goes through the Worker so requests are identified, globally throttled,
     // and cached as required by the public Nominatim usage policy. The direct URL remains
     // only for local development through serve.mjs.
@@ -193,6 +205,8 @@
   }
 
   async function autocomplete(query, bias) {
+    const coordinates = parseCoordinates(query);
+    if (coordinates) return [coordinates];
     const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     // Ask for a few extras because Photon can return the same display label for
     // multiple feature types. The UI still receives at most five unique choices.
@@ -425,9 +439,13 @@
   // Returns the fused Overture footprint set. force=true bypasses browser and R2 caches.
   // Areas wider than one Worker request are fetched block by block (sequentially, so cold
   // fills do not contend for the Worker's global fill slot) and merged by footprint id.
-  async function fetchBuildingsCached(bbox, { force = false } = {}) {
+  async function fetchBuildingsCached(bbox, { force = false, onProgress = null } = {}) {
     const parts = [];
-    for (const part of splitServerBBox(bbox)) parts.push(await fetchPartCached(part, force));
+    const blocks = splitServerBBox(bbox);
+    for (const part of blocks) {
+      if (onProgress) onProgress(parts.length, blocks.length);
+      parts.push(await fetchPartCached(part, force));
+    }
     return mergeServerResponses(parts);
   }
 
@@ -444,7 +462,7 @@
     }
     return response.json();
   }
-  root.TechumData = { classify, computeDataConfidence, geocode, reverseGeocode, autocomplete, fetchBuildingsCached,
+  root.TechumData = { classify, computeDataConfidence, geocode, reverseGeocode, autocomplete, parseCoordinates, fetchBuildingsCached,
     submitBuildingCorrection,
     _internals: { bboxKey, cacheKey, CACHE_VERSION, photonLabel, dedupeAutocompleteResults, splitServerBBox,
       mergeServerResponses, retryDelayMs } };

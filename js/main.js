@@ -315,6 +315,8 @@
   let suggestionRequest = 0;
   let suggestions = [];
   let activeSuggestion = -1;
+  // What the last finished lookup found, so Enter never asks people to wait for nothing.
+  let suggestionOutcome = 'pending';
 
   function closeSuggestions() {
     suggestions = [];
@@ -362,17 +364,23 @@
 
   async function fetchSuggestions() {
     const q = document.getElementById('address').value.trim();
-    if (q.length < 3) { closeSuggestions(); return; }
+    if (q.length < 3) { suggestionOutcome = 'empty'; closeSuggestions(); return; }
     const request = ++suggestionRequest;
     try {
       const results = await D.autocomplete(q, state.locationBias);
-      if (request === suggestionRequest && document.getElementById('address').value.trim() === q) renderSuggestions(results);
-    } catch { if (request === suggestionRequest) closeSuggestions(); }
+      if (request === suggestionRequest && document.getElementById('address').value.trim() === q) {
+        suggestionOutcome = results.length ? 'found' : 'empty';
+        renderSuggestions(results);
+      }
+    } catch {
+      if (request === suggestionRequest) { suggestionOutcome = 'error'; closeSuggestions(); }
+    }
   }
 
   function onAddressInput() {
     clearTimeout(suggestionTimer);
     suggestionRequest++;
+    suggestionOutcome = 'pending';
     closeSuggestions();
     suggestionTimer = setTimeout(fetchSuggestions, 650);
   }
@@ -396,9 +404,10 @@
       if (activeSuggestion >= 0 || (isSimplifiedDirection && suggestions.length)) {
         applyGeocodeResult(suggestions[Math.max(0, activeSuggestion)], document.getElementById('address').value.trim());
       }
-      else setStatus(suggestions.length
-        ? 'Choose one of the suggested addresses before continuing.'
-        : 'Wait for address suggestions, then choose the correct address.');
+      else if (suggestions.length) setStatus('Choose one of the suggested addresses before continuing.');
+      else if (suggestionOutcome === 'empty') setStatus('No place matches that. Check the spelling, add the town or country, or click the map.');
+      else if (suggestionOutcome === 'error') setStatus('Address search is not reachable. Check your connection, or click the map to set the point.');
+      else setStatus('Looking up that address… choose it from the list when it appears.');
     }
   }
 
@@ -498,13 +507,26 @@
     let iteration = 0;
     let expansionError = null;
     while (true) {
-      setCalculationStage('fetch', `Getting map buildings${iteration ? ` (area pass ${iteration + 1})` : ''}…`);
+      const fetchLabel = `Getting map buildings${iteration ? ` (area pass ${iteration + 1})` : ''}`;
+      setCalculationStage('fetch', `${fetchLabel}…`);
       await nextPaint();
       if (isStale()) return;
       const fetchStarted = performance.now();
       let fetched;
+      // A first visit to a new area can take 20 seconds while the server loads it. Show how far
+      // along it is and how long it has been, so the wait never looks frozen.
+      let fetchPart = '';
+      const showFetchStage = () => {
+        if (calculationId !== activeCalculationId) return;
+        const seconds = Math.round((performance.now() - fetchStarted) / 1000);
+        setCalculationStage('fetch', `${fetchLabel}${fetchPart}…${seconds >= 3 ? ` ${seconds} s` : ''}`);
+      };
+      const fetchTicker = setInterval(showFetchStage, 1000);
       try {
-        fetched = await D.fetchBuildingsCached(bbox, { force: !!forceFresh });
+        fetched = await D.fetchBuildingsCached(bbox, { force: !!forceFresh, onProgress: (done, total) => {
+          fetchPart = total > 1 ? `: part ${done + 1} of ${total}` : '';
+          showFetchStage();
+        } });
         if (isStale()) return;
       } catch (e) {
         if (isStale()) return;
@@ -519,9 +541,14 @@
             prepMs: 0, engineMs: 0, engineStages: null, failed: true });
           break;
         }
-        setStatus('Map-data error: ' + e.message + ' — try again in a minute.');
+        // A fetch that never reaches the server throws a TypeError ("Failed to fetch").
+        setStatus(e instanceof TypeError
+          ? 'Could not reach the map-data service. Check your connection, then press Try again.'
+          : 'Map-data error: ' + String(e.message).replace(/^map-data error:\s*/i, '') + ' — try again in a minute.');
         finishCalculationProgress(false);
         return;
+      } finally {
+        clearInterval(fetchTicker);
       }
       const fetchMs = performance.now() - fetchStarted;
       // Do not start an unexpectedly oversized expansion pass. Keep the last complete
@@ -1070,7 +1097,7 @@
 
   // Removes every trace of a result that no longer applies (moved pin, failed re-analysis).
   function clearResultDisplay() {
-    document.body.classList.remove('has-result');
+    document.body.classList.remove('has-result', 'key-comparison', 'key-12mil', 'key-concavity');
     layerGroups.buildings.clearLayers();
     layerGroups.rects.clearLayers(); layerGroups.second.clearLayers(); layerGroups.settlements.clearLayers();
     layerGroups.audit.clearLayers(); layerGroups.perimeter.clearLayers();
@@ -1187,6 +1214,11 @@
       addRegions(res2.techumRegions || [res2.techumCorners], { color: '#e040fb', weight: 2.5, dashArray: res2Incomplete ? '2 6' : '10 6', fill: false },
         'Comparison: techum @ ' + (settings.secondAmahCm / 2.54).toFixed(2) + ' in amah' + (res2Incomplete ? cutLabel : ''), layerGroups.second);
     }
+
+    // The map key lists these extra lines only while they are drawn.
+    document.body.classList.toggle('key-comparison', canRunComparisonAmah());
+    document.body.classList.toggle('key-12mil', !!settings.show12mil);
+    document.body.classList.toggle('key-concavity', (res.concavityRegions || []).length > 0);
 
     renderAuditRings();
     renderAuditGuide();
@@ -1467,7 +1499,7 @@
           ? 'This snapshot holds less map data than these settings need. Calculate again to load the rest.'
           : state.dataCapReason === 'snapshot-area-unknown'
             ? 'This snapshot does not record which area its map data covers, so it cannot be checked. Calculate again to load the data.'
-            : `The search stopped at the ${settings.maxBuildings.toLocaleString()}-building data limit. Raise “Max buildings” in settings and calculate again.`;
+            : `The search stopped at the ${settings.maxBuildings.toLocaleString()}-building data limit. Raise “Max buildings” in All settings → Buildings & data and calculate again.`;
       lines.push(`<div class="warn accuracy-status data-limit"><b>Incomplete: the map data ran out</b><span>The town, or a town that can join it, continues past the loaded map data. ` +
         `With the rest of the data this boundary could be larger or smaller, and the home town could be a different one, so do not rely on it. ` +
         `There is no halachic limit on a town's length. ${escapeHtml(capHelp)}</span></div>`);
@@ -1476,7 +1508,9 @@
       lines.push('<div class="warn"><b>Provisional smaller boundary:</b> a material bow/L pocket has not yet received reviewer-confirmed endpoints. The app has not filled that pocket.</div>');
     }
     if (state.pinReview) {
-      lines.push(`<div class="warn pin-confirmation"><b>Confirm your starting place</b><span>The address pin is ${state.pinReview.distanceM.toFixed(1)} m from a mapped ${escapeHtml(state.pinReview.klass)} footprint (${escapeHtml(state.pinReview.reason)}). The calculator has <b>not moved it</b>.</span><span class="pin-confirm-actions"><button type="button" id="btn-use-mapped-pin">Use mapped building</button><button type="button" id="btn-keep-exact-pin">Keep exact pin</button></span></div>`);
+      const pinBuildingWords = { dwelling: 'home', unknown: 'building whose use is not known',
+        review: 'building that needs a rav’s review', non: 'non-dwelling building' }[state.pinReview.klass] || 'building';
+      lines.push(`<div class="warn pin-confirmation"><b>Confirm your starting place</b><span title="${escapeHtml(state.pinReview.reason)}">The address pin is ${state.pinReview.distanceM.toFixed(1)} m from a mapped ${escapeHtml(pinBuildingWords)}. The calculator has <b>not moved it</b>.</span><span class="pin-confirm-actions"><button type="button" id="btn-use-mapped-pin">Use mapped building</button><button type="button" id="btn-keep-exact-pin">Keep exact pin</button></span></div>`);
     } else if (state.snapInfo) {
       if (state.snapInfo.confirmedMapped) lines.push(`<div class="note"><b>Starting building confirmed</b> — you moved the pin ${state.snapInfo.distanceM.toFixed(1)} m to the mapped ${escapeHtml(state.snapInfo.klass)} footprint.</div>`);
       else if (state.snapInfo.alreadyInside) lines.push(`<div class="note"><b>Pin check:</b> the pin is inside a mapped ${escapeHtml(state.snapInfo.klass)} footprint (${escapeHtml(state.snapInfo.reason)}).</div>`);
@@ -1484,6 +1518,12 @@
     }
     if (provisionalHome.length) {
       lines.push(`<div class="warn accuracy-status"><b>City status needs rav review</b><span>${provisionalHome.length} component${provisionalHome.length === 1 ? '' : 's'} contributing to the home city ${provisionalHome.length === 1 ? 'uses' : 'use'} the provisional six-footprint proxy. Confirm the actual courtyard/resident basis before relying on this boundary.</span></div>`);
+    }
+    // When the pin sits between several cities, the drawing is only their common area. That is
+    // the most important flag on the page, so show it in the answer card, not in a closed list.
+    const homeAmbiguity = res.warnings.find((w) => w.type === 'multiple-home-candidates');
+    if (homeAmbiguity) {
+      lines.push(`<div class="warn accuracy-status"><b>Starting city needs rav review</b><span>${escapeHtml(homeAmbiguity.text)}</span></div>`);
     }
     if (uncertainCount && (uncertainRatio >= 0.25 || uncertainCount >= 100)) {
       lines.push(`<div class="warn accuracy-status"><b>Building classification can move this boundary</b><span>${uncertainCount.toLocaleString()} of ${state.buildings.length.toLocaleString()} footprints (${Math.round(uncertainRatio * 100)}%) have unknown or ambiguous use and are included automatically. Review the prioritized boundary and home-city structures first.</span></div>`);
@@ -1531,8 +1571,17 @@
       `city-merge 141⅓ = ${(141.333 * amahM).toFixed(1)} m · techum 2000 = ${(2000 * amahM).toFixed(0)} m` +
       (settings.karpef ? ` · karpef +${(70.667 * amahM).toFixed(1)} m` : '') + `</div>`);
     const seenWarnings = new Map();
+    // A big town merges dozens of settlement pairs, each with its own gap. One line per gap
+    // buried every other warning (about 100 lines for Monsey), so list them as one range.
+    const mergeGaps = res.warnings.filter((w) => w.type === 'city-merge')
+      .map((w) => Number((/gap ([\d.]+) m/.exec(w.text) || [])[1])).filter(Number.isFinite);
+    const mergeSummary = mergeGaps.length > 1
+      ? `${mergeGaps.length} pairs of settlements merged (gaps ${Math.min(...mergeGaps).toFixed(1)}–${Math.max(...mergeGaps).toFixed(1)} m, each within 141⅓ amos).`
+      : null;
     for (const w of res.warnings) {
-      const key = w.type + '|' + w.text;
+      if (w === homeAmbiguity) continue;
+      const key = w.type + '|' + (mergeSummary && w.type === 'city-merge' ? mergeSummary : w.text);
+      if (mergeSummary && w.type === 'city-merge' && seenWarnings.has(key)) continue;
       seenWarnings.set(key, (seenWarnings.get(key) || 0) + 1);
     }
     for (const [key, count] of seenWarnings) {
@@ -1698,6 +1747,7 @@
     };
     K.download('techum-snapshot.json', JSON.stringify(snap), 'application/json');
     track('snapshot', { action: 'save' });
+    setStatus('Snapshot saved. Load snapshot replays this exact map later.');
   }
   function loadSnapshot(file) {
     const reader = new FileReader();
@@ -1788,6 +1838,7 @@
     if (!res) { setStatus('Calculate a techum before exporting KML.'); return; }
     K.download('techum-draft.kml', buildKmlText(res));
     track('export', { format: 'kml' });
+    setStatus('KML exported for Google Earth review.');
   }
 
   function exportGeoJSON() {
@@ -1802,6 +1853,7 @@
     }, { config: configText(), dataConfidence: D.computeDataConfidence(state.buildings) });
     K.download('techum-draft.geojson', JSON.stringify(fc, null, 2), 'application/geo+json');
     track('export', { format: 'geojson' });
+    setStatus('GeoJSON exported.');
   }
 
   function exportKMZ() {
@@ -1858,6 +1910,10 @@
   }
   // The feedback screenshot (js/feedback.js) uses the same lazily loaded html2canvas.
   window.TechumLoadExportLibrary = loadExportLibrary;
+  window.TechumNormalizeMapClone = (clonedDocument) => {
+    const clonedMap = clonedDocument.getElementById('map');
+    if (clonedMap) normalizeLeafletCloneOverlays(clonedMap);
+  };
 
   function exportCaptionLines() {
     const eff = S.effectiveProfile(settings);
@@ -2025,6 +2081,12 @@
       });
       clonedMap.appendChild(caption);
     }
+    normalizeLeafletCloneOverlays(clonedMap);
+  }
+
+  // html2canvas ignores the transform Leaflet uses to place the boundary layer, so the
+  // shapes land up and to the left of the map. Used by exports and the feedback screenshot.
+  function normalizeLeafletCloneOverlays(clonedMap) {
     clonedMap.querySelectorAll('.leaflet-proxy').forEach((element) => { element.style.display = 'none'; });
     clonedMap.querySelectorAll('.leaflet-tile-loaded').forEach((tile) => { tile.style.opacity = '1'; });
     clonedMap.querySelectorAll('.leaflet-overlay-pane > svg.leaflet-zoom-animated').forEach((svg) => {
@@ -2214,7 +2276,8 @@
         `\n\nMAP-DATA REVIEW\n${confidence.needsReview} of ${confidence.total} fetched footprints need classification review. ` +
         'This does not measure whether every real building is mapped.\n\nACTIVE CONFIGURATION AND AUDIT RECORD\n' + configText();
       const pdfSafeReport = report
-        .replace(/⅔/g, '2/3').replace(/⅓/g, '1/3').replace(/×/g, 'x')
+        // "70⅔" must print as "70 2/3", not "702/3".
+        .replace(/(\d)([⅓⅔])/g, '$1 $2').replace(/⅔/g, '2/3').replace(/⅓/g, '1/3').replace(/×/g, 'x')
         .replace(/[—–]/g, '-').replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/·/g, '-')
         .replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/…/g, '...')
         .normalize('NFKD').replace(/[^\x20-\x7E\n]/g, '');
