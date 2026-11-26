@@ -19,7 +19,8 @@ day, so the app switches to the free map before Google refuses. Map loads went 1
 2026-11-25 at Isaac's word after 10 ran out the first day ("Move it back up a little bit").
 `GOOGLE_STATIC_MAPS_DAILY_CAP` (30, raised from 10 on 2026-11-25 at Isaac's word) counts the Google images PNG/PDF exports use, the same way (`/api/map-export-slot?images=N`).
 Exports (2026-11-25, Isaac: "make it 4"): up to 4 Static Maps images per export, tiled at the sharpest
-whole zoom that fits (`js/map-export.js`); the map is captured at 2x screen size, PDF JPEG quality 0.85.
+whole zoom that fits (`js/map-export.js`). Downloads are a fixed 1228 px square framed on the techum
+(Isaac: "it should be square and that's it"), so always 2 x 2 images, captured at 2x (2456 px), PDF JPEG 0.85.
 Telegram (2026-11-25, `worker/telegram.ts`): Isaac gets one message per limit kind per Pacific day
 when a cap is reached (`google_limit_alerts`), and one per saved feedback report. Sends run after
 the response and never break a page or save; `telegram_sent` / `telegram_send_failed` in Worker logs.

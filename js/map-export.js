@@ -20,6 +20,8 @@
   // and one logo and one "Map data" line are repainted at the view's bottom corners.
   const GOOGLE_STRIP_PX = 26;
   const GOOGLE_LOGO_PX = 80;
+  // The download's square side in CSS pixels: exactly 2 x 2 images at the map's own zoom.
+  const EXPORT_SQUARE_PX = 2 * (MAX_STATIC_MAP_SIZE - GOOGLE_STRIP_PX);
 
   // Splits an even pixel total into `parts` even sizes that differ by at most 2.
   function evenSplit(total, parts) {
@@ -104,5 +106,5 @@
     ];
   }
 
-  return { MAX_STATIC_MAP_SIZE, MAX_STATIC_MAP_IMAGES, staticMapPlan, normalizedLeafletSvgViewBox, exportCaptionLines };
+  return { MAX_STATIC_MAP_SIZE, MAX_STATIC_MAP_IMAGES, EXPORT_SQUARE_PX, staticMapPlan, normalizedLeafletSvgViewBox, exportCaptionLines };
 }));

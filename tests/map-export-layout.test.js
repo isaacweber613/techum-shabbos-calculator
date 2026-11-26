@@ -54,4 +54,11 @@ assert.equal(M.staticMapPlan({ zoom: 13, width: 1280, height: 1230 }).requestZoo
 assert.equal(M.staticMapPlan({ zoom: 13, width: 1920, height: 1080, maxImages: 1 }).requestZoom, 11);
 assert.equal(M.staticMapPlan({ zoom: 0, width: 3000, height: 800 }), null);
 
+// Every download is the same square: exactly 2 x 2 Google images at the map's own zoom.
+assert.equal(M.EXPORT_SQUARE_PX, 1228);
+const square = M.staticMapPlan({ zoom: 15, width: M.EXPORT_SQUARE_PX, height: M.EXPORT_SQUARE_PX });
+assert.equal(square.requestZoom, 15);
+assert.equal(square.images.length, 4);
+assert.ok(square.images.every((i) => i.width === 614 && i.height === 640));
+
 console.log('Map export viewport plan: assertions passed');
