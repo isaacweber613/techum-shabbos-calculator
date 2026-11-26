@@ -56,11 +56,13 @@ Top-level exports from application, library, hook, context, and worker modules.
 | `Background` | `type` | `worker/map-config.ts` |
 | `claimGoogleExportSlot` | `(request: Request, env: GoogleMapConfigEnv, background: Background = ()` | `worker/map-config.ts` |
 | `DEFAULT_GOOGLE_MAPS_DAILY_CAP` | `inferred` | `worker/map-config.ts` |
+| `exportImageCount` | `(request: Request): number` | `worker/map-config.ts` |
 | `googleLimitMessage` | `(kind: LimitKind, cap: number): string` | `worker/map-config.ts` |
 | `GoogleMapConfigEnv` | `interface` | `worker/map-config.ts` |
 | `googleQuotaDay` | `(now = new Date()` | `worker/map-config.ts` |
 | `issueGoogleMapConfig` | `(request: Request, env: GoogleMapConfigEnv, background: Background = ()` | `worker/map-config.ts` |
 | `isTrustedMapConfigRequest` | `(request: Request): boolean` | `worker/map-config.ts` |
+| `MAX_EXPORT_IMAGES` | `inferred` | `worker/map-config.ts` |
 | `normalizeGoogleMapsBrowserKey` | `(value?: string): string` | `worker/map-config.ts` |
 | `parseGoogleMapsDailyCap` | `(value?: string): number` | `worker/map-config.ts` |
 | `_resetOvertureReleaseCache` | `(): void` | `worker/overture.ts` |

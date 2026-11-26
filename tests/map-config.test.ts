@@ -34,6 +34,7 @@ type FakeOptions = { claimed?: { load_count: number } | null; rateAllowed?: bool
 
 function envFor(options: FakeOptions = {}) {
   let dbCalls = 0;
+  const claimedCounts: number[] = [];
   const alertRows = options.alertRows || new Set<string>();
   const sent: string[] = [];
   globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -62,13 +63,14 @@ function envFor(options: FakeOptions = {}) {
           return { kind: args[1] };
         }
         dbCalls += 1;
-        const [day, cap] = args as [string, number];
+        const [day, cap, count] = args as [string, number, number];
         assert.match(day, /^\d{4}-\d{2}-\d{2}$/);
+        claimedCounts.push(count);
         if (sql.includes('static_count')) {
-          assert.match(sql, /WHERE static_count < \?2/);
+          assert.match(sql, /WHERE static_count \+ \?3 <= \?2/);
           assert.equal(cap, 3);
         } else {
-          assert.match(sql, /WHERE load_count < \?2/);
+          assert.match(sql, /WHERE load_count \+ \?3 <= \?2/);
           assert.equal(cap, 2);
         }
         return options.claimed === undefined ? { load_count: 1 } : options.claimed;
@@ -80,7 +82,7 @@ function envFor(options: FakeOptions = {}) {
       },
     }) }) },
   } as unknown as GoogleMapConfigEnv;
-  return { env, dbCalls: () => dbCalls, sent, alertRows };
+  return { env, dbCalls: () => dbCalls, sent, alertRows, claimedCounts };
 }
 
 const trustedRequest = new Request('https://tchumshabbos.com/api/map-config', {
@@ -152,6 +154,21 @@ const trustedRequest = new Request('https://tchumshabbos.com/api/map-config', {
   assert.equal(allowed.status, 200);
   assert.deepEqual(await allowed.json(), { ok: true });
   assert.equal(fake.sent.length, 0);
+  assert.deepEqual(fake.claimedCounts, [1]);
+}
+{
+  // A sharper export claims one slot per Google image it will request.
+  const fake = envFor();
+  const exportRequest = (images: string) => new Request(`https://tchumshabbos.com/api/map-export-slot?images=${images}`, {
+    method: 'POST', headers: { Referer: 'https://tchumshabbos.com/', 'CF-Connecting-IP': '192.0.2.1' },
+  });
+  assert.equal((await claimGoogleExportSlot(exportRequest('2'), fake.env)).status, 200);
+  assert.deepEqual(fake.claimedCounts, [2]);
+  // Four images can never fit under a cap of 3, so the database is not asked.
+  assert.equal((await claimGoogleExportSlot(exportRequest('4'), fake.env)).status, 429);
+  assert.equal((await claimGoogleExportSlot(exportRequest('5'), fake.env)).status, 400);
+  assert.equal((await claimGoogleExportSlot(exportRequest('1.5'), fake.env)).status, 400);
+  assert.deepEqual(fake.claimedCounts, [2]);
 }
 {
   // A failed send releases the day's alert so the next refusal tries again.

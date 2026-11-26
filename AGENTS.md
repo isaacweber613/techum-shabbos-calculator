@@ -17,7 +17,9 @@ localhost:4173. Google daily quotas: 30 map loads, 30 static-map requests (30-da
 and 1), 0 3D map loads. `GOOGLE_MAPS_DAILY_CAP` (30) matches, counted on Google's Pacific-time
 day, so the app switches to the free map before Google refuses. Map loads went 10 → 30 on
 2026-11-25 at Isaac's word after 10 ran out the first day ("Move it back up a little bit").
-`GOOGLE_STATIC_MAPS_DAILY_CAP` (30, raised from 10 on 2026-11-25 at Isaac's word) counts PNG/PDF exports the same way (`/api/map-export-slot`).
+`GOOGLE_STATIC_MAPS_DAILY_CAP` (30, raised from 10 on 2026-11-25 at Isaac's word) counts the Google images PNG/PDF exports use, the same way (`/api/map-export-slot?images=N`).
+Exports (2026-11-25, Isaac: "make it 4"): up to 4 Static Maps images per export, tiled at the sharpest
+whole zoom that fits (`js/map-export.js`); the map is captured at 2x screen size, PDF JPEG quality 0.85.
 Telegram (2026-11-25, `worker/telegram.ts`): Isaac gets one message per limit kind per Pacific day
 when a cap is reached (`google_limit_alerts`), and one per saved feedback report. Sends run after
 the response and never break a page or save; `telegram_sent` / `telegram_send_failed` in Worker logs.

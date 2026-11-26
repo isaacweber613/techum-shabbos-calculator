@@ -1876,6 +1876,13 @@
     });
   }
 
+  // Twice the on-screen size, the sharpest the Google export images reach, kept within
+  // iOS Safari's 16,777,216-pixel canvas area limit so large windows still export.
+  function exportCanvasScale() {
+    const size = map.getSize();
+    return Math.min(2, Math.sqrt(16_777_216 / Math.max(1, size.x * size.y)));
+  }
+
   async function captureMapCanvas(options = {}) {
     if (!state.result) throw new Error('Calculate a techum first.');
     await loadExportLibrary('html2canvas');
@@ -1905,7 +1912,7 @@
       exportCaptionForClone = options.caption ? exportCaptionLines() : null;
       const canvas = await window.html2canvas(document.getElementById('map'), {
         useCORS: true, allowTaint: false, backgroundColor: MAP_PALETTE.cream,
-        scale: Math.min(1.5, window.devicePixelRatio || 1.25), logging: false, imageTimeout: 5000,
+        scale: exportCanvasScale(), logging: false, imageTimeout: 5000,
         onclone: normalizeLeafletExportSvg,
       });
       exportLock.assertStable();
@@ -2056,7 +2063,8 @@
     const plan = window.TechumMapExport.staticMapPlan({ zoom, width: size.x, height: size.y });
     if (!plan) throw new Error('This zoom level is too low to export the complete Google map view. Zoom in and try again.');
     // The Worker counts Static Maps requests so exports switch to the free map before Google's daily quota refuses.
-    const slot = await fetch('/api/map-export-slot', { method: 'POST', headers: { Accept: 'application/json' }, cache: 'no-store' });
+    const slot = await fetch(`/api/map-export-slot?images=${plan.images.length}`,
+      { method: 'POST', headers: { Accept: 'application/json' }, cache: 'no-store' });
     if (!slot.ok) throw new Error(slot.status === 429 ? "Today's Google export allowance is used up." : 'Google map export is unavailable right now.');
     const container = document.createElement('div');
     container.className = 'google-static-export-underlay';
@@ -2066,32 +2074,39 @@
     attributionOverlay.setAttribute('aria-hidden', 'true');
     attributionOverlay.style.setProperty('--google-attribution-height', `${plan.attributionHeight}px`);
     try {
-      const image = document.createElement('img');
-      image.alt = '';
-      image.crossOrigin = 'anonymous';
-      image.referrerPolicy = 'strict-origin-when-cross-origin';
-      Object.assign(image.style, {
-        left: `${plan.left}px`, top: `${plan.top}px`, width: `${plan.cssWidth}px`, height: `${plan.cssHeight}px`,
+      const centerPoint = map.project(center, plan.requestZoom);
+      const images = plan.images.map((part) => {
+        const image = document.createElement('img');
+        image.alt = '';
+        image.crossOrigin = 'anonymous';
+        image.referrerPolicy = 'strict-origin-when-cross-origin';
+        Object.assign(image.style, {
+          left: `${part.left}px`, top: `${part.top}px`, width: `${part.cssWidth}px`, height: `${part.cssHeight}px`,
+        });
+        const partCenter = map.unproject(centerPoint.add([part.offsetX, part.offsetY]), plan.requestZoom);
+        const params = new URLSearchParams({
+          center: `${partCenter.lat.toFixed(7)},${partCenter.lng.toFixed(7)}`, zoom: String(plan.requestZoom),
+          size: `${part.width}x${part.height}`, scale: String(plan.scale),
+          maptype: 'roadmap', format: 'png32', key: googleMapsBrowserKey,
+        });
+        const loaded = new Promise((resolve, reject) => {
+          const timeout = window.setTimeout(() => reject(new Error('Google map export timed out. Try again shortly.')), 10000);
+          image.onload = () => { window.clearTimeout(timeout); resolve(); };
+          image.onerror = () => { window.clearTimeout(timeout); reject(new Error('Google could not render this map view for export. Try again shortly.')); };
+        });
+        image.src = 'https://maps.googleapis.com/maps/api/staticmap?' + params.toString();
+        container.appendChild(image);
+        return { image, part, loaded };
       });
-      const params = new URLSearchParams({
-        center: `${center.lat.toFixed(7)},${center.lng.toFixed(7)}`, zoom: String(plan.requestZoom),
-        size: `${plan.requestWidth}x${plan.requestHeight}`, scale: String(plan.scale),
-        maptype: 'roadmap', format: 'png32', key: googleMapsBrowserKey,
-      });
-      const loaded = new Promise((resolve, reject) => {
-        const timeout = window.setTimeout(() => reject(new Error('Google map export timed out. Try again shortly.')), 10000);
-        image.onload = () => { window.clearTimeout(timeout); resolve(); };
-        image.onerror = () => { window.clearTimeout(timeout); reject(new Error('Google could not render this map view for export. Try again shortly.')); };
-      });
-      image.src = 'https://maps.googleapis.com/maps/api/staticmap?' + params.toString();
-      container.appendChild(image);
-      await loaded;
+      await Promise.all(images.map(({ loaded }) => loaded));
       // Repaint Google's baked-in bottom attribution above Leaflet's boundary panes.
-      // The source image remains direct from Google and the strip is not cropped.
-      const attributionImage = image.cloneNode(false);
-      attributionImage.alt = '';
-      attributionImage.style.top = `${plan.top - (size.y - plan.attributionHeight)}px`;
-      attributionOverlay.appendChild(attributionImage);
+      // The source images remain direct from Google and the strip is not cropped.
+      images.filter(({ part }) => part.bottomRow).forEach(({ image, part }) => {
+        const attributionImage = image.cloneNode(false);
+        attributionImage.alt = '';
+        attributionImage.style.top = `${part.top - (size.y - plan.attributionHeight)}px`;
+        attributionOverlay.appendChild(attributionImage);
+      });
       mapElement.prepend(container);
       mapElement.appendChild(attributionOverlay);
       mapElement.classList.add('google-map-exporting');
@@ -2150,7 +2165,7 @@
       pdf.setTextColor(70, 80, 76); pdf.setFontSize(7.5); pdf.text('Techum area', margin + 9, 29);
       pdf.setFillColor(200, 223, 151); pdf.setDrawColor(79, 113, 61); pdf.rect(margin + 38, 26, 7, 4, 'FD');
       pdf.text('Starting city', margin + 47, 29);
-      const imageData = canvas.toDataURL('image/jpeg', 0.94);
+      const imageData = canvas.toDataURL('image/jpeg', 0.85);
       const maxH = pageH - 45, ratio = canvas.width / canvas.height;
       let imageW = usableW, imageH = imageW / ratio;
       if (imageH > maxH) { imageH = maxH; imageW = imageH * ratio; }
