@@ -3,7 +3,7 @@
  * Pure tile math is exported for unit tests; the Worker fills misses from Overture PMTiles.
  */
 
-import { fetchOvertureBuildings, MAX_OVERTURE_TILES, OVERTURE_RELEASE, tilesForOvertureBBox } from './overture.ts';
+import { fetchOvertureBuildings, MAX_OVERTURE_TILES, OVERTURE_RELEASE, preferLargestDuplicate, tilesForOvertureBBox } from './overture.ts';
 import { applyAcceptedCorrections } from './corrections.ts';
 
 export const TILE_DEG = 0.02; // ~2.2 km at mid-latitudes
@@ -67,14 +67,13 @@ export function tilesForBBox(bbox: BBox): TileCoord[] {
   return out;
 }
 
+/**
+ * One footprint set from several tiles. Tiles filled at different times can hold a footprint cut
+ * differently at an edge; the largest copy is kept, so an answer never depends on which tiles a
+ * request named or their order (the browser keeps the largest copy across answers too).
+ */
 export function mergeBuildings(groups: Building[][]): Building[] {
-  const byId = new Map<string, Building>();
-  for (const group of groups) {
-    for (const b of group) {
-      if (b && b.id && !byId.has(b.id)) byId.set(b.id, b);
-    }
-  }
-  return [...byId.values()];
+  return preferLargestDuplicate(groups.flat().filter((b) => b && b.id && Array.isArray(b.ringLatLon)));
 }
 
 /** Drop buildings fully outside the request bbox (tile fetches can slightly overspill). */

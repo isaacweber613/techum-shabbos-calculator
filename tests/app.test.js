@@ -222,7 +222,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-[12]|20261110-[12]|20261125-[6-8])'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-[12]|20261110-[12]|20261125-(?:[6-9]|10))'));
   }
 });
 
@@ -398,40 +398,64 @@ test('manual footprint import accepts Polygon and MultiPolygon without polygon h
   assert.equal(footprints[0].length, 3, 'closing coordinate is removed');
 });
 
-test('wide expansion areas are split into Worker-sized requests and merged by id', () => {
-  const small = { south: 41.70, west: -74.60, north: 41.72, east: -74.57 };
-  assert.deepEqual(D._internals.splitServerBBox(small), [small], 'ordinary areas stay one exact request');
-  const wide = { south: 40.55, west: -74.08, north: 40.79, east: -73.83 };
-  const parts = D._internals.splitServerBBox(wide);
-  assert.ok(parts.length > 1);
-  const area = (b) => (b.north - b.south) * (b.east - b.west);
-  assert.ok(Math.abs(parts.reduce((sum, b) => sum + area(b), 0) - area(wide)) < 1e-9, 'parts tile the area exactly');
-  for (const part of parts) {
-    assert.ok(part.north > part.south && part.east > part.west);
-    assert.ok(part.south >= wide.south && part.north <= wide.north && part.west >= wide.west && part.east <= wide.east);
-  }
-  const ring = [{ lat: 1, lon: 1 }, { lat: 1, lon: 2 }, { lat: 2, lon: 1 }];
-  const merged = D._internals.mergeServerResponses([
-    { buildings: [{ id: 'a', ringLatLon: ring }, { id: 'b', ringLatLon: ring }], fetchedAt: '2026-10-02T00:00:00Z',
-      checkedAt: '2026-10-02T00:00:00Z', fromCache: true, source: 'local-overture', release: '2026-06-17.0',
-      correctionsApplied: 1, correctionIds: ['c1'] },
-    { buildings: [{ id: 'b', ringLatLon: ring }, { id: 'c', ringLatLon: ring }], fetchedAt: '2026-10-01T00:00:00Z',
-      checkedAt: '2026-10-03T00:00:00Z', fromCache: false, source: 'overture-tiles', release: '2026-06-17.0 + 2026-09-23.1',
-      correctionsApplied: 2, correctionIds: ['c1', 'c2'] },
-  ]);
-  assert.deepEqual(merged.buildings.map((b) => b.id), ['a', 'b', 'c']);
-  assert.equal(merged.fetchedAt, '2026-10-01T00:00:00Z');
-  assert.equal(merged.fromCache, false);
-  assert.equal(merged.source, 'overture-tiles');
-  assert.equal(merged.release, '2026-06-17.0 + 2026-09-23.1');
-  assert.equal(merged.correctionsApplied, 2, 'a correction overlapping two blocks is counted once');
+// Spec rev. 18.3: the search loads whole server tiles (0.02°), packed 6 × 6 into one request each.
+test('wanted tiles are packed into 6 × 6 requests, and an answer is split into its tiles', () => {
+  const near = D._internals.tileRequests(['2055/-3700', '2056/-3699', '2060/-3700']);
+  assert.equal(near.length, 1, 'tiles that fit one server request (6 × 6) make one request');
+  assert.equal(near[0].tiles.length, 12);
+  const requests = D._internals.tileRequests(['2055/-3700', '2055/-3699', '2056/-3700', '2062/-3700']);
+  assert.equal(requests.length, 2, 'tiles in two 6 × 6 boxes make two requests');
+  const [first, second] = requests;
+  assert.deepEqual(first.tiles, ['2055/-3700', '2055/-3699', '2056/-3700', '2056/-3699'], 'the box of a block\'s wanted tiles');
+  assert.ok(Math.abs(first.bbox.south - 41.1) < 1e-9 && Math.abs(first.bbox.north - 41.14) < 1e-9 &&
+    Math.abs(first.bbox.west + 74) < 1e-9 && Math.abs(first.bbox.east + 73.96) < 1e-9, JSON.stringify(first.bbox));
+  assert.deepEqual(second.tiles, ['2062/-3700']);
+  for (const request of requests) assert.ok(request.tiles.length <= 36, 'within the server\'s 36 tiles');
+  // A footprint on a tile edge belongs to both tiles, as on the server.
+  const edge = { id: 'e', ringLatLon: [{ lat: 41.119, lon: -73.99 }, { lat: 41.121, lon: -73.99 }, { lat: 41.121, lon: -73.989 }] };
+  const inside = { id: 'i', ringLatLon: [{ lat: 41.105, lon: -73.99 }, { lat: 41.106, lon: -73.99 }, { lat: 41.106, lon: -73.989 }] };
+  const split = D._internals.splitIntoTiles([edge, inside], first.tiles);
+  assert.deepEqual(split.get('2055/-3700').map((b) => b.id), ['e', 'i']);
+  assert.deepEqual(split.get('2056/-3700').map((b) => b.id), ['e']);
+  assert.deepEqual(split.get('2055/-3699'), []);
 });
 
-test('only brief Worker fill contention is retried automatically', () => {
+test('loaded tiles combine into one footprint set: the largest copy of a footprint wins in any order; corrections count once', () => {
+  const small = [{ lat: 1, lon: 1 }, { lat: 1, lon: 1.001 }, { lat: 1.001, lon: 1 }];
+  const large = [{ lat: 1, lon: 1 }, { lat: 1, lon: 1.002 }, { lat: 1.002, lon: 1 }];
+  const tileA = { buildings: [{ id: 'a', ringLatLon: small }, { id: 'b', ringLatLon: small }], fetchedAt: '2026-10-02T00:00:00Z',
+    checkedAt: '2026-10-02T00:00:00Z', fromCache: true, source: 'local-overture', release: '2026-06-17.0',
+    correctionsApplied: 1, correctionIds: ['c1'] };
+  const tileB = { buildings: [{ id: 'b', ringLatLon: large }, { id: 'c', ringLatLon: small }], fetchedAt: '2026-10-01T00:00:00Z',
+    checkedAt: '2026-10-03T00:00:00Z', fromCache: false, source: 'overture-tiles', release: '2026-06-17.0 + 2026-09-23.1',
+    correctionsApplied: 2, correctionIds: ['c1', 'c2'] };
+  const ab = D.combineTiles([tileA, tileB]), ba = D.combineTiles([tileB, tileA]);
+  assert.deepEqual(ab.buildings.map((b) => b.id).sort(), ['a', 'b', 'c']);
+  assert.equal(ab.buildings.find((b) => b.id === 'b').ringLatLon, large);
+  assert.equal(ba.buildings.find((b) => b.id === 'b').ringLatLon, large, 'the same copy whichever tile came first');
+  assert.equal(ab.fetchedAt, '2026-10-01T00:00:00Z');
+  assert.equal(ab.fromCache, false);
+  assert.equal(ab.source, 'overture-tiles');
+  assert.equal(ab.release, '2026-06-17.0 + 2026-09-23.1');
+  assert.equal(ab.correctionsApplied, 2, 'a correction in two tiles is counted once');
+});
+
+test('a per-network refusal is waited out and request packing keeps a search under the server\'s 30 a minute', () => {
   assert.ok(D._internals.retryDelayMs(429, '1', 0) >= 1000);
-  assert.equal(D._internals.retryDelayMs(429, '60', 0), null, 'per-network rate limits surface to the user');
-  assert.equal(D._internals.retryDelayMs(429, '1', 3), null, 'retries are bounded');
+  assert.equal(D._internals.retryDelayMs(429, '60', 0), 60000, 'a per-network refusal says when the minute ends');
+  assert.equal(D._internals.retryDelayMs(429, '60', 3), null, 'retries are bounded');
   assert.equal(D._internals.retryDelayMs(502, '1', 0), null);
+  // 30 × 30 wanted tiles packed 6 × 6: 25 requests, each within the server's 36 tiles.
+  const keys = [];
+  for (let i = 0; i < 30; i++) for (let j = 0; j < 30; j++) keys.push(`${i}/${j}`);
+  const requests = D._internals.tileRequests(keys);
+  assert.equal(requests.length, 25);
+  for (const request of requests) assert.ok(request.tiles.length <= 36, `${request.tiles.length} tiles in one request`);
+  assert.ok(requests.length <= D._internals.REQUEST_LIMIT);
+  const times = Array.from({ length: 30 }, (_, k) => 1000 + k);
+  assert.ok(D._internals.requestPaceDelay(times, 60000) > 0, 'the 31st request in a minute waits');
+  assert.equal(D._internals.requestPaceDelay(times.slice(0, 29), 60000), 0);
+  assert.equal(D._internals.requestPaceDelay(times, 1000 + 60000), 0, 'the window has passed');
 });
 
 test('snapshots record and restore the shared-correction count used in the audit', () => {
@@ -491,8 +515,7 @@ test('browser building cache keys are versioned with the pinned Overture release
   const release = overture.match(/OVERTURE_RELEASE = '([^']+)'/)[1];
   assert.ok(D._internals.CACHE_VERSION.startsWith(release + '#'),
     'bump CACHE_VERSION in js/data.js when worker/overture.ts adopts a new release');
-  const bbox = { south: 41.7, west: -74.6, north: 41.72, east: -74.57 };
-  assert.equal(D._internals.cacheKey(bbox), `${D._internals.CACHE_VERSION}|${D._internals.bboxKey(bbox)}`);
+  assert.equal(D._internals.tileCacheKey('2085/-3730'), `${D._internals.CACHE_VERSION}|tile|2085/-3730`);
 });
 
 test('PDF summary, recalculation, and race guards follow the current result', () => {
@@ -503,7 +526,7 @@ test('PDF summary, recalculation, and race guards follow the current result', ()
   assert.match(main, /state\.manualBuildings = \[\]; if \(state\.result\) \{ prepareBuildings\(\); recompute\(\); \}/);
   assert.match(main, /if \(!state\.pin \|\| !state\.proj\) return null;/);
   const calc = main.slice(main.indexOf('  async function calculate('), main.indexOf('  function renderPerformanceReport('));
-  assert.ok(calc.indexOf('state.proj = proj') > calc.indexOf('D.fetchBuildingsCached'), 'frame switches only after a fetch succeeds');
+  assert.ok(calc.indexOf('state.proj = proj') > calc.indexOf('D.fetchTilesCached'), 'frame switches only after a fetch succeeds');
   assert.match(calc, /const startPin = state\.pin;/);
   assert.match(calc, /await nextPaint\(\);\s*if \(isStale\(\)\) return;\s*const renderStarted/);
   assert.match(main, /function invalidateCalculationForMovedPin\(\) \{\s*latestAnalysisId\+\+;/);
@@ -511,7 +534,7 @@ test('PDF summary, recalculation, and race guards follow the current result', ()
   const geojson = main.slice(main.indexOf('  function exportGeoJSON('), main.indexOf('  function exportKMZ('));
   assert.doesNotMatch(geojson, /L\.polygon/, 'export must not draw map layers');
   const kml = main.slice(main.indexOf('  function buildKmlText('), main.indexOf('  function exportKML('));
-  assert.match(kml, /if \(canRunComparisonAmah\(\)\)/);
+  assert.match(kml, /if \(!state\.dataCapHit && canRunComparisonAmah\(\)\)/);
   assert.match(main, /K\.buildKMZ\(buildKmlText\(res\)\)/, 'KMZ carries the same layers as KML');
 });
 
@@ -563,31 +586,126 @@ test('public guides name Overture as the footprint source', () => {
   }
 });
 
-// Spec rev. 18.1: load all the map data a result needs; say so when the data limit stops it.
-test('the loader widens until dataFrontier asks for nothing, with only the building-count limit, and an incomplete result says so', () => {
+// Spec revs. 18.3-18.4: load the tiles a result needs; an incomplete result holds the line back
+// unless the older area rule is met, in which case it is dashed and labelled not proven.
+test('the loader adds the tiles dataNeeds names until the result is complete, and an incomplete result draws the old rule\'s line dashed as not proven', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
   const experience = fs.readFileSync(path.join(__dirname, '..', 'js', 'design-experience.js'), 'utf8');
+  const worker = fs.readFileSync(path.join(__dirname, '..', 'js', 'analysis-worker.js'), 'utf8');
   assert.doesNotMatch(main, /maxExpandIterations|neededExpansion/);
   assert.equal('maxExpandIterations' in S.DEFAULTS, false);
-  assert.match(main, /const needed = G\.dataFrontier\(state\.result, state\.proj, bbox, state\.proj\.toXY\(state\.pin\.lat, state\.pin\.lon\)\);\s*if \(!needed\) break;/);
-  assert.match(main, /Incomplete — stopped after \$\{state\.rawBuildings\.length\} buildings/);
-  assert.match(main, /\.\.\.\(state\.dataCapHit \? \{ dashArray: '10 7' \} : \{\}\)/);
-  assert.match(main, /INCOMPLETE: the map data ran out/);
-  // The data-limit note is first in the answer, before every other note.
+  assert.match(main, /let wanted = G\.tilesForDegrees\(bboxAround\(state\.pin, settings\.fetchRadiusM\)\);/);
+  assert.match(main, /const needs = state\.needs;\s*if \(needs && needs\.complete\) break;/);
+  assert.match(main, /wanted = needs\.tiles;/);
+  assert.match(worker, /self\.TechumGeo\.dataNeeds\(buildings, result,/);
+  assert.match(main, /Incomplete — the towns within 2000 amos of one another go on past the/);
+  assert.match(main, /const unproven = unprovenLineAllowed\(\);/);
+  assert.match(main, /const drawBoundary = !state\.dataCapHit \|\| unproven;/);
+  assert.match(main, /\.\.\.\(unproven \? \{ dashArray: '10 7' \} : \{\}\)/);
+  assert.match(main, /' · not proven'/);
+  assert.match(main, /if \(drawBoundary && document\.getElementById\('layer-techum'\)\.checked\)/);
+  assert.match(main, /if \(drawBoundary && document\.getElementById\('layer-city'\)\.checked\)/);
+  // The not-finished note is first in the answer, before every other note, and says what is known.
   const panel = main.slice(main.indexOf('    const lines = [];'));
   assert.ok(panel.indexOf('data-limit') >= 0 && panel.indexOf('data-limit') < panel.indexOf('Provisional smaller boundary'));
-  assert.match(experience, /incomplete \? 'This result is incomplete'/);
-  assert.match(experience, /Pink dashed area = an incomplete draft\. Do not rely on it\./);
+  assert.match(main, /Incomplete: the line is not proven/);
+  assert.match(main, /Incomplete: no boundary drawn/);
+  assert.match(main, /Not known: whether the three-villages rule joins it to more towns/);
+  assert.match(experience, /unproven \? 'Incomplete: the line is not proven' : incomplete \? 'Incomplete: no boundary drawn'/);
+  assert.match(experience, /The map shows no techum\./);
 });
 
-test('extra lines are checked with dataFrontier and labelled incomplete when the loaded data does not cover them', () => {
+test('an incomplete result keeps the line only while the rev. 18.1 area rule is met; a failed load or cut-off area draws none', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
-  assert.match(main, /const res2Incomplete = scenarioIncomplete\(res2\)/);
-  assert.match(main, /const resVIncomplete = scenarioIncomplete\(resV\)/);
-  assert.match(main, /G\.dataFrontier\(scenario, state\.proj, state\.fetchBBox/);
-  assert.match(main, /Comparison line incomplete/);
-  assert.match(main, /Verified-dwellings line incomplete/);
-  assert.match(main, /INCOMPLETE: needs map data that was not loaded/);
+  const source = main.slice(main.indexOf('  function unprovenLineAllowed() {'), main.indexOf('  function tilesExtent('));
+  assert.match(source, /G\.dataFrontier\(state\.result, state\.proj, loaded, state\.proj\.toXY\(state\.pin\.lat, state\.pin\.lon\)\)/);
+  const make = ({ reason = 'buildings', view = { tiles: ['1/1'] }, frontier = null } = {}) => {
+    const ctx = {
+      state: { dataCapHit: true, dataCapReason: reason, result: { clusters: [] }, pin: { lat: 41, lon: -74 },
+        proj: { lat0: 41, lon0: -74, toXY: () => ({ x: 0, y: 0 }) } },
+      loadedView: () => view,
+      tilesExtent: (keys) => ({ south: 1, west: 2, north: 3, east: 4, from: keys.length }),
+      frontierArgs: null,
+      G: { dataFrontier(...args) { ctx.frontierArgs = args; return frontier; } },
+    };
+    const fn = vm.runInNewContext(`(${source.trim()})`, ctx);
+    return { fn, ctx };
+  };
+  const met = make();
+  assert.equal(met.fn(), true, 'the older rule is met: draw the dashed line');
+  assert.equal(JSON.stringify(met.ctx.frontierArgs[2]), JSON.stringify({ south: 1, west: 2, north: 3, east: 4, from: 1 }),
+    'a tile-loaded area is read as its one box, as the rev. 18.1 rule did');
+  const bbox = make({ view: { bbox: { south: 0, west: 0, north: 1, east: 1 } } });
+  assert.equal(bbox.fn(), true);
+  assert.equal(JSON.stringify(bbox.ctx.frontierArgs[2]), JSON.stringify({ south: 0, west: 0, north: 1, east: 1 }), 'an older snapshot\'s box is checked');
+  assert.equal(make({ frontier: { south: 0, west: 0, north: 2, east: 2 } }).fn(), false, 'the older rule also fails: no line');
+  assert.equal(make({ reason: 'failed' }).fn(), false, 'loading failed: no line');
+  assert.equal(make({ view: null }).fn(), false, 'a snapshot with no recorded area cannot be checked: no line');
+});
+
+test('an incomplete result says what is known for a pin on a house and a pin in a field', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const source = main.slice(main.indexOf('  function incompleteText('), main.indexOf('  function renderPanel('));
+  const incompleteText = vm.runInNewContext(`(${source.trim()})`, {});
+  const chain = { towns: 215, buildings: 22707, openTowns: 72, widthM: 13500, heightM: 9000 };
+  const onHouse = incompleteText({}, { basis: 'building', ownTown: { buildings: 2820, whole: true }, chain });
+  assert.match(onHouse, /^Known: the pin's building is in a town of 2,820 footprints/);
+  assert.match(onHouse, /every place within 2000 amos of them is inside the techum\. Not known: whether the three-villages rule joins it to more towns\./);
+  assert.match(onHouse, /followed 215 towns so far, across about 13\.5 km\./);
+  for (const needs of [{ basis: 'none', ownTown: null, chain }, { basis: 'building', ownTown: { buildings: 40, whole: false }, chain }, null]) {
+    const text = incompleteText({}, needs);
+    assert.match(text, /^Known: every place within 2000 amos of the pin is inside the techum, whatever else the map holds\. Not known: whether the three-villages rule joins the towns near the pin to more towns\./);
+    assert.doesNotMatch(text, /pin's building/);
+  }
+});
+
+test('an incomplete result exports no boundary in KML or GeoJSON unless the dashed not-proven line is drawn; a comparison line is exported only when the map would draw it', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  const exportsSource = main.slice(main.indexOf('  // An incomplete result has no proven boundary (spec rev. 18.3).'), main.indexOf('  function exportKMZ() {'));
+  const auditSource = main.slice(main.indexOf('  function exportAuditLayers('), main.indexOf('  // Export libraries load on first use'));
+  const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+  const res = { techumCorners: square, cityCorners: square, karpefCorners: square, techumRegions: [square], cityRegions: [square],
+    karpefRegions: [square], clusters: [{ corners: square }], concavityAudit: [] };
+  const run = ({ dataCapHit, comparisonComplete, partial = false }) => {
+    const files = {};
+    const ctx = {
+      state: { dataCapHit, pin: { lat: 41, lon: -74 }, proj: { toXY: () => ({ x: 0, y: 0 }), toLatLon: (x, y) => ({ lat: 41 + y / 1e5, lon: -74 + x / 1e5 }) },
+        buildings: [{ ring: square }], result: res },
+      settings: { secondAmahCm: 57.6 }, K, D: { computeDataConfidence: () => null },
+      G: { runPipeline: () => res }, canRunComparisonAmah: () => true, geometrySettings: () => ({}),
+      unprovenLineAllowed: () => dataCapHit && partial,
+      loadedView: () => ({ tiles: ['1/1'] }), needsOf: () => ({ complete: comparisonComplete }),
+      cornersToLatLngs: (corners) => corners.map((p) => [41 + p.y / 1e5, -74 + p.x / 1e5]),
+      configText: () => 'config', setStatus() {}, track() {},
+    };
+    ctx.K = { ...K, download: (name, text) => { files[name] = text; } };
+    vm.runInNewContext(auditSource + exportsSource + '; exportKML(); exportGeoJSON();', ctx);
+    return { kml: files['techum-draft.kml'], layers: JSON.parse(files['techum-draft.geojson']).features.map((feature) => feature.properties.layer) };
+  };
+  const cut = run({ dataCapHit: true, comparisonComplete: true });
+  for (const name of ['TECHUM boundary', 'City starting area', 'Karpef', 'Comparison shita techum', 'Derived settlement']) assert.ok(!cut.kml.includes(name), name);
+  assert.ok(cut.kml.includes('Shevisa point') && cut.kml.includes('Mapped building 1'));
+  assert.deepEqual([...new Set(cut.layers)].sort(), ['mapped-building', 'shevisa-point']);
+  const partial = run({ dataCapHit: true, comparisonComplete: true, partial: true });
+  for (const name of ['TECHUM boundary', 'City starting area', 'Karpef']) assert.ok(partial.kml.includes(name), name);
+  for (const name of ['Comparison shita techum', 'Derived settlement']) assert.ok(!partial.kml.includes(name), name);
+  assert.ok(partial.layers.includes('techum') && partial.layers.includes('city-ribua') && !partial.layers.includes('derived-settlement'));
+  const done = run({ dataCapHit: false, comparisonComplete: true });
+  for (const name of ['TECHUM boundary', 'City starting area', 'Karpef', 'Comparison shita techum', 'Derived settlement']) assert.ok(done.kml.includes(name), name);
+  assert.ok(done.layers.includes('techum') && done.layers.includes('derived-settlement'));
+  const comparisonCut = run({ dataCapHit: false, comparisonComplete: false });
+  assert.ok(comparisonCut.kml.includes('TECHUM boundary') && !comparisonCut.kml.includes('Comparison shita techum'));
+});
+
+test('extra lines are checked with dataNeeds and not drawn when the loaded data does not cover them', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'js', 'main.js'), 'utf8');
+  assert.match(main, /const res2Incomplete = scenarioIncomplete\(res2, state\.buildings\)/);
+  assert.match(main, /const resVIncomplete = scenarioIncomplete\(resV, verifiedB\)/);
+  assert.match(main, /!needsOf\(used, scenario, state\.proj\.toXY\(state\.pin\.lat, state\.pin\.lon\), loaded\)\.complete/);
+  assert.match(main, /if \(!res2Incomplete\)\s*addRegions/);
+  assert.match(main, /if \(resV\.techumCorners && !resVIncomplete\)/);
+  assert.match(main, /Comparison line not drawn/);
+  assert.match(main, /Verified-dwellings line not drawn/);
 });
 
 test('an exported PNG of an incomplete result says so in its caption; a complete one keeps its three lines', () => {
@@ -595,11 +713,15 @@ test('an exported PNG of an incomplete result says so in its caption; a complete
   const mapExport = require('../js/map-export.js');
   const plain = mapExport.exportCaptionLines({ label: 'Town', profileLabel: 'Mishna Berurah', amahCm: 48 });
   const cut = mapExport.exportCaptionLines({ label: 'Town', profileLabel: 'Mishna Berurah', amahCm: 48, incomplete: true });
+  const partial = mapExport.exportCaptionLines({ label: 'Town', profileLabel: 'Mishna Berurah', amahCm: 48, incomplete: true, partial: true });
   assert.equal(plain.length, 3);
   assert.equal(plain.some((line) => /INCOMPLETE/.test(line)), false);
   assert.equal(cut.length, 4);
   assert.match(cut[2], /^INCOMPLETE/);
+  assert.match(cut[2], /no boundary is drawn/);
+  assert.match(partial[2], /dashed boundary is not proven/);
   assert.match(main, /incomplete: state\.dataCapHit/);
+  assert.match(main, /partial: unprovenLineAllowed\(\)/);
 });
 
 // A re-analysis of the loaded buildings (a changed setting or profile) runs main.js recompute
@@ -614,7 +736,8 @@ const pendingTests = [];
       state: { pin: { lat: 41, lon: -74 }, proj: { toXY: () => ({ x: 0, y: 0 }) }, buildings: [], fetchBBox,
         fromSnapshot, dataCapHit, dataCapReason: dataCapHit ? 'buildings' : null, result: null },
       latestAnalysisId: 0, isIncluded: () => true, geometrySettings: () => ({}),
-      runPipelineAsync: async () => ({ mode: 'city' }), G: { dataFrontier: () => more },
+      loadedView: () => (fetchBBox ? { bbox: fetchBBox } : null),
+      runPipelineAsync: async () => ({ result: { mode: 'city' }, needs: { complete: !more, tiles: more ? ['1/1'] : [] } }),
       calculate: () => { calls.calculate++; }, render: () => { calls.render++; }, setRetryVisible: () => {}, setStatus: () => {},
     };
     await vm.runInNewContext(`(${source.trim()})()`, ctx);
@@ -641,5 +764,96 @@ test('typed coordinates go to that point, not to a street named after the number
   assert.deepEqual([D.parseCoordinates('41.117991 -74.059432').lon], [-74.059432]);
   for (const text of ['117 Main Street', '95, 20', '12, 200', 'Monsey']) assert.equal(D.parseCoordinates(text), null, text);
 });
+
+{
+  // A tile the server answers from its own store keeps the server's cache flag and date, so the
+  // status line says how old the data is instead of calling it fresh.
+  const name = "a tile the server answers from its own store keeps the server's cache flag and date";
+  const realFetch = globalThis.fetch;
+  const asked = [];
+  const run = async (serverCached) => {
+    globalThis.fetch = async (url) => {
+      asked.push(String(url));
+      return { ok: true, status: 200, headers: { get: () => null },
+        json: async () => ({ buildings: [], fetchedAt: '2026-07-13T00:00:00Z', checkedAt: '2026-07-13T00:00:00Z',
+          fromCache: serverCached, source: 'overture-tiles', release: '2026-06-17.0', correctionIds: [] }) };
+    };
+    const { tiles, requests } = await D.fetchTilesCached(['2055/-3703', '2055/-3702']);
+    assert.equal(requests, 1, 'two neighbouring tiles come in one request');
+    assert.equal(tiles.size, 2);
+    for (const record of tiles.values()) {
+      assert.equal(record.fromCache, serverCached);
+      assert.equal(record.fetchedAt, '2026-07-13T00:00:00Z');
+    }
+    assert.equal(D.combineTiles([...tiles.values()]).fromCache, serverCached);
+    assert.equal(D.combineTiles([...tiles.values()]).source, 'overture-tiles', 'a server answer is labelled as one, cached there or not');
+  };
+  pendingTests.push(run(true).then(() => run(false))
+    .then(() => {
+      assert.match(asked[0], /^\/api\/buildings\?south=41\.1&west=-74\.06&north=41\.12&east=-74\.02$/);
+      passed++; console.log('  ok  ' + name);
+    })
+    .catch((e) => { console.error('FAIL  ' + name + ' — ' + e.message); process.exitCode = 1; })
+    .finally(() => { globalThis.fetch = realFetch; }));
+}
+
+{
+  // A per-network refusal (429, Retry-After: 60) is waited out and the request retried, so one
+  // refusal no longer ends the search.
+  const name = 'a per-network refusal is waited out and the request retried instead of failing the search';
+  const realFetch = globalThis.fetch;
+  const realSetTimeout = globalThis.setTimeout;
+  const waits = [];
+  let calls = 0;
+  const refusalRun = async () => {
+    globalThis.setTimeout = (fn, ms) => { waits.push(ms); return realSetTimeout(fn, 0); };
+    globalThis.fetch = async () => {
+      calls++;
+      if (calls === 1) {
+        return { ok: false, status: 429, headers: { get: (name) => (name === 'Retry-After' ? '60' : null) },
+          json: async () => ({ error: 'buildings rate limit exceeded' }) };
+      }
+      return { ok: true, status: 200, headers: { get: () => null },
+        json: async () => ({ buildings: [], fetchedAt: '2026-07-13T00:00:00Z', checkedAt: '2026-07-13T00:00:00Z',
+          fromCache: false, source: 'overture-tiles', release: '2026-06-17.0', correctionIds: [] }) };
+    };
+    try {
+      const { tiles, requests } = await D.fetchTilesCached(['2099/-3799']);
+      assert.equal(calls, 2, 'the refused request was sent again');
+      assert.equal(requests, 1);
+      assert.equal(tiles.size, 1);
+      assert.ok(waits.includes(60000), `waits: ${waits.join(',')}`);
+      passed++; console.log('  ok  ' + name);
+    } catch (e) {
+      console.error('FAIL  ' + name + ' — ' + e.message); process.exitCode = 1;
+    } finally { globalThis.fetch = realFetch; globalThis.setTimeout = realSetTimeout; }
+  };
+  // Run after the cache-flag block, which swaps globalThis.fetch too.
+  pendingTests.push(Promise.all(pendingTests).then(refusalRun));
+}
+
+{
+  // The building-count limit stops the loader with the nearest tiles added, so a dense town's
+  // search keeps as much of its own area as fits and can still draw the dashed not-proven line.
+  const name = 'the loader stops at the building-count limit with the nearest tiles added';
+  const realFetch = globalThis.fetch;
+  const run = async () => {
+    globalThis.fetch = async () => ({ ok: true, status: 200, headers: { get: () => null },
+      json: async () => ({ buildings: [
+        { id: 'a', ringLatLon: [{ lat: 0.03, lon: 0.03 }, { lat: 0.031, lon: 0.03 }, { lat: 0.03, lon: 0.031 }] },
+        { id: 'b', ringLatLon: [{ lat: 0.03, lon: 0.05 }, { lat: 0.031, lon: 0.05 }, { lat: 0.03, lon: 0.051 }] },
+      ], fetchedAt: '2026-07-13T00:00:00Z', checkedAt: '2026-07-13T00:00:00Z', fromCache: false,
+      source: 'overture-tiles', release: '2026-06-17.0', correctionIds: [] }) });
+    try {
+      const { tiles, truncated } = await D.fetchTilesCached(['1/1', '1/2'], { maxBuildings: 1, loadedBuildings: 0 });
+      assert.equal(truncated, true);
+      assert.deepEqual([...tiles.keys()], ['1/1'], 'the first tile fits the limit; the second does not');
+      assert.equal(tiles.get('1/1').buildings[0].id, 'a');
+    } finally { globalThis.fetch = realFetch; }
+  };
+  pendingTests.push(Promise.all(pendingTests).then(run)
+    .then(() => { passed++; console.log('  ok  ' + name); })
+    .catch((e) => { console.error('FAIL  ' + name + ' — ' + e.message); process.exitCode = 1; }));
+}
 
 Promise.all(pendingTests).then(() => console.log(`\n${passed} app tests passed`));

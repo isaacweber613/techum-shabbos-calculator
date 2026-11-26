@@ -112,6 +112,15 @@ test('mergeBuildings dedupes by id across tiles', () => {
   assert.deepEqual(merged.map((x) => x.id).sort(), ['w1', 'w2']);
 });
 
+test('mergeBuildings keeps the largest copy of a footprint cut differently in two tiles, in either order', () => {
+  const small = [{ lat: 0, lon: 0 }, { lat: 0, lon: 1 }, { lat: 1, lon: 0 }];
+  const large = [{ lat: 0, lon: 0 }, { lat: 0, lon: 2 }, { lat: 2, lon: 0 }];
+  const cut = [{ id: 'w1', tags: {}, ringLatLon: small }];
+  const whole = [{ id: 'w1', tags: {}, ringLatLon: large }];
+  assert.equal(mergeBuildings([cut, whole])[0].ringLatLon, large);
+  assert.equal(mergeBuildings([whole, cut])[0].ringLatLon, large);
+});
+
 test('filterBuildingsToBBox keeps intersecting footprints', () => {
   const ring = (west: number, south: number, east: number, north: number) => [
     { lon: west, lat: south }, { lon: east, lat: south },
@@ -173,14 +182,18 @@ test('client request splitting always produces bboxes this Worker accepts', () =
     { south: 51.43, west: -0.31, north: 51.6, east: 0.02 },
   ];
   for (const area of areas) {
-    const parts = clientData._internals.splitServerBBox(area);
+    // The browser asks for whole tiles ('i/j'), one tile-aligned box per 0.1° block.
+    const wanted = tilesForBBox(area).map((tile) => `${tile.i}/${tile.j}`);
+    const parts = clientData._internals.tileRequests(wanted);
     assert.ok(parts.length > 1, 'test areas exceed one request');
     for (const part of parts) {
-      assert.ok(isValidBBox(part), `invalid part ${JSON.stringify(part)}`);
-      assert.ok(tilesForBBox(part).length <= MAX_TILES_PER_REQUEST, `too many tiles ${JSON.stringify(part)}`);
+      assert.ok(isValidBBox(part.bbox), `invalid part ${JSON.stringify(part.bbox)}`);
+      const served = tilesForBBox(part.bbox).map((tile) => `${tile.i}/${tile.j}`);
+      assert.ok(served.length <= MAX_TILES_PER_REQUEST, `too many tiles ${JSON.stringify(part.bbox)}`);
+      assert.deepEqual(served.sort(), part.tiles.slice().sort(), 'the Worker serves exactly the tiles the browser files the answer under');
     }
-    const covered = new Set(parts.flatMap((part) => tilesForBBox(part).map((tile) => tile.key)));
-    for (const tile of tilesForBBox(area)) assert.ok(covered.has(tile.key), `tile ${tile.key} not requested`);
+    const covered = new Set(parts.flatMap((part) => part.tiles));
+    for (const key of wanted) assert.ok(covered.has(key), `tile ${key} not requested`);
   }
 });
 

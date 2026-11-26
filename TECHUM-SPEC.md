@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 18.2, 2026-11-25) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 18.4, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -947,6 +947,164 @@ questions listed there. Rev. 18.1 already took its loading and street-pin fixes.
   "Map classes with no ruling" and "The 12-mil comparison ring".
 - No psak default changed. Golden tests: `tests/spec-golden.test.js` (162 checks, 5 pending).
 
+### Rev. 18.3 — 2026-11-25 (when the loaded map data is enough, proven; no psak default changes)
+
+Rev. 18.1's loading rule was not a proof: on 300 made-up maps the home town came out smaller,
+depending on where loading started, in 138 maps (274 of 900 runs). Every failure was a join the
+loader never saw: a middle village cut by the edge of the loaded area, or a village beyond the
+first 2000 amos that a join made one after another needed. This revision replaces the rule with
+one that is proven, and says plainly when a result cannot be finished.
+
+- **The rule.** The engine applies its rules only to the footprints loaded. Call the *towns*
+  the groups of houses within 70⅔ amos of one another that qualify as a city, joined by the
+  141⅓-amah rule, before any three-villages join. The *chain* of the home town is the towns
+  that make it up, every town within 2000 amos of one of them, every town within 2000 amos of
+  those, and so on until no town is added. **The home town and its boundary cannot change,
+  whatever the rest of the map holds, if the loaded data holds every town of the chain whole,
+  with the 2000 amos around each town.** A town is whole when the loaded data holds every
+  footprint within 70⅔ amos of its houses and within 141⅓ amos of it, and every group of
+  houses that close is whole too. The drawn techum and the houses joined to the pin's own
+  building are loaded as well (`dataNeeds` in `js/geometry.js`).
+- **Why that is enough.** Then every footprint within 2000 amos of a town of the chain is
+  loaded, and every town that close is in the chain, exactly as with all the map data. A
+  three-villages join needs its middle village within 2000 amos of each outer village (§1.4);
+  a village made by earlier joins is within 2000 amos of another only through one of its own
+  towns. So in every round of joins (§1.5 step 2), a join that involves a town of the chain
+  involves only towns of the chain, and whether it is made depends only on their loaded
+  houses. Round by round, the chain's towns join exactly as they would with all the map data,
+  and so the home town, its squaring, its bow and hole review, its karpef and its techum come
+  out the same. The 141⅓-amah joins and the 70⅔-amah groups are settled by the "whole"
+  condition before any of this.
+- **Why nothing smaller works.** A far village can change the home town through joins made
+  one after another: it joins two villages; the joined village then fits as the middle village
+  between two others; and so on until a join reaches the home town. Two made-up maps in
+  `tests/geometry.test.js` ("cascade"): with a village two 2000-amah steps out, the home town
+  has 66 houses, and 6 without that village; with three steps, 78 and 6, joined in rounds 1, 2
+  and 3. The same construction works any number of steps out, so no fixed distance and no
+  fixed number of steps is enough. From the app's 1,200 m start, rev. 18.1's rule gives 6
+  houses on both maps; a rule of two 2000-amah steps gets the two-step map right and gives 6
+  on the three-step map.
+- **A pin that is not on a house of its town.** When the pin is in a field, or beside a town
+  outside its walls, another town's squared area could also hold it, so every town within 2000
+  amos of the pin starts a chain too. Under the joining overlap rules (the Chazon Ish profile),
+  another town's squared area can overlap the home town's, so the home town's squared area is
+  loaded whole and every town with a house in it starts a chain. **Stated limit:** a town whose
+  own squared area reaches back over the pin, or over the home town's squared area, from
+  beyond all of those chains is not looked for. Its square would have to reach more than 2000
+  amos past its own houses toward the pin; that cannot be ruled out without loading everything.
+- **How the app loads.** The map data comes in whole server tiles of 0.02°, and a loaded tile
+  holds every footprint that touches it. The app loads the tiles around the pin first, then on
+  each pass only the tiles the chain still needs, instead of a widening box: one request when
+  the wanted tiles fit in one server request (6 × 6 tiles), otherwise one per 0.1° block, and
+  each tile cached on its own in the browser. A footprint cut differently at a tile
+  edge keeps its largest copy, in the browser and on the server, so the data never depends on
+  the order the tiles came in.
+- **The data limit.** The 40,000-building default was set on 2026-07-12, raised from 30,000
+  "so Brooklyn-sized calculations can finish their boundary expansion"; no measurement is
+  recorded. It is still the only stop, a setting, and it stays at 40,000, because no
+  measurement gives a better number. Measured on saved production data: the engine takes
+  about 50 µs a footprint each pass (46,245 footprints: 1.9 s; 80,688: 4.0 s, in Node on a
+  desktop). At 31,000 to 34,000 footprints the server's answers come to 40 to 77 MB before
+  compression and 6 to 10 MB compressed, and the browser's main thread held 43 to 162 MB. A
+  higher limit does not finish the dense places (below). The other measured stop is the
+  server's own: it answers 30 requests a minute from one network (`wrangler.jsonc`), and a
+  request refused for that is not retried. When the limit is reached, or a request fails,
+  the result is **incomplete**.
+- **What an incomplete result shows.** No boundary is drawn: neither the pink techum
+  nor the green starting area, and no comparison line. The answer says what is known and what
+  is not. Known: when the pin is on a house, the town of that house (its houses within 70⅔
+  amos of one another, or 141⅓ amos between groups), once loaded whole, belongs to the home
+  town whatever the rest of the map holds, so every place within 2000 amos of its houses is
+  inside the techum. For any other pin: every place within 2000 amos of the pin is inside the
+  techum, since a town that holds the pin is measured from its edge and the pin is inside it.
+  Not known: whether the three-villages rule joins the town, or the towns near the pin, to
+  more towns. The status line, answer card, audit text and exported image say so.
+- **A large city's edge.** The spec sets no limit on a city's size (Part 7, question 3): a city
+  ends where its houses stop joining. With the three-villages rule applied again and again to
+  villages it has already joined (§1.5 step 2), any chain of towns within 2000 amos of one
+  another can still be joined further by a far village, so the edge of a large built-up region
+  is known only once the whole region is loaded. Whether a village made by three-villages joins
+  counts as one village for a further join is now an open question (Part 7, "Villages already
+  joined by the three-villages rule").
+- **Results.** On the review's 300 made-up maps, every pin in the home town, every start and
+  every profile order now gives the same home town and boundary: 0 of 55,188 runs differ
+  (rev. 18.1: 274 of 900 runs, in 138 maps). Real places, on saved production data, Mishna
+  Berura and Chazon Ish: Kiryas Joel (Mishna Berura, 1,224 houses), Hunter (230 and 426),
+  Woodbourne (92 and 615) and a lone farmhouse in Iowa (its own walls, both) are now proven,
+  each with the same houses as rev. 18.1. Monsey, New Square, Lakewood, Boro Park and
+  Jerusalem are incomplete under both profiles, and Kiryas Joel under the Chazon Ish profile:
+  the towns within 2000 amos of one another run past 40,000 footprints. With the limit raised
+  to 150,000, Monsey by Mishna Berura was still open after 135,656 footprints: 609 towns across
+  31 km, 77 of them still needing map data around them. Rev. 18.1 drew a line
+  for Monsey (2,820 houses), New Square (6,193), Lakewood (4,217) and Kiryas Joel by the Chazon
+  Ish (16,376) from data cut off inside such a chain. Those lines were not proven, and cut-off
+  data moves them either way: New Square by Mishna Berura gave 6,193 houses from data reaching
+  5 km from the pin, 7,015 from 6 km and 6,193 again from 8 to 12 km.
+- **Open: speed.** The proof costs time where small villages lie within 2000 amos of one
+  another for many kilometres. Measured in the browser on a local copy, Mishna Berura:
+  Woodbourne 0.9 s before, 26.4 s now (12 passes, 26 requests); Hunter 0.9 s and 1.0 s; the
+  farmhouse 0.4 s and 1.0 s. Under the Chazon Ish profile Woodbourne needs 46 requests and the
+  farmhouse 50, more than the server answers from one network in a minute. Fewer, larger
+  requests and a cheaper search between passes are not done here.
+- No psak default changed. Engine 1.6.0. Tests: `tests/geometry.test.js` and
+  `tests/app.test.js` (spec rev. 18.3 cases); `tests/buildings-cache.test.ts` (tile requests,
+  largest copy); `scripts/loading-proof.cjs` (the 300 made-up maps, about 15 minutes).
+
+### Rev. 18.4 — 2026-11-25 (the line a dense town keeps, and a search the server can answer; no psak default changes)
+
+- **The line a dense town keeps.** When the rev. 18.3 proof cannot finish inside the
+  building-count limit, the result is still incomplete, but it now draws the rev. 18.1 area
+  rule's line dashed and calls it "not proven" instead of drawing nothing. The rule
+  (`dataFrontier` in `js/geometry.js`) is unchanged and still reads the loaded area as one box.
+  The line is drawn only while that rule is met for the result and the loaded extent; when it
+  also fails, or loading failed, no line is drawn. The map label, answer card, status line,
+  audit text, KML/KMZ/GeoJSON and PNG caption all say the line is not proven. This is a display
+  rule; the halachic result is the rev. 18.3 one.
+- **The limit stops the loading, not the other way round.** Tiles are added in the caller's
+  order (nearest the home town's chain first) only while the building-count limit has room, so a
+  dense town's search reaches the limit holding its own area rather than a corner of the last
+  box. The analyzed set is therefore at or below the limit, and the dashed line can be drawn
+  where the area rule is met.
+- **Requests the server can answer.** The loader packs wanted tiles into 6 × 6 boxes (at most
+  36 tiles, one request each; `tileRequests` in `js/data.js`) and keeps this tab under the
+  server's 30 requests a minute (`wrangler.jsonc`) by waiting before a request that would be the
+  31st in the last minute. A per-network refusal (`429` with `Retry-After: 60`) is waited out and
+  the request retried instead of ending the search. The local development proxy (`serve.mjs`)
+  now passes `Retry-After` and `X-Building-Fill-Remaining` through so a local copy behaves the
+  same.
+- **Speed work.** One request is one 6 × 6 window; each pass also asks for one ring of tiles
+  around the tiles `dataNeeds` names, so towns one 2000-amah step farther load in the same pass
+  (Woodbourne by Mishna Berura: 12 passes and 26 requests, now 5 passes and 14 requests).
+  Browser cache reads and writes for a pass go in one IndexedDB transaction instead of one per
+  tile. A footprint already projected for this pin is reused on later passes; a larger copy that
+  replaces a cut one at a tile edge is a new object and is prepared again. `nextPaint` no longer
+  waits forever for a frame in a hidden tab.
+- **Measured in the browser on a local copy** (the shared Chrome, production map data through
+  the local proxy; `master` is the released `3e09ba1`, run the same way). "First" is the first
+  visit with a cleared browser cache, "repeat" the same place straight after; seconds are the
+  app's calculation time until the answer shows.
+
+  | Place | Profile | Requests (first) | First (s) | Repeat (s) | master (s) |
+  |---|---|---:|---:|---:|---:|
+  | Woodbourne NY | Mishna Berura | 14 | 37.8 | 6.9 | 5.3 |
+  | Woodbourne NY | Chazon Ish | 19 | 33.2 | 9.6 | 4.9 |
+  | Iowa farmhouse | Mishna Berura | 1 | 2.7 | 0.6 | 1.3 |
+  | Iowa farmhouse | Chazon Ish | 1 | 0.5 | 0.1 | 3.7 |
+  | Monsey NY | Mishna Berura | 3 | 4.7 | 3.0 | 15.2 |
+  | Monsey NY | Chazon Ish | 3 | 10.2 | 6.5 | 16.9 |
+  | Lakewood NJ | Mishna Berura | 3 | 36.3 | 4.5 | 7.8 |
+  | Lakewood NJ | Chazon Ish | 3 | 8.2 | 5.9 | 16.1 |
+
+  Woodbourne and the Iowa farmhouse are proven under both profiles. Monsey and Lakewood are
+  incomplete; their dashed not-proven line is drawn by Mishna Berura, and not by Chazon Ish
+  because there the rev. 18.1 area rule itself is not met. The first visit pays the server's
+  cold fill for tiles no earlier run had (Woodbourne 37.8 s, Lakewood 36.3 s); the repeat is the
+  steady state. `master` was measured once per place, so its numbers carry the same network
+  noise.
+- No psak default changed. Engine 1.6.0. Tests: `npm test` (`tests/app.test.js`, 54 tests;
+  `tests/geometry.test.js`; `tests/spec-golden.test.js`; the Worker suites) and
+  `npm run typecheck`.
+
 ## Part 3 — Product spec
 
 ### 3.0 Scope & users
@@ -983,7 +1141,7 @@ questions listed there. Rev. 18.1 already took its loading and street-pin fixes.
 
 ```
 address ─► geocode ─► snap to footprint + disclosed confirmation requirement
-        ─► fetch Overture footprints with expanding-radius PMTiles queries
+        ─► fetch Overture footprints by whole 0.02° tile until nothing outside can change the result (rev. 18.3)
         ─► classify dwellings (tags + heuristics + manual override)
         ─► local true-north tangent/equirectangular projection, all math in meters
         ─► ibur: buffer by (70⅔·amah)/2, union, dissolve → city clusters
@@ -1048,7 +1206,7 @@ engineering is easy; the psak configuration is the project.**
 
 ## Part 6 — Technical stack (implemented and planned; audited 2026-07-12)
 
-- **Footprints — implemented:** automatic Overture Buildings PMTiles, expanding fetch,
+- **Footprints — implemented:** automatic Overture Buildings PMTiles, loaded by whole tile as the result needs (rev. 18.3),
   IndexedDB + R2 tile input cache, per-building overrides, shared reviewed corrections,
   and manual two-click rectangle/polygon drawing. Overture fuses OSM and ML-derived sources.
 - **Dwelling tags:** many Overture buildings have no decisive use class, especially ML
@@ -1156,6 +1314,17 @@ non-dwellings. Which of these is a beis dirah?
 **The 12-mil comparison ring** (open, added rev. 18.2). The engine draws the 24,000-amah ring
 beyond the Rema karpef, like the 2000. Is the d'oraisa 12 mil measured from the karpef or from
 the city's own edge? The ring is off by default.
+
+**Villages already joined by the three-villages rule** (open, added rev. 18.3). §1.5 step 2
+runs the 141⅓-amah and three-villages joins again and again until nothing changes, so two
+villages joined through a middle village are then tested as one village, with their combined
+outline, against further villages. SA HaRav 398:12 speaks of actual villages. Does a village
+made by three-villages joins count as one village for a further join, as an outer or a middle
+village? If it does (the default), a far village can change a town through joins made one
+after another, and in a dense built-up region no boundary is known until the whole region is
+loaded (rev. 18.3). If only actual villages count, each join is decided by the villages in it,
+and the map data a result needs ends where the joins end. Default unchanged: a joined village
+counts as one village.
 
 **Validation benchmarks:** the tool is city-agnostic; these are continuing cross-checks,
 not scope or release blockers:

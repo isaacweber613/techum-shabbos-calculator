@@ -243,7 +243,9 @@
   // Every cache key carries this version. Keep it in step with worker/overture.ts
   // OVERTURE_RELEASE (and bump the suffix when cached areas must refill for another reason,
   // e.g. the shared-correction set). Entries under any other version are deleted on first use.
-  const CACHE_VERSION = '2026-09-23.1#1';
+  // '#2': map data is cached by whole server tile (spec rev. 18.3); the older entries cached one
+  // searched box each and are deleted.
+  const CACHE_VERSION = '2026-09-23.1#2';
   const CACHE_KEY_PREFIX = `${CACHE_VERSION}|`;
   let pruned = false;
   function pruneOtherVersions(db) {
@@ -288,75 +290,193 @@
       });
     } catch { /* cache is best-effort */ }
   }
-  function bboxKey(bbox) {
-    const r = (x) => x.toFixed(5);
-    return `${r(bbox.south)},${r(bbox.west)},${r(bbox.north)},${r(bbox.east)}`;
+  // One transaction for a pass's tiles: opening a connection and a transaction per tile made a
+  // pass with 177 cached tiles take seconds.
+  async function cacheGetMany(keys) {
+    const out = new Map();
+    if (!keys.length) return out;
+    try {
+      const db = await openDB();
+      await new Promise((resolve) => {
+        const tx = db.transaction(STORE, 'readonly');
+        const store = tx.objectStore(STORE);
+        for (const key of keys) {
+          const req = store.get(key);
+          req.onsuccess = () => { if (req.result) out.set(key, req.result); };
+        }
+        tx.oncomplete = resolve;
+        tx.onerror = resolve;
+      });
+    } catch { /* cache is best-effort */ }
+    return out;
   }
-  function cacheKey(bbox) { return CACHE_KEY_PREFIX + bboxKey(bbox); }
+  async function cachePutMany(entries) {
+    if (!entries.length) return;
+    try {
+      const db = await openDB();
+      await new Promise((resolve) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        const store = tx.objectStore(STORE);
+        for (const [key, value] of entries) store.put(value, key);
+        tx.oncomplete = resolve;
+        tx.onerror = resolve;
+      });
+    } catch { /* cache is best-effort */ }
+  }
 
-  // ---------- Server request sizing ----------
-  // Mirrors worker/buildings.ts: 0.02° cache tiles, at most 36 tiles (6×6) per request.
-  // A large city's auto-expansion can need a wider area than one request may cover, so the
-  // area is split along an absolute 5×5-tile grid (0.1° blocks). Interior blocks keep the
-  // same key between expansion passes, so the browser cache reuses them.
+  // ---------- Server tiles ----------
+  // Mirrors worker/buildings.ts: 0.02° cache tiles, at most 36 tiles (6×6) per request. The
+  // search loads whole tiles (spec rev. 18.3): a footprint that touches a loaded tile is loaded.
   const SERVER_TILE_DEG = 0.02;
-  const SERVER_MAX_TILES = 36;
-  const SERVER_MAX_SPAN_DEG = SERVER_TILE_DEG * Math.sqrt(SERVER_MAX_TILES);
-  const BLOCK_TILES = 5;
+  const SERVER_SPAN_TILES = 6; // a request may cover 6 × 6 = 36 tiles
+
+  // Few requests: the server answers at most 30 a minute from one network, and each costs a round
+  // trip. Pack the wanted tiles into 6 × 6 boxes, one request each, so a search asks the server as
+  // few times as the boxes allow. A box can also hold tiles already loaded, or not asked for;
+  // their answer is cached too.
+  const parseTile = (key) => {
+    const [i, j] = String(key).split('/').map(Number);
+    return { i, j };
+  };
   const tileIndex = (deg) => Math.floor(deg / SERVER_TILE_DEG + 1e-12);
 
-  function splitServerBBox(bbox) {
-    const i0 = tileIndex(bbox.south), i1 = tileIndex(bbox.north - 1e-12);
-    const j0 = tileIndex(bbox.west), j1 = tileIndex(bbox.east - 1e-12);
-    if ((i1 - i0 + 1) * (j1 - j0 + 1) <= SERVER_MAX_TILES &&
-        bbox.north - bbox.south <= SERVER_MAX_SPAN_DEG && bbox.east - bbox.west <= SERVER_MAX_SPAN_DEG) {
-      return [bbox];
-    }
-    const blockDeg = BLOCK_TILES * SERVER_TILE_DEG;
-    const parts = [];
-    for (let bi = Math.floor(i0 / BLOCK_TILES); bi <= Math.floor(i1 / BLOCK_TILES); bi++) {
-      const south = Math.max(bbox.south, bi * blockDeg), north = Math.min(bbox.north, (bi + 1) * blockDeg);
-      if (!(north > south)) continue;
-      for (let bj = Math.floor(j0 / BLOCK_TILES); bj <= Math.floor(j1 / BLOCK_TILES); bj++) {
-        const west = Math.max(bbox.west, bj * blockDeg), east = Math.min(bbox.east, (bj + 1) * blockDeg);
-        if (east > west) parts.push({ south, west, north, east });
+  function tileRequests(keys) {
+    const all = [...new Set(keys)].map(parseTile);
+    if (!all.length) return [];
+    const boxOf = (tiles) => ({ i0: Math.min(...tiles.map((t) => t.i)), i1: Math.max(...tiles.map((t) => t.i)),
+      j0: Math.min(...tiles.map((t) => t.j)), j1: Math.max(...tiles.map((t) => t.j)) });
+    const request = (box) => {
+      const tiles = [];
+      for (let i = box.i0; i <= box.i1; i++) for (let j = box.j0; j <= box.j1; j++) tiles.push(`${i}/${j}`);
+      return { bbox: { south: box.i0 * SERVER_TILE_DEG, west: box.j0 * SERVER_TILE_DEG,
+        north: (box.i1 + 1) * SERVER_TILE_DEG, east: (box.j1 + 1) * SERVER_TILE_DEG }, tiles };
+    };
+    const whole = boxOf(all);
+    if (whole.i1 - whole.i0 < SERVER_SPAN_TILES && whole.j1 - whole.j0 < SERVER_SPAN_TILES) return [request(whole)];
+    // Greedy 6 × 6 cover: take the lowest remaining tile as an anchor and the window around it
+    // that holds the most remaining tiles, so a chain that straddles a fixed grid line still
+    // travels in one request. Each request is the window's wanted tiles, at most 36.
+    const remaining = all.slice().sort((a, b) => a.i - b.i || a.j - b.j);
+    const requests = [];
+    while (remaining.length) {
+      const anchor = remaining[0];
+      let best = null;
+      for (let i0 = anchor.i - SERVER_SPAN_TILES + 1; i0 <= anchor.i; i0++) {
+        for (let j0 = anchor.j - SERVER_SPAN_TILES + 1; j0 <= anchor.j; j0++) {
+          const taken = remaining.filter((tile) => tile.i >= i0 && tile.i < i0 + SERVER_SPAN_TILES &&
+            tile.j >= j0 && tile.j < j0 + SERVER_SPAN_TILES);
+          const better = !best || taken.length > best.taken.length ||
+            (taken.length === best.taken.length && (i0 > best.i0 || (i0 === best.i0 && j0 > best.j0)));
+          if (better) best = { i0, j0, taken };
+        }
       }
+      requests.push(request(boxOf(best.taken)));
+      const used = new Set(best.taken.map((tile) => `${tile.i}/${tile.j}`));
+      for (let k = remaining.length - 1; k >= 0; k--) if (used.has(`${remaining[k].i}/${remaining[k].j}`)) remaining.splice(k, 1);
     }
-    return parts;
+    return requests;
   }
 
-  function mergeServerResponses(parts) {
-    if (parts.length === 1) return parts[0];
+  // The server answers 30 building requests a minute from one network (wrangler.jsonc). Keep this
+  // tab under that: before a request that would be the 31st in the last minute, wait for the
+  // oldest to age out. A refusal from another tab or a shared network is waited out as well
+  // (retryDelayMs), so a search finishes instead of failing.
+  const REQUEST_LIMIT = 30;
+  const REQUEST_WINDOW_MS = 60000;
+  let requestTimes = [];
+  function requestPaceDelay(times, now) {
+    const recent = times.filter((time) => now - time < REQUEST_WINDOW_MS);
+    if (recent.length < REQUEST_LIMIT) return 0;
+    return Math.max(1, REQUEST_WINDOW_MS - (now - recent[0]) + 1);
+  }
+  async function waitForRequestSlot() {
+    for (;;) {
+      const now = Date.now();
+      requestTimes = requestTimes.filter((time) => now - time < REQUEST_WINDOW_MS);
+      const delay = requestPaceDelay(requestTimes, now);
+      if (!delay) { requestTimes.push(now); return; }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  function ringBounds(ring) {
+    let south = Infinity, north = -Infinity, west = Infinity, east = -Infinity;
+    for (const p of ring) {
+      if (p.lat < south) south = p.lat;
+      if (p.lat > north) north = p.lat;
+      if (p.lon < west) west = p.lon;
+      if (p.lon > east) east = p.lon;
+    }
+    return { south, north, west, east };
+  }
+  function ringAreaDeg(ring) {
+    let area = 0;
+    for (let k = 0; k < ring.length; k++) {
+      const a = ring[k], b = ring[(k + 1) % ring.length];
+      area += a.lon * b.lat - b.lon * a.lat;
+    }
+    return Math.abs(area / 2);
+  }
+
+  // An answer split into its tiles: as on the server, a footprint belongs to every tile its
+  // outline's box touches.
+  function splitIntoTiles(buildings, tiles) {
+    const out = new Map(tiles.map((key) => [key, []]));
+    for (const building of buildings) {
+      if (!building || !Array.isArray(building.ringLatLon) || building.ringLatLon.length < 3) continue;
+      const box = ringBounds(building.ringLatLon);
+      for (let i = tileIndex(box.south); i <= tileIndex(box.north); i++) {
+        for (let j = tileIndex(box.west); j <= tileIndex(box.east); j++) {
+          const list = out.get(`${i}/${j}`);
+          if (list) list.push(building);
+        }
+      }
+    }
+    return out;
+  }
+
+  // The loaded tiles as one footprint set. A footprint cut differently at a tile edge comes in
+  // more than one tile; the largest copy is kept, so the set never depends on the order the tiles
+  // arrived in.
+  function combineTiles(records) {
     const byId = new Map();
-    for (const part of parts) for (const b of part.buildings) if (b && b.id && !byId.has(b.id)) byId.set(b.id, b);
+    for (const record of records) {
+      for (const building of record.buildings || []) {
+        if (!building || !building.id || !Array.isArray(building.ringLatLon)) continue;
+        const area = ringAreaDeg(building.ringLatLon), current = byId.get(building.id);
+        if (!current || area > current.area) byId.set(building.id, { building, area });
+      }
+    }
     const oldest = (values) => values.filter(Boolean).reduce((a, b) => (a < b ? a : b), new Date().toISOString());
     const releases = new Set();
-    for (const part of parts) {
-      for (const release of String(part.release || '').split(' + ')) if (release) releases.add(release);
+    for (const record of records) {
+      for (const release of String(record.release || '').split(' + ')) if (release) releases.add(release);
     }
-    const allIds = parts.every((part) => Array.isArray(part.correctionIds));
-    const correctionIds = allIds ? [...new Set(parts.flatMap((part) => part.correctionIds))] : null;
-    const remote = parts.find((part) => part.source !== 'local-overture');
+    const allIds = records.every((record) => Array.isArray(record.correctionIds));
+    const correctionIds = allIds ? [...new Set(records.flatMap((record) => record.correctionIds))] : null;
+    // The server's tiles, whether or not its own store answered (the browser's are local-overture).
+    const remote = records.find((record) => record.source && record.source !== 'local-overture');
     return {
-      buildings: [...byId.values()],
-      fetchedAt: oldest(parts.map((part) => part.fetchedAt)),
-      checkedAt: oldest(parts.map((part) => part.checkedAt)),
-      fromCache: parts.every((part) => part.fromCache),
-      source: remote ? remote.source : 'local-overture',
+      buildings: [...byId.values()].map((entry) => entry.building),
+      fetchedAt: oldest(records.map((record) => record.fetchedAt)),
+      checkedAt: oldest(records.map((record) => record.checkedAt)),
+      fromCache: records.length > 0 && records.every((record) => record.fromCache),
+      source: remote ? remote.source || 'server-tiles' : 'local-overture',
       release: releases.size ? [...releases].sort().join(' + ') : null,
       correctionsApplied: correctionIds ? correctionIds.length
-        : parts.reduce((sum, part) => sum + (part.correctionsApplied || 0), 0),
+        : records.reduce((sum, record) => sum + (record.correctionsApplied || 0), 0),
       correctionIds,
-      requests: parts.length,
     };
   }
 
-  // Brief server contention (the Worker's one-fill-per-second slot) is retried; a
-  // longer rate-limit window is surfaced to the user instead of hanging the calculation.
+  // Brief server contention (the Worker's one-fill-per-second slot) is retried with a growing
+  // wait; a per-network refusal says when the minute ends, and the search waits that out instead
+  // of failing. Both are bounded.
   function retryDelayMs(status, retryAfter, attempt) {
     if (status !== 429 || attempt >= 3) return null;
     const seconds = Number(retryAfter);
-    if (!Number.isFinite(seconds) || seconds < 0 || seconds > 5) return null;
+    if (!Number.isFinite(seconds) || seconds < 0 || seconds > 120) return null;
+    if (seconds > 5) return seconds * 1000; // a per-network refusal, waited out whole
     return Math.max(250, seconds * 1000) * (attempt + 1);
   }
 
@@ -371,6 +491,7 @@
     let res;
     let fillRemaining = Infinity;
     for (let attempt = 0; ; attempt++) {
+      await waitForRequestSlot();
       res = await fetch('/api/buildings?' + params.toString(), {
         headers: { Accept: 'application/json' },
       });
@@ -413,42 +534,58 @@
     };
   }
 
-  async function fetchPartCached(bbox, force) {
-    const key = cacheKey(bbox);
-    if (!force) {
-      const hit = await cacheGet(key);
-      if (hit) {
-        return { buildings: hit.buildings, fetchedAt: hit.fetchedAt,
-                 checkedAt: hit.checkedAt || hit.fetchedAt, fromCache: true,
-                 source: 'local-overture', release: hit.release || null,
-                 correctionsApplied: hit.correctionsApplied || 0,
-                 correctionIds: Array.isArray(hit.correctionIds) ? hit.correctionIds : null };
+  function tileCacheKey(key) { return `${CACHE_KEY_PREFIX}tile|${key}`; }
+
+  // Each wanted tile, from the browser cache or the server. Areas are asked for block by block
+  // (sequentially, so cold fills do not contend for the Worker's global fill slot). Every tile of
+  // an answer is cached on its own, including the tiles of its box that were not asked for: the
+  // answer holds them whole. force=true bypasses the browser and R2 caches.
+  async function fetchTilesCached(keys, { force = false, maxBuildings = Infinity, loadedBuildings = 0 } = {}) {
+    const wanted = [...new Set(keys)];
+    const budget = Number.isFinite(maxBuildings) ? Math.max(0, maxBuildings - loadedBuildings) : Infinity;
+    const cached = force ? new Map() : await cacheGetMany(wanted.map((key) => tileCacheKey(key)));
+    const pending = wanted.filter((key) => !cached.has(tileCacheKey(key)));
+    const fetchedTiles = new Map();
+    let requests = 0;
+    let received = 0;
+    for (const request of tileRequests(pending)) {
+      if (received > budget) break; // the caller's order gives the nearer tiles the room left
+      const remote = await fetchBuildingsFromServer(request.bbox, { force });
+      requests++;
+      const split = splitIntoTiles(remote.buildings, request.tiles);
+      const writes = [];
+      for (const key of request.tiles) {
+        const record = { buildings: split.get(key), fetchedAt: remote.fetchedAt, checkedAt: remote.checkedAt,
+          release: remote.release, correctionsApplied: remote.correctionsApplied, correctionIds: remote.correctionIds };
+        writes.push([tileCacheKey(key), record]);
+        // fromCache as the server said: its own tile store answered, so the data is as old as
+        // fetchedAt and the status line says so rather than calling it fresh.
+        fetchedTiles.set(key, { ...record, fromCache: remote.fromCache, source: remote.source });
+        received += record.buildings ? record.buildings.length : 0;
       }
+      await cachePutMany(writes);
     }
-
-    const remote = await fetchBuildingsFromServer(bbox, { force });
-    await cachePut(key, {
-      buildings: remote.buildings,
-      fetchedAt: remote.fetchedAt,
-      checkedAt: remote.checkedAt,
-      release: remote.release,
-      correctionsApplied: remote.correctionsApplied,
-      correctionIds: remote.correctionIds,
-    });
-    return remote;
-  }
-
-  // Returns the fused Overture footprint set. force=true bypasses browser and R2 caches.
-  // Areas wider than one Worker request are fetched block by block (sequentially, so cold
-  // fills do not contend for the Worker's global fill slot) and merged by footprint id.
-  async function fetchBuildingsCached(bbox, { force = false, onProgress = null } = {}) {
-    const parts = [];
-    const blocks = splitServerBBox(bbox);
-    for (const part of blocks) {
-      if (onProgress) onProgress(parts.length, blocks.length);
-      parts.push(await fetchPartCached(part, force));
+    // The building-count data limit is the only stop. Add the tiles in the caller's order, so a
+    // dense town's search reaches the limit holding the tiles nearest its chain, not a corner of
+    // the last box. A town's own tiles are asked for first, so its line can still be drawn dashed.
+    const tiles = new Map();
+    let added = 0;
+    let truncated = false;
+    for (const key of wanted) {
+      const hit = cached.get(tileCacheKey(key));
+      const record = hit
+        ? { buildings: hit.buildings, fetchedAt: hit.fetchedAt, checkedAt: hit.checkedAt || hit.fetchedAt,
+          fromCache: true, source: 'local-overture', release: hit.release || null,
+          correctionsApplied: hit.correctionsApplied || 0,
+          correctionIds: Array.isArray(hit.correctionIds) ? hit.correctionIds : null }
+        : fetchedTiles.get(key);
+      if (!record) { truncated = true; continue; }
+      const count = record.buildings ? record.buildings.length : 0;
+      if (added + count > budget) { truncated = true; continue; }
+      added += count;
+      tiles.set(key, record);
     }
-    return mergeServerResponses(parts);
+    return { tiles, requests, truncated };
   }
 
   async function submitBuildingCorrection(correction) {
@@ -464,8 +601,8 @@
     }
     return response.json();
   }
-  root.TechumData = { classify, computeDataConfidence, geocode, reverseGeocode, autocomplete, parseCoordinates, fetchBuildingsCached,
-    submitBuildingCorrection,
-    _internals: { bboxKey, cacheKey, CACHE_VERSION, photonLabel, dedupeAutocompleteResults, splitServerBBox,
-      mergeServerResponses, retryDelayMs } };
+  root.TechumData = { classify, computeDataConfidence, geocode, reverseGeocode, autocomplete, parseCoordinates,
+    fetchTilesCached, combineTiles, submitBuildingCorrection,
+    _internals: { tileCacheKey, CACHE_VERSION, photonLabel, dedupeAutocompleteResults, tileRequests,
+      splitIntoTiles, combineTiles, retryDelayMs, requestPaceDelay, REQUEST_LIMIT, REQUEST_WINDOW_MS } };
 })(typeof self !== 'undefined' ? self : this);
