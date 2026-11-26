@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-  const ENGINE_VERSION = '1.5.5 (2026-11-25)';
+  const ENGINE_VERSION = '1.5.6 (2026-11-25)';
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -899,8 +899,9 @@
   // dwelling even if very long"). Amah-dependent, so evaluated per run.
   function isTooSmall(b) {
     if (!settings.minSizeFilter) return false;
-    const min = 4 * (settings.amahCm / 100);
-    return (b.bbox.maxX - b.bbox.minX) < min || (b.bbox.maxY - b.bbox.minY) < min;
+    // Narrowest width in any direction, so a narrow shed turned off the compass still counts as
+    // narrow (spec rev. 18.2).
+    return G.belowMinDwellingSize(b.ring, settings.amahCm / 100);
   }
   function isIncluded(b) {
     if (b.joinOnly) return true;
@@ -1152,10 +1153,19 @@
       const p = L.polygon(cornersToLatLngs(corners), { ...style, interactive: shapesTakeClicks }).addTo(group || layerGroups.rects);
       if (label && shapesTakeClicks) p.bindTooltip(label, { sticky: true });
     };
+    // A stepped result is many overlapping regions (§1.5). The map draws their union as one
+    // outline per layer, with holes, so no edge is drawn inside the area (spec rev. 18.2); the
+    // regions themselves stay separate in the result and in every export.
     const addRegions = (regions, style, label, group) => {
-      const list = Array.isArray(regions) && regions.length ? regions : [];
-      list.forEach((region, index) => addRect(region, style,
-        list.length > 1 ? `${label} · region ${index + 1} of ${list.length}` : label, group));
+      const list = (Array.isArray(regions) ? regions : []).filter(Boolean);
+      if (list.length < 2) { list.forEach((region) => addRect(region, style, label, group)); return; }
+      const loops = G.unionOutline(list).map(cornersToLatLngs);
+      if (!loops.length) return;
+      if (style.casing)
+        L.polygon(loops, { color: '#ffffff', weight: (style.weight || 3) + 3, fill: false, opacity: 0.85, interactive: false })
+          .addTo(group || layerGroups.rects);
+      const p = L.polygon(loops, { ...style, fillRule: 'evenodd', interactive: shapesTakeClicks }).addTo(group || layerGroups.rects);
+      if (label && shapesTakeClicks) p.bindTooltip(`${label} · one outline of ${list.length} stepped regions`, { sticky: true });
     };
     if (document.getElementById('layer-techum').checked)
       addRegions(res.techumRegions || [res.techumCorners], { color: MAP_PALETTE.pinkStroke, weight: 3.5, fill: true,
