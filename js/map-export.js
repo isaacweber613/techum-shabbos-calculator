@@ -14,6 +14,12 @@
 
   const MAX_STATIC_MAP_SIZE = 640;
   const MAX_STATIC_MAP_IMAGES = 4;
+  // Google prints its logo (bottom left) and "Map data" line (bottom right) in the bottom
+  // ~22 px of every Static Maps image (measured on a live export 2026-11-25). Each image is
+  // requested this much taller; the strip is hidden under the next row or below the view,
+  // and one logo and one "Map data" line are repainted at the view's bottom corners.
+  const GOOGLE_STRIP_PX = 26;
+  const GOOGLE_LOGO_PX = 80;
 
   // Splits an even pixel total into `parts` even sizes that differ by at most 2.
   function evenSplit(total, parts) {
@@ -27,39 +33,50 @@
     const height = Math.max(1, Math.round(options.height));
     const zoom = Math.round(options.zoom);
     const maxImages = Math.max(1, Math.floor(options.maxImages || MAX_STATIC_MAP_IMAGES));
+    const maxContentHeight = MAX_STATIC_MAP_SIZE - GOOGLE_STRIP_PX;
     for (let zoomReduction = 0; zoomReduction <= zoom; zoomReduction += 1) {
       const divisor = 2 ** zoomReduction;
       // Even request sizes keep each image's centre on a whole pixel boundary.
       const requestWidth = 2 * Math.ceil(width / divisor / 2);
       const requestHeight = 2 * Math.ceil(height / divisor / 2);
       const columns = Math.ceil(requestWidth / MAX_STATIC_MAP_SIZE);
-      const rows = Math.ceil(requestHeight / MAX_STATIC_MAP_SIZE);
+      const rows = Math.ceil(requestHeight / maxContentHeight);
       if (columns * rows > maxImages) continue;
       const widths = evenSplit(requestWidth, columns);
       const heights = evenSplit(requestHeight, rows);
-      // Centred across; flush with the bottom so Google's attribution strip stays in view.
+      // Centred across; the visible part is flush with the view's bottom edge.
       const gridLeft = (width - requestWidth * divisor) / 2;
       const gridTop = height - requestHeight * divisor;
       const images = [];
       let top = gridTop;
-      heights.forEach((imageHeight, row) => {
+      heights.forEach((contentHeight, row) => {
         let left = gridLeft;
-        widths.forEach((imageWidth) => {
+        widths.forEach((imageWidth, column) => {
+          const imageHeight = contentHeight + GOOGLE_STRIP_PX;
           const cssWidth = imageWidth * divisor, cssHeight = imageHeight * divisor;
           images.push({
             width: imageWidth, height: imageHeight, left, top, cssWidth, cssHeight,
-            bottomRow: row === rows - 1,
+            contentCssHeight: contentHeight * divisor, row, column,
             // Image centre relative to the view centre, in pixels at the request zoom.
             offsetX: (left + cssWidth / 2 - width / 2) / divisor,
             offsetY: (top + cssHeight / 2 - height / 2) / divisor,
           });
           left += cssWidth;
         });
-        top += imageHeight * divisor;
+        top += contentHeight * divisor;
       });
+      const bottomLeft = images.findIndex((image) => image.row === rows - 1 && image.column === 0);
+      const bottomRight = images.findIndex((image) => image.row === rows - 1 && image.column === columns - 1);
+      const textLeft = Math.max(0, images[bottomRight].left + images[bottomRight].cssWidth / 2);
       return {
         requestZoom: zoom - zoomReduction, scale: 2, divisor, images,
-        attributionHeight: Math.min(height, 36 * Math.max(1, divisor / 2)),
+        attribution: {
+          height: Math.min(height, GOOGLE_STRIP_PX * divisor),
+          boxes: [
+            { image: bottomLeft, left: 0, width: Math.min(width, GOOGLE_LOGO_PX * divisor) },
+            { image: bottomRight, left: textLeft, width: width - textLeft },
+          ],
+        },
       };
     }
     return null;
