@@ -2940,7 +2940,7 @@
           else setStatus('We could not find that place — try a more specific address.');
         }).catch(() => setStatus('We could not find that place — check the address and try again.'));
       }
-    } else setStatus('Enter an address or click the map to choose where you\'ll be for Shabbos.');
+    } else setStatus(isSimplifiedDirection ? '' : 'Enter an address or click the map to choose where you\'ll be for Shabbos.');
     updateAddressClearButton();
   });
 })();
