@@ -6,11 +6,8 @@
 (function () {
   'use strict';
   const G = window.TechumGeo, D = window.TechumData, S = window.TechumSettings, K = window.TechumKML;
-<<<<<<< ours
-  const ENGINE_VERSION = '1.5.6 (2026-11-25)';
-=======
+  // 1.6.0: the proof-based tile loader and the dashed not-proven line (spec revs. 18.3-18.4).
   const ENGINE_VERSION = '1.6.0 (2026-11-25)';
->>>>>>> theirs
   const isSimplifiedDirection = /^(9|10)$/.test(document.documentElement.dataset.design || '');
 
   let settings = S.load();
@@ -515,15 +512,11 @@
     let iteration = 0;
     let expansionError = null;
     while (true) {
-<<<<<<< ours
-      const fetchLabel = `Getting map buildings${iteration ? ` (area pass ${iteration + 1})` : ''}`;
-      setCalculationStage('fetch', `${fetchLabel}…`);
-=======
       const chain = iteration && state.needs ? state.needs.chain : null;
-      setCalculationStage('fetch', chain
-        ? `Following the towns within 2000 amos of one another: ${chain.towns.toLocaleString()} town${chain.towns === 1 ? '' : 's'} so far, ${state.rawBuildings.length.toLocaleString()} buildings loaded…`
-        : 'Getting nearby map buildings…');
->>>>>>> theirs
+      const fetchLabel = chain
+        ? `Following the towns within 2000 amos of one another: ${chain.towns.toLocaleString()} town${chain.towns === 1 ? '' : 's'} so far, ${state.rawBuildings.length.toLocaleString()} buildings loaded`
+        : `Getting map buildings${iteration ? ` (area pass ${iteration + 1})` : ''}`;
+      setCalculationStage('fetch', `${fetchLabel}…`);
       await nextPaint();
       if (isStale()) return;
       const fetchStarted = performance.now();
@@ -538,14 +531,7 @@
       };
       const fetchTicker = setInterval(showFetchStage, 1000);
       try {
-<<<<<<< ours
-        fetched = await D.fetchBuildingsCached(bbox, { force: !!forceFresh, onProgress: (done, total) => {
-          fetchPart = total > 1 ? `: part ${done + 1} of ${total}` : '';
-          showFetchStage();
-        } });
-=======
         fetched = await D.fetchTilesCached(wanted.filter((key) => !loadedTiles.has(key)), { force: !!forceFresh });
->>>>>>> theirs
         if (isStale()) return;
       } catch (e) {
         if (isStale()) return;
@@ -644,7 +630,9 @@
       ? `${releaseLabel} data from cache (${ageLabel}).`
       : `Fresh ${releaseLabel} footprints.`;
     setStatus((state.dataCapHit
-      ? `Incomplete — the towns within 2000 amos of one another go on past the ${state.rawBuildings.length.toLocaleString()} buildings loaded, so no boundary is drawn. `
+      ? (unprovenLineAllowed()
+        ? `Incomplete — the dashed line is the best answer from the ${state.rawBuildings.length.toLocaleString()} buildings loaded, but towns that can join this town go on past the loaded map data, so it is not proven. `
+        : `Incomplete — the towns within 2000 amos of one another go on past the ${state.rawBuildings.length.toLocaleString()} buildings loaded, so no boundary is drawn. `)
       : `Done — ${state.rawBuildings.length} buildings analyzed. ` +
         (state.result && state.result.mode === 'city'
           ? 'Techum drawn from the squared city. '
@@ -987,6 +975,19 @@
   function needsOf(buildings, result, pinXY, view) {
     return view ? G.dataNeeds(buildings, result, { proj: state.proj, pin: pinXY, tiles: view.tiles, bbox: view.bbox }) : null;
   }
+  // The rev. 18.1 rule (dataFrontier): does the loaded area hold the home town, every town whose
+  // squared area could share it, and the towns within 2000 amos of a later three-villages join?
+  // It is weaker than the rev. 18.3 proof. When it is met and no load failed, the answer is drawn
+  // dashed and labelled "not proven" rather than withheld; only when it also fails, or loading
+  // failed, does an incomplete result draw no line (spec rev. 18.4).
+  function unprovenLineAllowed() {
+    if (!state.dataCapHit || state.dataCapReason === 'failed') return false;
+    if (!state.result || !state.proj || !state.pin) return false;
+    const view = loadedView();
+    if (!view) return false;
+    const loaded = view.tiles ? { tiles: view.tiles } : view.bbox;
+    return !G.dataFrontier(state.result, state.proj, loaded, state.proj.toXY(state.pin.lat, state.pin.lon));
+  }
   function tilesExtent(keys) {
     const boxes = keys.map((key) => G.tileBounds(key));
     return boxes.length ? { south: Math.min(...boxes.map((b) => b.south)), west: Math.min(...boxes.map((b) => b.west)),
@@ -1206,13 +1207,15 @@
       const p = L.polygon(loops, { ...style, fillRule: 'evenodd', interactive: shapesTakeClicks }).addTo(group || layerGroups.rects);
       if (label && shapesTakeClicks) p.bindTooltip(`${label} · one outline of ${list.length} stepped regions`, { sticky: true });
     };
-    // An incomplete result (the towns that can still join the home town go on past the
-    // loaded map data) draws no boundary at all; the answer says what is known (spec rev. 18.3).
-    const drawBoundary = !state.dataCapHit;
+    // An incomplete result draws no proven boundary. Where the rev. 18.1 area rule is met, the
+    // line is drawn dashed and labelled not proven; otherwise none is drawn (spec rev. 18.4).
+    const unproven = unprovenLineAllowed();
+    const drawBoundary = !state.dataCapHit || unproven;
     if (drawBoundary && document.getElementById('layer-techum').checked)
       addRegions(res.techumRegions || [res.techumCorners], { color: MAP_PALETTE.pinkStroke, weight: 3.5, fill: true,
-        fillColor: MAP_PALETTE.pink, fillOpacity: 0.38, casing: true },
-      'PINK TECHUM AREA — 2000 amos (' + settings.amahCm + ' cm amah)');
+        fillColor: MAP_PALETTE.pink, fillOpacity: 0.38, casing: true,
+        ...(unproven ? { dashArray: '10 7' } : {}) },
+      'PINK TECHUM AREA — 2000 amos (' + settings.amahCm + ' cm amah)' + (unproven ? ' · not proven' : ''));
     if (drawBoundary && (res.karpefRegions || []).length && document.getElementById('layer-karpef').checked)
       addRegions(res.karpefRegions, { color: MAP_PALETTE.greenStroke, weight: 2, dashArray: '6 5',
         fill: true, fillColor: MAP_PALETTE.greenSoft, fillOpacity: 0.2 }, 'Karpef (+70⅔ amos — Rema/MB 398:36)');
@@ -1560,22 +1563,19 @@
     if (state.dataCapHit) {
       // Incomplete: a town that can still join the home town lies past the loaded map data. A
       // cut-off neighbour can make a three-villages join come out either way, so the loaded data
-      // gives neither an inner nor an outer boundary, and none is drawn. First in the answer.
+      // gives neither an inner nor an outer boundary. Where the rev. 18.1 area rule is met, the
+      // line is drawn dashed and called not proven; otherwise none is drawn. First in the answer.
       const capHelp = state.dataCapReason === 'failed'
         ? 'Loading more map data failed. Calculate again to retry.'
         : state.dataCapReason === 'snapshot'
           ? 'This snapshot holds less map data than these settings need. Calculate again to load the rest.'
           : state.dataCapReason === 'snapshot-area-unknown'
             ? 'This snapshot does not record which area its map data covers, so it cannot be checked. Calculate again to load the data.'
-<<<<<<< ours
             : `The search stopped at the ${settings.maxBuildings.toLocaleString()}-building data limit. Raise “Max buildings” in All settings → Buildings & data and calculate again.`;
-      lines.push(`<div class="warn accuracy-status data-limit"><b>Incomplete: the map data ran out</b><span>The town, or a town that can join it, continues past the loaded map data. ` +
-        `With the rest of the data this boundary could be larger or smaller, and the home town could be a different one, so do not rely on it. ` +
-        `There is no halachic limit on a town's length. ${escapeHtml(capHelp)}</span></div>`);
-=======
-            : `The search stopped at the ${settings.maxBuildings.toLocaleString()}-building data limit (“Max buildings” in settings).`;
-      lines.push(`<div class="warn accuracy-status data-limit"><b>Incomplete: no boundary drawn</b><span>${escapeHtml(incompleteText(res, state.needs))} ${escapeHtml(capHelp)}</span></div>`);
->>>>>>> theirs
+      const unproven = unprovenLineAllowed();
+      lines.push(unproven
+        ? `<div class="warn accuracy-status data-limit partial-line"><b>Incomplete: the line is not proven</b><span>${escapeHtml(incompleteText(res, state.needs))} The dashed line is the best answer from the loaded map data; it is not proven. ${escapeHtml(capHelp)}</span></div>`
+        : `<div class="warn accuracy-status data-limit"><b>Incomplete: no boundary drawn</b><span>${escapeHtml(incompleteText(res, state.needs))} ${escapeHtml(capHelp)}</span></div>`);
     }
     if (res.calculationStatus === 'provisional-no-fill') {
       lines.push('<div class="warn"><b>Provisional smaller boundary:</b> a material bow/L pocket has not yet received reviewer-confirmed endpoints. The app has not filled that pocket.</div>');
@@ -1794,7 +1794,7 @@
       `Rav-validated enclosure perimeter: ${state.validatedPerimeter ? (settings.useValidatedPerimeter ? 'ACTIVE as city edge' : 'stored but inactive') : 'none'}`,
       `Rav-validated residential joining perimeters: ${state.validatedJoinPerimeters.length} (join geometry only; each counts as zero houses)`,
       `Manual overrides: ${state.overrides.size}${state.overrides.size ? ' [' + [...state.overrides.entries()].map(([id, v]) => id + ':' + v).join(', ') + ']' : ''}`,
-      `Loaded data holds the home town's whole chain (spec rev. 18.3): ${state.dataCapHit ? 'NO — towns within 2000 amos of one another go on past the loaded data, so the result is incomplete and no boundary is drawn' : 'yes'}${state.needs && state.needs.chain ? ` (${state.needs.chain.towns} towns, ${state.needs.chain.buildings} footprints)` : ''}`,
+      `Loaded data holds the home town's whole chain (spec rev. 18.3): ${state.dataCapHit ? `NO — towns within 2000 amos of one another go on past the loaded data, so the result is incomplete and ${unprovenLineAllowed() ? 'the line drawn is not proven' : 'no boundary is drawn'}` : 'yes'}${state.needs && state.needs.chain ? ` (${state.needs.chain.towns} towns, ${state.needs.chain.buildings} footprints)` : ''}`,
       `Extra lines not drawn (cut-off data): ${['comparison', 'verified'].filter((k) => (state.scenarioIncomplete || {})[k]).join(', ') || 'none'}`,
       `Projection: local true-north tangent plane @ pin (per-point lon scaling)`,
       `Shevisa pin: ${state.pin ? state.pin.lat.toFixed(6) + ', ' + state.pin.lon.toFixed(6) : 'n/a'}`,
@@ -1886,11 +1886,12 @@
     } catch (e) { el.textContent = 'Reviewed library unavailable: ' + e.message; }
   }
 
-  // An incomplete result has no proven boundary (spec rev. 18.3), so its KML, KMZ and GeoJSON
-  // carry the pin and the loaded footprints but no techum, city, karpef or settlement lines,
-  // the same as the map.
+  // An incomplete result has no proven boundary (spec rev. 18.3). Where the rev. 18.1 area rule
+  // is met, the dashed not-proven line the map draws is exported too; otherwise its KML, KMZ and
+  // GeoJSON carry the pin and the loaded footprints but no techum, city, karpef or settlement
+  // lines, the same as the map.
   function exportBoundaryLayers(res, toPath, toPaths) {
-    if (state.dataCapHit) return {};
+    if (state.dataCapHit && !unprovenLineAllowed()) return {};
     return {
       techum: toPath(res.techumCorners), city: toPath(res.cityCorners), karpef: toPath(res.karpefCorners),
       techumRegions: toPaths(res.techumRegions), cityRegions: toPaths(res.cityRegions), karpefRegions: toPaths(res.karpefRegions),
@@ -2009,6 +2010,7 @@
       profileLabel: eff === 'custom' ? 'Custom (edited) settings' : S.PROFILES[settings.profile].label,
       amahCm: settings.amahCm,
       incomplete: state.dataCapHit, // a shared image names an incomplete result
+      partial: unprovenLineAllowed(), // ... and whether it shows the dashed not-proven line
     });
   }
 

@@ -296,17 +296,17 @@
   // search loads whole tiles (spec rev. 18.3): a footprint that touches a loaded tile is loaded.
   const SERVER_TILE_DEG = 0.02;
   const SERVER_SPAN_TILES = 6; // a request may cover 6 × 6 = 36 tiles
-  const BLOCK_TILES = 5;
+
+  // Few requests: the server answers at most 30 a minute from one network, and each costs a round
+  // trip. Pack the wanted tiles into 6 × 6 boxes, one request each, so a search asks the server as
+  // few times as the boxes allow. A box can also hold tiles already loaded, or not asked for;
+  // their answer is cached too.
   const parseTile = (key) => {
     const [i, j] = String(key).split('/').map(Number);
     return { i, j };
   };
   const tileIndex = (deg) => Math.floor(deg / SERVER_TILE_DEG + 1e-12);
 
-  // Few requests: the server answers at most 30 a minute from one network, and each costs a round
-  // trip. When all the wanted tiles fit in one server request, one box over them; otherwise one
-  // box per 0.1° block (5 × 5 tiles) over that block's wanted tiles. A box can also hold tiles
-  // already loaded, or not asked for; their answer is cached too.
   function tileRequests(keys) {
     const all = [...new Set(keys)].map(parseTile);
     if (!all.length) return [];
@@ -322,11 +322,33 @@
     if (whole.i1 - whole.i0 < SERVER_SPAN_TILES && whole.j1 - whole.j0 < SERVER_SPAN_TILES) return [request(whole)];
     const blocks = new Map();
     for (const tile of all) {
-      const block = `${Math.floor(tile.i / BLOCK_TILES)}/${Math.floor(tile.j / BLOCK_TILES)}`;
+      const block = `${Math.floor(tile.i / SERVER_SPAN_TILES)}/${Math.floor(tile.j / SERVER_SPAN_TILES)}`;
       if (!blocks.has(block)) blocks.set(block, []);
       blocks.get(block).push(tile);
     }
     return [...blocks.values()].map((tiles) => request(boxOf(tiles)));
+  }
+
+  // The server answers 30 building requests a minute from one network (wrangler.jsonc). Keep this
+  // tab under that: before a request that would be the 31st in the last minute, wait for the
+  // oldest to age out. A refusal from another tab or a shared network is waited out as well
+  // (retryDelayMs), so a search finishes instead of failing.
+  const REQUEST_LIMIT = 30;
+  const REQUEST_WINDOW_MS = 60000;
+  let requestTimes = [];
+  function requestPaceDelay(times, now) {
+    const recent = times.filter((time) => now - time < REQUEST_WINDOW_MS);
+    if (recent.length < REQUEST_LIMIT) return 0;
+    return Math.max(1, REQUEST_WINDOW_MS - (now - recent[0]) + 1);
+  }
+  async function waitForRequestSlot() {
+    for (;;) {
+      const now = Date.now();
+      requestTimes = requestTimes.filter((time) => now - time < REQUEST_WINDOW_MS);
+      const delay = requestPaceDelay(requestTimes, now);
+      if (!delay) { requestTimes.push(now); return; }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
 
   function ringBounds(ring) {
@@ -399,12 +421,14 @@
     };
   }
 
-  // Brief server contention (the Worker's one-fill-per-second slot) is retried; a
-  // longer rate-limit window is surfaced to the user instead of hanging the calculation.
+  // Brief server contention (the Worker's one-fill-per-second slot) is retried with a growing
+  // wait; a per-network refusal says when the minute ends, and the search waits that out instead
+  // of failing. Both are bounded.
   function retryDelayMs(status, retryAfter, attempt) {
     if (status !== 429 || attempt >= 3) return null;
     const seconds = Number(retryAfter);
-    if (!Number.isFinite(seconds) || seconds < 0 || seconds > 5) return null;
+    if (!Number.isFinite(seconds) || seconds < 0 || seconds > 120) return null;
+    if (seconds > 5) return seconds * 1000; // a per-network refusal, waited out whole
     return Math.max(250, seconds * 1000) * (attempt + 1);
   }
 
@@ -419,6 +443,7 @@
     let res;
     let fillRemaining = Infinity;
     for (let attempt = 0; ; attempt++) {
+      await waitForRequestSlot();
       res = await fetch('/api/buildings?' + params.toString(), {
         headers: { Accept: 'application/json' },
       });
@@ -493,34 +518,7 @@
         tiles.set(key, { ...record, fromCache: remote.fromCache, source: remote.source });
       }
     }
-<<<<<<< ours
-
-    const remote = await fetchBuildingsFromServer(bbox, { force });
-    await cachePut(key, {
-      buildings: remote.buildings,
-      fetchedAt: remote.fetchedAt,
-      checkedAt: remote.checkedAt,
-      release: remote.release,
-      correctionsApplied: remote.correctionsApplied,
-      correctionIds: remote.correctionIds,
-    });
-    return remote;
-  }
-
-  // Returns the fused Overture footprint set. force=true bypasses browser and R2 caches.
-  // Areas wider than one Worker request are fetched block by block (sequentially, so cold
-  // fills do not contend for the Worker's global fill slot) and merged by footprint id.
-  async function fetchBuildingsCached(bbox, { force = false, onProgress = null } = {}) {
-    const parts = [];
-    const blocks = splitServerBBox(bbox);
-    for (const part of blocks) {
-      if (onProgress) onProgress(parts.length, blocks.length);
-      parts.push(await fetchPartCached(part, force));
-    }
-    return mergeServerResponses(parts);
-=======
     return { tiles, requests };
->>>>>>> theirs
   }
 
   async function submitBuildingCorrection(correction) {
@@ -536,15 +534,8 @@
     }
     return response.json();
   }
-<<<<<<< ours
-  root.TechumData = { classify, computeDataConfidence, geocode, reverseGeocode, autocomplete, parseCoordinates, fetchBuildingsCached,
-    submitBuildingCorrection,
-    _internals: { bboxKey, cacheKey, CACHE_VERSION, photonLabel, dedupeAutocompleteResults, splitServerBBox,
-      mergeServerResponses, retryDelayMs } };
-=======
-  root.TechumData = { classify, computeDataConfidence, geocode, reverseGeocode, autocomplete, fetchTilesCached,
-    combineTiles, submitBuildingCorrection,
+  root.TechumData = { classify, computeDataConfidence, geocode, reverseGeocode, autocomplete, parseCoordinates,
+    fetchTilesCached, combineTiles, submitBuildingCorrection,
     _internals: { tileCacheKey, CACHE_VERSION, photonLabel, dedupeAutocompleteResults, tileRequests,
-      splitIntoTiles, combineTiles, retryDelayMs } };
->>>>>>> theirs
+      splitIntoTiles, combineTiles, retryDelayMs, requestPaceDelay, REQUEST_LIMIT, REQUEST_WINDOW_MS } };
 })(typeof self !== 'undefined' ? self : this);
