@@ -588,15 +588,8 @@
     perf.totalMs = performance.now() - calcStarted;
     perf.buildings = state.rawBuildings.length;
     renderPerformanceReport(perf);
-    if (state.result && state.result.techumCorners) {
-      const regions = state.result.techumRegions && state.result.techumRegions.length
-        ? state.result.techumRegions : [state.result.techumCorners];
-      const pts = regions.flat().map((p) => {
-        const ll = state.proj.toLatLon(p.x, p.y);
-        return [ll.lat, ll.lon];
-      });
-      map.fitBounds(L.latLngBounds(pts).pad(0.05));
-    }
+    const resultBounds = techumBounds();
+    if (resultBounds) map.fitBounds(resultBounds);
     const ageDays = state.fetchedAt ? ((Date.now() - Date.parse(state.fetchedAt)) / 86400000) : 0;
     const ageLabel = ageDays < 1 ? 'today' : ageDays.toFixed(0) + ' days old';
     const releaseLabel = state.dataRelease ? `Overture ${state.dataRelease}` : 'Overture';
@@ -1876,11 +1869,42 @@
     });
   }
 
-  // Twice the on-screen size, the sharpest the Google export images reach, kept within
-  // iOS Safari's 16,777,216-pixel canvas area limit so large windows still export.
-  function exportCanvasScale() {
-    const size = map.getSize();
-    return Math.min(2, Math.sqrt(16_777_216 / Math.max(1, size.x * size.y)));
+  // The techum (every region) with a 5% margin, or null before a result exists.
+  function techumBounds() {
+    if (!state.result || !state.result.techumCorners) return null;
+    const regions = state.result.techumRegions && state.result.techumRegions.length
+      ? state.result.techumRegions : [state.result.techumCorners];
+    const pts = regions.flat().map((p) => {
+      const ll = state.proj.toLatLon(p.x, p.y);
+      return [ll.lat, ll.lon];
+    });
+    return L.latLngBounds(pts).pad(0.05);
+  }
+
+  // Downloads are a fixed square framed on the techum, whatever the screen size: 2 x 2
+  // Google images at full sharpness, captured at 2x (2456 x 2456 pixels).
+  const EXPORT_CANVAS_SCALE = 2;
+  function frameMapForExport() {
+    const mapElement = document.getElementById('map');
+    const originalStyle = mapElement.getAttribute('style');
+    const originalCenter = map.getCenter(), originalZoom = map.getZoom();
+    const side = window.TechumMapExport.EXPORT_SQUARE_PX;
+    Object.assign(mapElement.style, { position: 'fixed', left: '0px', top: '0px', right: 'auto', bottom: 'auto',
+      width: `${side}px`, height: `${side}px`, zIndex: '2000' });
+    map.invalidateSize({ animate: false, pan: false });
+    const bounds = techumBounds();
+    if (bounds) {
+      const zoom = Math.min(map.getMaxZoom(), Math.floor(map.getBoundsZoom(bounds, false)));
+      map.setView(bounds.getCenter(), zoom, { animate: false });
+    }
+    return {
+      restore: () => {
+        if (originalStyle === null) mapElement.removeAttribute('style');
+        else mapElement.setAttribute('style', originalStyle);
+        map.invalidateSize({ animate: false, pan: false });
+        map.setView(originalCenter, originalZoom, { animate: false });
+      },
+    };
   }
 
   async function captureMapCanvas(options = {}) {
@@ -1890,10 +1914,15 @@
     mapExportInProgress = true;
     const originalBaseLayer = activeBaseLayer;
     const interactionLock = lockMapExportInteraction();
-    let exportLock = lockMapExportState();
+    const frame = frameMapForExport();
+    let exportLock = null;
     let googleExport = null;
     let fallbackBasemap = null;
     try {
+      // Leaflet redraws its tiles and boundary lines for the square view before capture.
+      if (activeBaseLayer !== googleBaseLayer) await waitForBaseLayerReady(activeBaseLayer);
+      else await new Promise((resolve) => window.setTimeout(resolve, 50));
+      exportLock = lockMapExportState();
       if (activeBaseLayer === googleBaseLayer) {
         try {
           googleExport = await prepareGoogleExportUnderlay();
@@ -1912,15 +1941,16 @@
       exportCaptionForClone = options.caption ? exportCaptionLines() : null;
       const canvas = await window.html2canvas(document.getElementById('map'), {
         useCORS: true, allowTaint: false, backgroundColor: MAP_PALETTE.cream,
-        scale: exportCanvasScale(), logging: false, imageTimeout: 5000,
+        scale: EXPORT_CANVAS_SCALE, logging: false, imageTimeout: 5000,
         onclone: normalizeLeafletExportSvg,
       });
       exportLock.assertStable();
       return { canvas, fallbackBasemap };
     } finally {
       if (googleExport) googleExport.remove();
-      exportLock.remove();
+      if (exportLock) exportLock.remove();
       if (fallbackBasemap && originalBaseLayer === googleBaseLayer && googleBaseLayer) switchBaseLayer(googleBaseLayer);
+      frame.restore();
       interactionLock.remove();
       mapExportInProgress = false;
     }
@@ -2144,7 +2174,7 @@
       downloadBlob('techum-review-map.png', blob); track('export', { format: 'png', fallbackBasemap });
       setStatus(fallbackBasemap
         ? 'PNG exported with the original satellite map because Google export was unavailable. The calculated boundaries are unchanged.'
-        : 'PNG exported — it shows the current map view and visible audit layers.');
+        : 'PNG exported — a square map of the whole techum with the visible audit layers.');
     } catch (e) { setStatus('PNG export failed: ' + e.message); }
   }
 
