@@ -56,7 +56,7 @@ function noStore(data: unknown, status = 200, headers: HeadersInit = {}): Respon
 export function googleLimitMessage(kind: LimitKind, cap: number): string {
   return kind === 'map'
     ? `Techum hit today's Google map limit of ${cap}. Visitors after this see the free map until midnight Pacific.`
-    : `Techum hit today's Google export limit of ${cap}. PNG and PDF exports after this use the free map until midnight Pacific.`;
+    : `Techum hit today's Google export limit of ${cap} map images (a PNG or PDF uses up to 4). Exports after this use the free map until midnight Pacific.`;
 }
 
 // The first refusal of the day claims the alert row, so Isaac gets one message per kind per day.
@@ -88,20 +88,28 @@ async function guardGoogleRequest(request: Request, env: GoogleMapConfigEnv, pur
   return null;
 }
 
-// Claims one of today's Google requests of this kind; false once the cap is reached.
-async function claimGoogleDailySlot(env: GoogleMapConfigEnv, day: string, kind: LimitKind, cap: number): Promise<boolean> {
+// Claims `count` of today's Google requests of this kind; false if that would pass the cap.
+async function claimGoogleDailySlot(env: GoogleMapConfigEnv, day: string, kind: LimitKind, cap: number, count = 1): Promise<boolean> {
+  if (count > cap) return false;
   const sql = kind === 'map'
     ? `INSERT INTO google_map_daily_usage (usage_date, load_count)
-    VALUES (?1, 1)
-    ON CONFLICT(usage_date) DO UPDATE SET load_count = load_count + 1
-      WHERE load_count < ?2
+    VALUES (?1, ?3)
+    ON CONFLICT(usage_date) DO UPDATE SET load_count = load_count + ?3
+      WHERE load_count + ?3 <= ?2
     RETURNING load_count`
     : `INSERT INTO google_map_daily_usage (usage_date, load_count, static_count)
-    VALUES (?1, 0, 1)
-    ON CONFLICT(usage_date) DO UPDATE SET static_count = static_count + 1
-      WHERE static_count < ?2
+    VALUES (?1, 0, ?3)
+    ON CONFLICT(usage_date) DO UPDATE SET static_count = static_count + ?3
+      WHERE static_count + ?3 <= ?2
     RETURNING static_count`;
-  return Boolean(await env.DB.prepare(sql).bind(day, cap).first());
+  return Boolean(await env.DB.prepare(sql).bind(day, cap, count).first());
+}
+
+// A PNG/PDF export asks for one slot per Google image it will request (1 to 4).
+export const MAX_EXPORT_IMAGES = 4;
+export function exportImageCount(request: Request): number {
+  const parsed = Number(new URL(request.url).searchParams.get('images') || 1);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= MAX_EXPORT_IMAGES ? parsed : 0;
 }
 
 async function refuseForToday(env: GoogleMapConfigEnv, day: string, kind: LimitKind, cap: number, background: Background): Promise<Response> {
@@ -123,12 +131,14 @@ export async function issueGoogleMapConfig(request: Request, env: GoogleMapConfi
   });
 }
 
-/** One Static Maps image per PNG/PDF export; the browser asks for a slot before requesting it. */
+/** Up to four Static Maps images per PNG/PDF export; the browser claims them before requesting. */
 export async function claimGoogleExportSlot(request: Request, env: GoogleMapConfigEnv, background: Background = () => {}): Promise<Response> {
+  const images = exportImageCount(request);
+  if (!images) return noStore({ error: `images must be 1 to ${MAX_EXPORT_IMAGES}` }, 400);
   const refused = await guardGoogleRequest(request, env, 'map-export');
   if (refused) return refused;
   const day = googleQuotaDay();
   const dailyCap = parseGoogleMapsDailyCap(env.GOOGLE_STATIC_MAPS_DAILY_CAP);
-  if (!await claimGoogleDailySlot(env, day, 'static', dailyCap)) return refuseForToday(env, day, 'static', dailyCap, background);
+  if (!await claimGoogleDailySlot(env, day, 'static', dailyCap, images)) return refuseForToday(env, day, 'static', dailyCap, background);
   return noStore({ ok: true });
 }
