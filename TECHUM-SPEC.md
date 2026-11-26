@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 18.1, 2026-11-25) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 18.2, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -882,6 +882,71 @@ these two fixes; nothing else from that branch.
 - No psak default changed. Engine 1.5.5. Tests: `tests/geometry.test.js` and
   `tests/app.test.js` (spec rev. 18.1 cases).
 
+### Rev. 18.2 — 2026-11-25 (spec-traced golden tests and conformance fixes from the review branch; no psak default changes)
+
+Taken from pull request #61 (spec revs. 19–27, unmerged) after its review: only its parts that
+change no default, from its revs. 19, 21 and 26. Its revs. 20 and 22–25 change defaults on
+research that did not come from a posek; they stay on that branch until a rav answers the
+questions listed there. Rev. 18.1 already took its loading and street-pin fixes. Engine 1.5.6.
+
+- **Spec-traced golden suite.** `tests/spec-golden.test.js` ties each case to the spec line it
+  proves, with expected values worked out by hand: exact equality at 70⅔, 141⅓, 2000 (three
+  villages), 4000 (bow mouth and reviewed chord) and the 94% classifier; 1 mm past each limit;
+  straight-line corner gaps; amah scaling of every threshold; the karpef on all four sides;
+  building-mode karpef; profile values. Thresholds are written from this spec, not read back
+  from the engine, so a changed engine constant fails a test. Questions the spec does not
+  settle are listed as pending, never encoded as a ruling.
+- **The 4×4-amah size test measures true width (§1.3).** The filter compared the footprint's
+  north-south and east-west box with 4 amos, so a 1.5 m wide, 50 m long shed turned 45° (box
+  about 36 × 36 m) counted as a dwelling. SA HaRav 398:10 says under 4 amos wide is not a
+  dwelling even if very long. The test now uses the narrowest width in any direction.
+  Compass-aligned footprints are unaffected. Whether a narrow L-, U- or triangle-shaped
+  outline that passes this test is 4 by 4 amos is open (Part 7, "Narrow non-rectangular
+  footprints").
+- **Swallowed cities are flagged for a person outside every city, and inside a validated
+  enclosure (§1.10a).** The ir-muvla'at warning was raised only in ordinary city mode. A person
+  in point mode, or resting in a lone house, whose 2000 amos wholly contain a city now gets the
+  same warning, and so does a resident of a rav-validated enclosure for a city that does not
+  touch the enclosure. The boundary is unchanged; no extension is drawn.
+- **A pin in an unfilled pocket rests outside the city (§1.10a).** Membership tested the city's
+  whole squared rectangle, so a pin in the empty middle of an unfilled bow/L pocket, or of an
+  excluded hole, was treated as a resident, although §1.10a counts only the final starting
+  area. The techum drawn from the houses could then leave the pin itself outside. Now such a
+  pin rests outside that city (the open-field square, or building mode in a lone house), with
+  a `pin-in-excluded-pocket` warning. The pocket's review stays visible, and a reviewer fill
+  makes the pin a resident again. A pin in one of the city's houses, or inside the Rema karpef
+  of the houses facing the pocket, is a resident as before. The loading rule of rev. 18.1
+  already loads the whole techum of such a town.
+- **Overture class names.** Overture's `semi` (semi-detached house) and `dwelling_house` were
+  read as unknown use; they are dwellings. The default boundary does not change, because
+  unknown use is included; the verified-dwellings-only line and the review queue do.
+- **A joined city with no houses adds none.** When overlapping cities are joined, the home
+  city's house count took a component's member count whenever its own count was 0 (a
+  component of validated join perimeters only); it now adds 0.
+- **One outline per layer (map display only).** A stepped result, such as the provisional
+  pieces of an unfilled bow (174 pieces at Kiryas Joel), was drawn as overlapping rectangles,
+  each with its own edge inside the area. The map now draws each layer's union as one outline,
+  holes included. The regions stay separate in the result and in every export; no area is
+  added or removed.
+- **Replay note.** Footprint classes and the narrowest-width size test are re-run when a
+  snapshot loads, so an older snapshot holding a narrow footprint turned off the compass, or a
+  `semi` or `dwelling_house` footprint, can now give a different boundary than when it was
+  saved.
+- **Engineering tolerances, disclosed.** Distances are compared exactly at every limit (70⅔,
+  141⅓, 2000, 4000, the 4-amah width), with equality on the side each rule states.
+  Floating-point error there is below a millionth of a millimetre, far under the 2–4 m
+  footprint error in Part 4. A point counts as on a ring within 1 cm: a pin within 1 cm of a
+  wall, karpef or city edge is inside it, a city corner within 1 cm outside a techum still
+  counts as swallowed, and two city rectangles within 1 cm of each other can count as
+  overlapping. These are engineering tolerances, not shiurim. Part 4's "show borderline joins
+  as uncertain" is not implemented, and no margin for it has been chosen.
+- **Still pending, not encoded.** Whether a moored houseboat is "a dwelling on a ship" or "a
+  house built in the water" (§1.3), whether static caravans and cabins need review (Part 7
+  Q5), and whether joint redraw is meant to be the Chazon Ish default (Part 2 table: only
+  "available") stay pending in the golden suite, with today's defaults unchanged. Part 7 adds
+  "Map classes with no ruling" and "The 12-mil comparison ring".
+- No psak default changed. Golden tests: `tests/spec-golden.test.js` (162 checks, 5 pending).
+
 ## Part 3 — Product spec
 
 ### 3.0 Scope & users
@@ -1074,6 +1139,23 @@ walls, can be open field beside the town, in its karpef. When another town's sta
 holds it, is the person resting in the first town? Default: the common area of both towns, with
 a review note (`pin-beside-town`). Inside the town's own walls, in the street between its houses,
 he is in that town (§1.10a first priority; §1.4).
+
+**Narrow non-rectangular footprints** (open, added rev. 18.2). The size test asks whether an
+outline is at least 4 amos wide in every direction, measured across its outer hull. An L- or
+U-shaped structure whose walls are under 4 amos thick, or a small triangle, passes although no
+4×4-amah square fits inside it (as it also did before rev. 18.2). Does "4 by 4 amos" (SA HaRav
+398:10) need a 4×4 square inside the structure, an area of 16 square amos, or only that width?
+Mishnah Berurah 398:33 also cites Sha'arei Teshuvah that watchmen's huts need not have 4 amos at
+all, while the size test removes every footprint under 4 amos wide.
+
+**Map classes with no ruling** (open, added rev. 18.2). Overture's `allotment_house` (a garden
+cottage, often seasonal), `beach_hut`, `hut`, `shelter`, `boathouse`, `trullo` and `presbytery`
+stay unknown use (included, flagged), and the table counts `tent` and `container` as
+non-dwellings. Which of these is a beis dirah?
+
+**The 12-mil comparison ring** (open, added rev. 18.2). The engine draws the 24,000-amah ring
+beyond the Rema karpef, like the 2000. Is the d'oraisa 12 mil measured from the karpef or from
+the city's own edge? The ring is off by default.
 
 **Validation benchmarks:** the tool is city-agnostic; these are continuing cross-checks,
 not scope or release blockers:
