@@ -20,8 +20,6 @@
     'house', 'residential', 'apartments', 'detached', 'semidetached_house',
     'semi_detached', 'terrace', 'terraced_house', 'bungalow', 'dormitory',
     'cabin', 'farm', 'houseboat', 'static_caravan', 'ger', 'stilt_house',
-    // Overture's own class names for a semi-detached house and a dwelling house (spec rev. 18.2).
-    'semi', 'dwelling_house',
   ]);
   const NON_DWELLING_TAGS = new Set([
     'garage', 'garages', 'shed', 'roof', 'carport', 'greenhouse', 'barn', 'stable',
