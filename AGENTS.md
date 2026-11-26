@@ -29,12 +29,13 @@ the response and never break a page or save; `telegram_sent` / `telegram_send_fa
   — config in this project's `.claude/launch.json`)
 - Tests: `npm test` runs every suite. `node tests/geometry.test.js` holds the golden tests from the Gemara's canonical
   shapes (circle, rotated square, chain gaps per amah, karpef, three villages, overlap
-  machlokes, point mode). Keep them green; add a golden test for any new halachic rule.
+  machlokes, point mode). `node tests/spec-golden.test.js` ties a case to each spec line it
+  proves and lists open questions as pending. Keep them green; add a golden test for any new halachic rule.
 
 ## Source of truth
 
 **TECHUM-SPEC.md is the halachic source of truth.** Every psak default, every machlokes,
-every retraction is recorded there with dated rev notes (currently rev. 18.1). Isaac's
+every retraction is recorded there with dated rev notes (currently rev. 18.2). Isaac's
 standing rule: any change to a halachic default gets a dated note in the spec — append,
 don't overwrite. The tool is decision-support for a rav (MB 399:7 requires a mumcheh);
 permanent draft banner, never present output as psak.
