@@ -1,6 +1,6 @@
 {
   "name": "techum-shabbos-calculator",
-  "version": "1.5.6",
+  "version": "1.6.0",
   "private": true,
   "scripts": {
     "agent:index": "node scripts/generate-agent-index.mjs",

@@ -134,14 +134,16 @@
           const isBuilding = modeStat?.textContent.includes('building shevisa') || false;
           const pinConfirmation = original.find((node) => node.classList.contains('pin-confirmation'));
           const accuracyNotes = original.filter((node) => node.classList.contains('accuracy-status'));
-          // A result cut off by the data limit must not read as a finished answer.
+          // An incomplete result draws no boundary and must not read as an answer.
           const incomplete = original.some((node) => node.classList.contains('data-limit'));
           const confidence = document.getElementById('confidence')?.textContent.trim() || '';
           const card = document.createElement('section');
           card.className = 'simple-result-card';
           card.innerHTML = `
-            <h3>${pinConfirmation ? 'Confirm your starting place' : incomplete ? 'This result is incomplete' : 'Your draft techum is ready'}</h3>
-            <p><b>${incomplete ? 'Pink dashed area = an incomplete draft. Do not rely on it.' : 'Pink area = the current draft.'}</b> The green area is ${isCity ? 'the starting city' : isBuilding ? 'the mapped building used as your starting place' : 'your 4-amah starting square'}.</p>
+            <h3>${pinConfirmation ? 'Confirm your starting place' : incomplete ? 'Incomplete: no boundary drawn' : 'Your draft techum is ready'}</h3>
+            <p>${incomplete
+              ? '<b>The map shows no techum.</b> Towns that can still join this town go on past the loaded map data. The note below says what is known.'
+              : `<b>Pink area = the current draft.</b> The green area is ${isCity ? 'the starting city' : isBuilding ? 'the mapped building used as your starting place' : 'your 4-amah starting square'}.`}</p>
             <details class="simple-result-explainer">
               <summary>How was this calculated? <span aria-hidden="true">i</span></summary>
               <p>${isCity
@@ -159,7 +161,7 @@
 
           const reviewNotes = original.filter((node) =>
             node !== pinConfirmation && !accuracyNotes.includes(node) &&
-            ((node.classList.contains('warn') && /data limit|incomplete|review|concav|overlap|outside|missing|uncertain/i.test(node.textContent)) ||
+            ((node.classList.contains('warn') && /data limit|incomplete|not drawn|review|concav|overlap|outside|missing|uncertain/i.test(node.textContent)) ||
             (node.classList.contains('note') && /point|data limit|incomplete/i.test(node.textContent))));
           if (reviewNotes.length) {
             const review = document.createElement('details');

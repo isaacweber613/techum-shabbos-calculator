@@ -56,7 +56,8 @@ proxy), Google Maps imagery (metered, with Esri World Imagery and place labels a
    for a deterministic replay: the engine is pure, so same data + same settings = same
    lines, forever. (Map releases change over time; halachos don't.)
 7a. **Building data cache (local + shared)** — raw Overture footprints are cached, never the
-   computed techum lines (settings-dependent). **L1:** browser IndexedDB for the same pin.
+   computed techum lines (settings-dependent). **L1:** browser IndexedDB, one entry per ~2 km
+   map tile, reused by any later search that needs that tile.
    **L2 (production):** Worker `/api/buildings` unions ~2 km grid tiles from R2 so the
    second user in the same city skips upstream PMTiles ranges. Cold tiles fill once from
    an immutable named Overture release (falling back to Overture's latest release if the
@@ -75,7 +76,7 @@ proxy), Google Maps imagery (metered, with Esri World Imagery and place labels a
 | `js/data.js` | Overture fetch/cache client, Nominatim geocode, the auditable dwelling-classification tag table |
 | `worker/overture.ts` | Range-fetches and decodes the public Overture Buildings PMTiles archive |
 | `js/settings.js` | Psak profiles (spec Part 2) + persistence |
-| `js/main.js` | App flow, Leaflet rendering, auto-expanding fetch, per-building overrides |
+| `js/main.js` | App flow, Leaflet rendering, map data loaded by whole tile until nothing outside can change the result (spec rev. 18.3), per-building overrides |
 | `js/kml.js` | KML/GeoJSON export with embedded config + disclaimer |
 | `tests/geometry.test.js` | Golden tests: circle→square, rotated square keeps its direction, chain gaps under each amah, lone-house asymmetry, karpef, three villages, overlap machlokes, point mode |
 

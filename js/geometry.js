@@ -1092,11 +1092,20 @@
     // merger can create a settlement that now qualifies for another 141⅓ merger.
     let changed = true, cityMergeMs = 0, threeVillagesMs = 0;
     const threeVillageGaps = { within: new WeakMap(), grids: new WeakMap(), hulls: new WeakMap() };
+    // The towns as they stand before any three-villages join: 70⅔-amah groups that qualify,
+    // joined by the 141⅓-amah rule. Every later join is between unions of these towns, which is
+    // what the loading check (dataNeeds) follows.
+    let towns = null;
     while (changed) {
       const before = clusters.map((cluster) => cluster.componentKeys.slice().sort().join('|')).sort().join('::');
       let substageStarted = clock();
       for (const note of mergeCities(clusters, work, t2, settings.minCityHouses)) {
         warnings.push({ type: 'city-merge', text: `Two settlements merged (gap ${note.gapM.toFixed(1)} m <= 141 1/3 amos).` });
+      }
+      if (!towns) {
+        towns = clusters.filter((cluster) => (cluster.qualifiesAsCity == null
+          ? cluster.members.length >= settings.minCityHouses : cluster.qualifiesAsCity))
+          .map((cluster) => ({ componentKeys: cluster.componentKeys.slice(), members: cluster.members.slice() }));
       }
       cityMergeMs += clock() - substageStarted;
       substageStarted = clock();
@@ -1328,15 +1337,21 @@
     // can be open field, and whether a person there rests in that town when another town's area
     // also holds him is open (Part 7), so the common area of every candidate stays, with a note.
     let besideTown = false;
-    if (physicalCityModel < 0 && !perimeterActive && selectedClosures.length > 1) {
+    // How the home town was chosen (dataNeeds uses it): 'building' = the pin is on one of its
+    // houses; 'walled' = in the street inside its walls next to its houses; 'starting-area' = only
+    // because its squared area holds the pin; 'perimeter' = a validated perimeter; 'none'.
+    let homeBasis = perimeterActive ? 'perimeter' : physicalCityModel >= 0 ? 'building' : selectedClosures.length ? 'starting-area' : 'none';
+    if (physicalCityModel < 0 && !perimeterActive && selectedClosures.length >= 1) {
       const half = joinM / 2;
       const pinBox = { minX: workPin.x, maxX: workPin.x, minY: workPin.y, maxY: workPin.y };
       const holding = selectedClosures.filter((closure) => closure.indices.some((index) =>
         cityModels[index].cluster.members.some((member) => bboxGap(pinBox, work[member].bbox) <= half &&
           ringDistToPoint(workPin, work[member].ring) <= half)));
       const walled = holding.filter((closure) => boundaryOf(closure).city.some((ring) => pointInOrOnRing(workPin, ring)));
-      if (walled.length === 1) selectedClosures = walled;
-      else if (holding.length) besideTown = true;
+      // With one candidate nothing changes here; the basis only records that the street rule
+      // would choose this town even if another town's squared area also held the pin.
+      if (walled.length === 1) { selectedClosures = walled; homeBasis = 'walled'; }
+      else if (holding.length && selectedClosures.length > 1) besideTown = true;
     }
     const mode = perimeterActive || selectedClosures.length ? 'city' : homeBuilding >= 0 ? 'building' : 'point';
     let home = selectedClosures.length === 1 ? cityModels[selectedClosures[0].indices[0]].clusterIndex : -1;
@@ -1483,7 +1498,10 @@
       calculationStatus: provisional ? 'provisional-no-fill' : 'complete-default',
       validatedPerimeterActive: perimeterActive,
       labels, homeCluster: home, homeCandidates: selectedClosures.map((closure) => closure.indices.map((index) => cityModels[index].clusterIndex)),
-      homeBuilding, overlapPolicy,
+      homeBuilding, homeBasis, overlapPolicy, towns: towns || [],
+      // The squared area with the karpef of each home town candidate (dataNeeds: under a joining
+      // overlap rule, a town with a house in it can join the home town).
+      homeAreas: perimeterActive ? [] : selectedClosures.map((closure) => closureStartingRings(closure).map((ring) => ring.map(unrot))),
       clusters: serializedClusters,
       qualificationClusters: qualificationAudit.map((cluster) => ({
         key: cluster.key, members: cluster.members, memberIds: cluster.memberIds, houseCount: cluster.houseCount,
@@ -1609,9 +1627,12 @@
   // two 2000-amah steps out, finds those joins but needs more than the 40,000-building data limit
   // around New Square and Monsey; proving every chain means loading every town linked by
   // 2000-amah steps, which around Monsey passed 132,116 buildings and 28 km without ending.
-  // `loaded` is a {south, west, north, east} box in degrees; `pin` is in the result's local
-  // meters. Returns the box to add, or null when the result needs nothing more. There is no
-  // limit on the number of widenings: the caller's building-count data limit is the only stop.
+  // Since rev. 18.3 the app loads until `dataNeeds` below proves a result. This older rule only
+  // tells a result that is not proven (drawn dashed, "not proven") from one whose own techum or
+  // nearest partners are cut off by missing map data (spec rev. 18.3).
+  // `loaded` is a {south, west, north, east} box in degrees, or { tiles } (the keys of whole
+  // 0.02° tiles); `pin` is in the result's local meters. Returns the box to add, or null when
+  // the result needs nothing more by this rule.
   function dataFrontier(result, proj, loaded, pin) {
     if (!result || !Array.isArray(result.clusters)) return null;
     const { t2, techumM, karpefM } = result.thresholds;
@@ -1626,8 +1647,10 @@
     };
     const grow = (box, k) => ({ south: box.south - k * dLat, north: box.north + k * dLat,
       west: box.west - k * dLon, east: box.east + k * dLon });
-    const holds = (box) => box.south >= loaded.south && box.north <= loaded.north &&
-      box.west >= loaded.west && box.east <= loaded.east;
+    // The loaded area is one box in degrees, or whole 0.02° tiles ({ tiles }: their keys).
+    const tileSet = loaded && loaded.tiles ? new Set(loaded.tiles) : null;
+    const holds = (box) => (tileSet ? tilesForDegrees(box).every((key) => tileSet.has(key))
+      : box.south >= loaded.south && box.north <= loaded.north && box.west >= loaded.west && box.east <= loaded.east);
     let want = null;
     const need = (localBox) => {
       const box = toDegrees(localBox);
@@ -1680,8 +1703,284 @@
     return want;
   }
 
+  // ---------- Which map data a result needs (spec rev. 18.3) ----------
+  // The engine applies its rules only to the footprints it is given. The map data comes in fixed
+  // tiles of 0.02 degrees (worker/buildings.ts TILE_DEG), and a loaded tile holds every footprint
+  // that touches it. A result can no longer change, whatever the rest of the map holds, when the
+  // loaded tiles hold:
+  //   1. the home town's chain, whole: the towns (groups of houses within 70⅔ amos of one another
+  //      that qualify as a city, joined by the 141⅓-amah rule) that make up the home town, every
+  //      town within 2000 amos of one of them, every town within 2000 amos of those, and so on
+  //      until no town is added. A town is whole when the tiles hold every footprint within 70⅔
+  //      amos of its houses and within 141⅓ amos of it, and every group of houses that close is
+  //      whole too;
+  //   2. the 2000 amos around every town of the chain, with every group of houses there whole;
+  //   3. the drawn techum, and the houses joined to the pin's own building.
+  // Then every footprint within 2000 amos of a town of the chain is loaded, and every town that
+  // close is in the chain. A three-villages join needs its middle village within 2000 amos of both
+  // outer villages, so it can never put a town of the chain together with a town outside it, and
+  // every join inside the chain is decided by loaded houses alone, round after round. The home
+  // town and its boundary come out exactly as they would with all the map data (spec rev. 18.3).
+  // No fixed distance is enough instead: a join of far villages can make a middle village that
+  // then joins the home town, any number of steps out (tests/geometry.test.js, the cascades).
+  // When the pin is not on a house of its town, nor in the street inside its walls next to one,
+  // the towns within 2000 amos of the pin start chains too: another town's squared area could also
+  // hold the pin. A far town whose own squared area reaches back over the pin from beyond the
+  // loaded chains is not looked for (spec rev. 18.3, stated limit).
+  const TILE_DEG = 0.02;
+  const tileIndex = (deg) => Math.floor(deg / TILE_DEG + 1e-12);
+  const tileKey = (i, j) => `${i}/${j}`;
+  // The tile index ranges a box in local meters touches (its corners bound it in degrees).
+  function tileRangeOf(proj, box) {
+    let south = Infinity, north = -Infinity, west = Infinity, east = -Infinity;
+    for (const [x, y] of [[box.minX, box.minY], [box.maxX, box.minY], [box.maxX, box.maxY], [box.minX, box.maxY]]) {
+      const p = proj.toLatLon(x, y);
+      if (p.lat < south) south = p.lat;
+      if (p.lat > north) north = p.lat;
+      if (p.lon < west) west = p.lon;
+      if (p.lon > east) east = p.lon;
+    }
+    return { i0: tileIndex(south), i1: tileIndex(north), j0: tileIndex(west), j1: tileIndex(east), south, north, west, east };
+  }
+  // The tiles a box in degrees touches, as keys.
+  function tilesForDegrees(bbox) {
+    const out = [];
+    for (let i = tileIndex(bbox.south); i <= tileIndex(bbox.north - 1e-12); i++) {
+      for (let j = tileIndex(bbox.west); j <= tileIndex(bbox.east - 1e-12); j++) out.push(tileKey(i, j));
+    }
+    return out;
+  }
+  function tileBounds(key) {
+    const [i, j] = key.split('/').map(Number);
+    return { south: i * TILE_DEG, north: (i + 1) * TILE_DEG, west: j * TILE_DEG, east: (j + 1) * TILE_DEG };
+  }
+
+  // `buildings` and `result` are one runPipeline call's input and output. `view.proj` is that
+  // call's projection, `view.pin` its pin in local meters, and the loaded area is `view.tiles`
+  // (tile keys) or, for an older snapshot, `view.bbox` (one box in degrees). Returns whether the
+  // result is complete, the tiles still needed (nearest steps of the chain first, then nearest the
+  // pin) and what the chain holds so far.
+  function dataNeeds(buildings, result, view) {
+    const empty = { complete: false, tiles: [], chain: { towns: 0, buildings: 0, widthM: 0, heightM: 0 }, ownTown: null };
+    if (!result || !result.thresholds || !Array.isArray(result.labels)) return empty;
+    const { proj } = view;
+    const pin = view.pin || null;
+    const { joinM, t2, techumM } = result.thresholds;
+    const tileSet = view.tiles ? (view.tiles instanceof Set ? view.tiles : new Set(view.tiles)) : null;
+    const degBox = tileSet ? null : view.bbox || null;
+    const missing = new Map();
+    let short = false;
+    const tileLoaded = (i, j) => (tileSet ? tileSet.has(tileKey(i, j)) : !!degBox &&
+      i * TILE_DEG >= degBox.south && (i + 1) * TILE_DEG <= degBox.north &&
+      j * TILE_DEG >= degBox.west && (j + 1) * TILE_DEG <= degBox.east);
+    const covered = (box) => {
+      const r = tileRangeOf(proj, box);
+      if (degBox) return r.south >= degBox.south && r.north <= degBox.north && r.west >= degBox.west && r.east <= degBox.east;
+      if (!tileSet) return false;
+      for (let i = r.i0; i <= r.i1; i++) for (let j = r.j0; j <= r.j1; j++) if (!tileSet.has(tileKey(i, j))) return false;
+      return true;
+    };
+    const need = (box, step) => {
+      if (covered(box)) return false;
+      short = true;
+      const r = tileRangeOf(proj, box);
+      for (let i = r.i0; i <= r.i1; i++) for (let j = r.j0; j <= r.j1; j++) {
+        if (tileLoaded(i, j)) continue;
+        const key = tileKey(i, j), before = missing.get(key);
+        if (before === undefined || step < before) missing.set(key, step);
+      }
+      return true;
+    };
+    const n = buildings.length;
+    const around = { join: new Int8Array(n), t2: new Int8Array(n), techum: new Int8Array(n) };
+    const coveredAround = (index, kind, distance) => {
+      const memo = around[kind];
+      if (!memo[index]) memo[index] = covered(expandRect(buildings[index].bbox, distance)) ? 1 : 2;
+      return memo[index] === 1;
+    };
+    const boxOfMembers = (members) => members.reduce((box, index) => (box ? bboxUnion(box, buildings[index].bbox) : { ...buildings[index].bbox }), null);
+
+    // Groups of houses within 70⅔ amos of one another (the engine's labels).
+    const groups = new Map();
+    result.labels.forEach((label, index) => {
+      if (label < 0) return;
+      let group = groups.get(label);
+      if (!group) groups.set(label, group = { label, members: [] });
+      group.members.push(index);
+    });
+    for (const group of groups.values()) {
+      group.bbox = boxOfMembers(group.members);
+      group.whole = group.members.every((index) => coveredAround(index, 'join', joinM));
+    }
+    const needGroup = (group, step) => {
+      for (const index of group.members) if (!coveredAround(index, 'join', joinM)) need(expandRect(buildings[index].bbox, joinM), step);
+    };
+    const cutGroups = [...groups.values()].filter((group) => !group.whole);
+
+    // "Are X and Y within d of each other?": one footprint pair is enough. Each set gets its own
+    // small spatial index, as in the engine's three-villages search.
+    const grids = new WeakMap();
+    const gridOf = (set, cell) => {
+      let byCell = grids.get(set);
+      if (!byCell) grids.set(set, byCell = new Map());
+      let grid = byCell.get(cell);
+      if (!grid) {
+        grid = GridIndex(cell);
+        for (const index of set.members) grid.insert(index, buildings[index].bbox);
+        byCell.set(cell, grid);
+      }
+      return grid;
+    };
+    const near = (a, b, distance) => {
+      if (bboxGap(a.bbox, b.bbox) > distance) return false;
+      const source = a.members.length <= b.members.length ? a : b, target = source === a ? b : a;
+      const grid = gridOf(target, Math.max(distance, 50));
+      for (const i of source.members) {
+        const box = buildings[i].bbox;
+        if (bboxGap(box, target.bbox) > distance) continue;
+        for (const j of grid.query(expandRect(box, distance))) {
+          if (bboxGap(box, buildings[j].bbox) > distance) continue;
+          if (ringDist(buildings[i].ring, buildings[j].ring) <= distance) return true;
+        }
+      }
+      return false;
+    };
+
+    // Towns before any three-villages join (the engine's `towns`).
+    const towns = (result.towns || []).map((town, index) => ({
+      index, members: town.members, bbox: boxOfMembers(town.members),
+      labels: [...new Set(town.members.map((member) => result.labels[member]))],
+    })).filter((town) => town.members.length);
+    const townOf = new Int32Array(n).fill(-1);
+    for (const town of towns) for (const member of town.members) townOf[member] = town.index;
+    const byIndex = new Map(towns.map((town) => [town.index, town]));
+    const townGrid = GridIndex(Math.max(techumM, 100));
+    for (const town of towns) townGrid.insert(town.index, town.bbox);
+    const townsNear = (box, distance) => [...townGrid.query(expandRect(box, distance))]
+      .map((index) => byIndex.get(index)).filter((town) => bboxGap(town.bbox, box) <= distance);
+    // A town is whole when its groups are whole, the tiles hold the 141⅓ amos around it, and every
+    // group of houses within 141⅓ amos of it is whole (a cut group can lack the houses that would
+    // make it a city and join it).
+    const cutNearTown = new Map();
+    for (const group of cutGroups) {
+      for (const town of townsNear(group.bbox, t2)) {
+        if (town.labels.includes(group.label) || !near(group, town, t2)) continue;
+        if (!cutNearTown.has(town.index)) cutNearTown.set(town.index, []);
+        cutNearTown.get(town.index).push(group);
+      }
+    }
+    const townWhole = (town) => town.labels.every((label) => groups.get(label).whole) &&
+      town.members.every((index) => coveredAround(index, 't2', t2)) && !cutNearTown.has(town.index);
+    const needTown = (town, step) => {
+      for (const label of town.labels) needGroup(groups.get(label), step);
+      for (const index of town.members) if (!coveredAround(index, 't2', t2)) need(expandRect(buildings[index].bbox, t2), step);
+      for (const group of cutNearTown.get(town.index) || []) needGroup(group, step);
+    };
+
+    // Where the chains start.
+    const chain = new Map(), queue = [];
+    const take = (town, step) => { if (town && !chain.has(town.index)) { chain.set(town.index, step); queue.push(town); } };
+    const basis = result.homeBasis || (result.mode === 'city' ? 'starting-area' : 'none');
+    if (basis !== 'perimeter') {
+      for (const clusterIndex of (result.homeCandidates || []).flat()) {
+        const cluster = result.clusters[clusterIndex];
+        for (const member of cluster ? cluster.members : []) take(byIndex.get(townOf[member]), 0);
+      }
+      if (result.homeBuilding >= 0 && result.labels[result.homeBuilding] >= 0) {
+        const own = groups.get(result.labels[result.homeBuilding]);
+        if (!own.whole) needGroup(own, 0);
+        take(byIndex.get(townOf[result.homeBuilding]), 0);
+      }
+      if (pin && basis !== 'building' && basis !== 'walled') {
+        const pinBox = { minX: pin.x, maxX: pin.x, minY: pin.y, maxY: pin.y };
+        need(expandRect(pinBox, techumM), 0);
+        const holdsPinNear = (set) => bboxGap(set.bbox, pinBox) <= techumM && set.members.some((index) =>
+          bboxGap(buildings[index].bbox, pinBox) <= techumM && ringDistToPoint(pin, buildings[index].ring) <= techumM);
+        for (const town of townsNear(pinBox, techumM)) if (holdsPinNear(town)) take(town, 0);
+        for (const group of cutGroups) if (holdsPinNear(group)) needGroup(group, 0);
+      }
+    }
+    // Under a rule that joins overlapping squared areas, the home town's squared area is loaded
+    // whole, and every town with a house in it starts a chain: its squared area overlaps the home
+    // town's. A cut group of houses there is loaded whole too: it can be such a town.
+    if (basis !== 'perimeter' && result.overlapPolicy && result.overlapPolicy !== 'no-join') {
+      for (const ring of (result.homeAreas || []).flat()) {
+        const area = bboxOfRing(ring);
+        need(area, 0);
+        const inArea = (set) => bboxGap(set.bbox, area) <= 0 && set.members.some((index) =>
+          bboxGap(buildings[index].bbox, area) <= 0 && ringsOverlap(buildings[index].ring, ring));
+        for (const town of townsNear(area, 0)) if (inArea(town)) take(town, 0);
+        for (const group of cutGroups) if (inArea(group)) needGroup(group, 0);
+      }
+    }
+    for (const ring of result.techumRegions || []) if (ring && ring.length) need(bboxOfRing(ring), 0);
+
+    // Every town within 2000 amos of a town of the chain joins the chain.
+    while (queue.length) {
+      const town = queue.shift(), step = chain.get(town.index);
+      for (const other of townsNear(town.bbox, techumM)) {
+        if (!chain.has(other.index) && near(town, other, techumM)) take(other, step + 1);
+      }
+    }
+    // The towns of the chain that still need map data: the edge the search goes on from.
+    let open = 0;
+    for (const [index, step] of chain) {
+      const town = byIndex.get(index);
+      let lacking = !townWhole(town);
+      if (lacking) needTown(town, step);
+      for (const member of town.members) {
+        if (!coveredAround(member, 'techum', techumM)) { need(expandRect(buildings[member].bbox, techumM), step + 1); lacking = true; }
+      }
+      if (lacking) open++;
+    }
+    // A cut group of houses within 2000 amos of a town of the chain must be loaded whole: with the
+    // rest of its houses it can be a town that joins the chain.
+    for (const group of cutGroups) {
+      if (townOf[group.members[0]] >= 0 && chain.has(townOf[group.members[0]])) continue;
+      let step = Infinity;
+      for (const town of townsNear(group.bbox, techumM)) {
+        if (chain.has(town.index) && chain.get(town.index) + 1 < step && near(group, town, techumM)) step = chain.get(town.index) + 1;
+      }
+      if (step < Infinity) needGroup(group, step);
+    }
+
+    let chainBox = null, chainBuildings = 0;
+    for (const index of chain.keys()) {
+      const town = byIndex.get(index);
+      chainBox = chainBox ? bboxUnion(chainBox, town.bbox) : { ...town.bbox };
+      chainBuildings += town.members.length;
+    }
+    // The pin's own town (its building's town, or the town whose house is beside a pin in the
+    // street inside its walls): it is part of the home town whatever the rest of the map holds,
+    // once it is whole.
+    let own = result.homeBuilding >= 0 ? byIndex.get(townOf[result.homeBuilding]) : null;
+    if (!own && basis === 'walled' && pin) {
+      const half = joinM / 2, pinBox = { minX: pin.x, maxX: pin.x, minY: pin.y, maxY: pin.y };
+      for (const town of townsNear(pinBox, half)) {
+        if (town.members.some((index) => bboxGap(buildings[index].bbox, pinBox) <= half && ringDistToPoint(pin, buildings[index].ring) <= half)) { own = town; break; }
+      }
+    }
+    const pinLatLon = pin ? proj.toLatLon(pin.x, pin.y) : null;
+    const tileOrder = (key) => {
+      if (!pinLatLon) return 0;
+      const b = tileBounds(key);
+      return Math.hypot((b.south + b.north) / 2 - pinLatLon.lat, ((b.west + b.east) / 2 - pinLatLon.lon) * Math.cos(pinLatLon.lat * Math.PI / 180));
+    };
+    const tiles = [...missing.entries()].map(([key, step]) => ({ key, step, order: tileOrder(key) }))
+      .sort((a, b) => a.step - b.step || a.order - b.order || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)).map((tile) => tile.key);
+    return {
+      complete: !short,
+      tiles,
+      basis,
+      chain: { towns: chain.size, buildings: chainBuildings, openTowns: open,
+        widthM: chainBox ? chainBox.maxX - chainBox.minX : 0, heightM: chainBox ? chainBox.maxY - chainBox.minY : 0 },
+      ownTown: own ? { buildings: own.members.length, whole: townWhole(own) } : null,
+    };
+  }
+
   return {
-    AMOS, makeProjection, runPipeline, bufferRing, belowMinDwellingSize, dataFrontier, unionOutline,
+    AMOS, makeProjection, runPipeline, bufferRing, belowMinDwellingSize, dataFrontier, dataNeeds, unionOutline,
+    TILE_DEG, tilesForDegrees, tileBounds,
     // exported for tests
     _internals: {
       bboxOfRing, bboxGap, expandRect, ringDist,

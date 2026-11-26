@@ -35,7 +35,7 @@ the response and never break a page or save; `telegram_sent` / `telegram_send_fa
 ## Source of truth
 
 **TECHUM-SPEC.md is the halachic source of truth.** Every psak default, every machlokes,
-every retraction is recorded there with dated rev notes (currently rev. 18.2). Isaac's
+every retraction is recorded there with dated rev notes (currently rev. 18.3). Isaac's
 standing rule: any change to a halachic default gets a dated note in the spec — append,
 don't overwrite. The tool is decision-support for a rav (MB 399:7 requires a mumcheh);
 permanent draft banner, never present output as psak.
@@ -48,7 +48,7 @@ permanent draft banner, never present output as psak.
 | `js/data.js` | Overture client + IndexedDB cache, Nominatim geocode, auditable dwelling-classification tag table |
 | `worker/overture.ts` | Public Overture PMTiles range fetch + vector-tile decoding |
 | `js/settings.js` | Psak profiles (MB/Ashkenazi default, Chazon Ish, Mechaber/Sefardi) + persistence |
-| `js/main.js` | App flow, Leaflet render, auto-expanding fetch, per-building overrides, snapshots |
+| `js/main.js` | App flow, Leaflet render, map data loaded by whole tile until `dataNeeds` is satisfied (spec rev. 18.3), per-building overrides, snapshots |
 | `js/kml.js` | KML/KMZ/GeoJSON export with embedded config + audit block |
 | `js/map-export.js`, `js/analysis-worker.js`, `js/feedback.js`, `js/track.js`, `js/design-experience.js` | PNG/PDF export layout, off-thread engine run, feedback dialog, analytics events, the production layout (design 10) |
 | `worker/index.ts` and the other `worker/*.ts` | API routes: buildings cache, shared corrections, feedback inbox, reviewed-city registry, Access check, Google map config, analytics |

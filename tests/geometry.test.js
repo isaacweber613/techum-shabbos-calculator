@@ -701,7 +701,7 @@ const regionSig = (regions) => regions.map((ring) => ring.map((p) => `${p.x.toFi
     `x=${east.x}`);
 }
 
-// Spec rev. 18.1: a pin in a town's street; loading all the map data a result needs ----------
+// Spec rev. 18.1: a pin in a town's street. Rev. 18.3: loading all the map data a result needs ----------
 let boxId = 0;
 function box(minX, minY, maxX, maxY) {
   const ring = [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }];
@@ -769,87 +769,136 @@ const homeOf = (r) => (r && r.homeCluster >= 0 ? r.clusters[r.homeCluster].house
     JSON.stringify({ home: homeOf(outside) }));
 }
 {
-  // The app's widening loop (main.js calculate) on a made-up map: each pass loads every building
-  // whose centre is in the loaded box, runs the engine, and adds the box dataFrontier asks for,
-  // until it asks for nothing. The app has no pass limit; 40 here only keeps a bug from hanging.
+  // Spec rev. 18.3: the app's loader (main.js calculate) on made-up maps. A footprint is stored in
+  // every 0.02° map tile its box touches (worker/buildings.ts); each pass loads the tiles
+  // G.dataNeeds names and runs the engine again, until the result needs nothing. Every answer is
+  // compared with the engine run on the whole made-up map. The app has no pass limit; 60 here
+  // only keeps a bug from hanging the test.
   const proj = G.makeProjection(41, -74);
-  const toDegrees = (b) => {
+  const tileIndex = (deg) => Math.floor(deg / G.TILE_DEG + 1e-12);
+  const degreesOf = (b) => {
     const pts = [[b.minX, b.minY], [b.maxX, b.minY], [b.maxX, b.maxY], [b.minX, b.maxY]].map(([x, y]) => proj.toLatLon(x, y));
     return { south: Math.min(...pts.map((p) => p.lat)), north: Math.max(...pts.map((p) => p.lat)),
       west: Math.min(...pts.map((p) => p.lon)), east: Math.max(...pts.map((p) => p.lon)) };
   };
-  const centreIn = (deg, b) => {
-    const g = proj.toLatLon((b.bbox.minX + b.bbox.maxX) / 2, (b.bbox.minY + b.bbox.maxY) / 2);
-    return g.lat >= deg.south && g.lat <= deg.north && g.lon >= deg.west && g.lon <= deg.east;
+  const tilesOf = (b) => {
+    const d = degreesOf(b.bbox), out = [];
+    for (let i = tileIndex(d.south); i <= tileIndex(d.north); i++) for (let j = tileIndex(d.west); j <= tileIndex(d.east); j++) out.push(`${i}/${j}`);
+    return out;
   };
-  const widen = (world, pin, startM) => {
-    let loaded = toDegrees({ minX: pin.x - startM, maxX: pin.x + startM, minY: pin.y - startM, maxY: pin.y + startM });
+  const around = (pin, r) => G.tilesForDegrees(degreesOf({ minX: pin.x - r, maxX: pin.x + r, minY: pin.y - r, maxY: pin.y + r }));
+  const load = (world, settings, pin, startTiles) => {
+    const stored = world.map(tilesOf);
+    const loaded = new Set(startTiles);
     const passes = [];
-    for (let pass = 1; pass <= 40; pass++) {
-      const result = G.runPipeline(world.filter((b) => centreIn(loaded, b)), S, pin);
-      passes.push(result);
-      const more = G.dataFrontier(result, proj, loaded, pin);
-      if (!more) return { result, passes };
-      loaded = { south: Math.min(loaded.south, more.south), north: Math.max(loaded.north, more.north),
-        west: Math.min(loaded.west, more.west), east: Math.max(loaded.east, more.east) };
+    for (let pass = 1; pass <= 60; pass++) {
+      const sub = world.filter((b, k) => stored[k].some((key) => loaded.has(key)));
+      const result = G.runPipeline(sub, settings, pin);
+      const needs = G.dataNeeds(sub, result, { proj, tiles: loaded, pin });
+      passes.push({ result, needs, buildings: sub.length });
+      if (needs.complete) return { result, sub, passes, loaded };
+      for (const key of needs.tiles) loaded.add(key);
     }
-    return { result: null, passes };
+    return { result: null, sub: [], passes, loaded };
   };
+  const answer = (r, list) => r ? { mode: r.mode, home: r.homeCluster >= 0 ? r.clusters[r.homeCluster].members.map((i) => list[i].id).sort().join(',') : '',
+    techum: (r.techumRegions || []).map((ring) => ring.map((p) => `${p.x.toFixed(6)},${p.y.toFixed(6)}`).join(' ')).sort().join('|') } : null;
+  const sameAsWhole = (run, world, settings, pin) => {
+    const whole = answer(G.runPipeline(world, settings, pin), world), got = answer(run.result, run.sub);
+    return !!got && got.mode === whole.mode && got.home === whole.home && got.techum === whole.techum;
+  };
+  const CI = { ...S, amahM: 0.576, karpef: true, overlapPolicy: 'join-redraw' };
+  const MB = { ...S, karpef: true };
+
   // An 8 km chain of 200 houses: house i is x [40i, 40i + 10], y [0, 10]; 30 m gaps (< 33.92 m)
-  // make one town, walls x [0, 7970], techum x [-960, 8930], y [-960, 970]. From the app's 1200 m
-  // start it needs more than the old limit of 4 widenings; from 190 m the first pass holds 5
-  // houses, too few for a city, so the loader follows the pin's own houses.
+  // make one town, walls x [0, 7970], techum x [-960, 8930], y [-960, 970]. The first tiles hold
+  // part of it; the loader follows the town tile by tile to its far end.
   const chain = [];
   for (let i = 0; i < 200; i++) chain.push(box(i * 40, 0, i * 40 + 10, 10));
-  const chainRuns = [190, 1200, 3000].map((startM) => widen(chain, { x: 5, y: 5 }, startM));
-  assert('rev18.1: from 190, 1200 and 3000 m an 8 km chain ends as one 200-house town, techum x [-960, 8930], y [-960, 970]; from 1200 m it takes more than 4 widenings',
+  const chainRuns = [190, 1200, 3000].map((startM) => load(chain, S, { x: 5, y: 5 }, around({ x: 5, y: 5 }, startM)));
+  assert('rev18.3: from 190, 1200 and 3000 m an 8 km chain ends as one 200-house town, techum x [-960, 8930], y [-960, 970]',
     chainRuns.every(({ result }) => result && result.mode === 'city' && homeOf(result) === 200 &&
       sameSpan(span(result.techumCorners), { minX: -960, maxX: 8930, minY: -960, maxY: 970 })) &&
-      chainRuns[1].passes.length - 1 > 4 && chainRuns[0].passes[0].mode === 'building',
+      chainRuns.every(({ passes }) => passes.length > 1 && homeOf(passes[0].result) < 200),
     JSON.stringify(chainRuns.map(({ result, passes }) => ({ home: homeOf(result), passes: passes.length }))));
+
   // Three villages (§1.4): A walls x [0, 50], y [0, 30]; C x [220, 270]; B x [110, 160], y [500, 530].
   // A and C are 170 m apart (> 67.84). B is 474 m from each (<= 960); lowered onto y = 15 it
   // leaves 60 m (<= 67.84) on each side, so all three are one town of 18 houses: walls x [0, 270],
-  // y [0, 530], techum x [-960, 1230], y [-960, 1490]. From 200 m only A is loaded; production's
-  // look-ahead (141⅓ amos + 60 m past the town) stopped there with A's 6 houses.
+  // y [0, 530], techum x [-960, 1230], y [-960, 1490].
   const villages = town6(0, 0).concat(town6(220, 0), town6(110, 500));
-  const villageRuns = [200, 600, 3000].map((startM) => widen(villages, { x: 5, y: 5 }, startM));
-  assert('rev18.1: a town joined by three villages to a village 474 m away is loaded whole from any start: 18 houses, walls x [0, 270], y [0, 530], techum x [-960, 1230], y [-960, 1490]',
+  const villageRuns = [200, 600, 3000].map((startM) => load(villages, S, { x: 5, y: 5 }, around({ x: 5, y: 5 }, startM)));
+  assert('rev18.3: a town joined by three villages to a village 474 m away is loaded whole from any start: 18 houses, walls x [0, 270], y [0, 530], techum x [-960, 1230], y [-960, 1490]',
     villageRuns.every(({ result }) => result && homeOf(result) === 18 && has(result, 'three-villages') &&
       sameSpan(span(result.cityCorners), { minX: 0, maxX: 270, minY: 0, maxY: 530 }) &&
-      sameSpan(span(result.techumCorners), { minX: -960, maxX: 1230, minY: -960, maxY: 1490 })) &&
-      homeOf(villageRuns[0].passes[0]) === 6,
+      sameSpan(span(result.techumCorners), { minX: -960, maxX: 1230, minY: -960, maxY: 1490 })),
     JSON.stringify(villageRuns.map(({ result, passes }) => ({ home: homeOf(result), passes: passes.length }))));
-  assert('rev18.1: each three-villages join records the round it was made in (the villages above join in round 1)',
+  assert('rev18.3: each three-villages join records the round it was made in (the villages above join in round 1)',
     villageRuns[2].result.warnings.filter((w) => w.type === 'three-villages').every((w) => w.round === 1),
     JSON.stringify(villageRuns[2].result.warnings.filter((w) => w.type === 'three-villages').map((w) => w.round)));
-  // Rule 2, by hand on a result: home town of parts h, m, p, walls x [0, 950], y [0, 30]; p
-  // (x [900, 950]) joined it by three villages. Loaded: x [-1500, 2500], y [-1500, 1500], which
-  // holds the town's walls + 33.92 + 960 m with the 127.84 m margin. Town N, x [1800, 2600], is
-  // 850 m from p (<= 960) and runs past the loaded edge, so the loader must reach past 2600 m by
-  // at least the margin. Not for a first-round join, and not for a town 961 m from p.
-  const look = T2 + 60;
-  const rect = (minX, minY, maxX, maxY) => [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }];
-  const handResult = (round, nMinX) => ({
-    mode: 'city', homeCluster: 0, homeCandidates: [[0]], homeBuilding: -1,
-    thresholds: { joinM: JOIN, t2: T2, techumM: TECHUM, karpefM: JOIN },
-    clusters: [
-      { members: [0], key: 'h', componentKeys: ['h', 'm', 'p'], qualifiesAsCity: true, corners: rect(0, 0, 950, 30) },
-      { members: [1], key: 'n', componentKeys: ['n'], qualifiesAsCity: true, corners: rect(nMinX, 0, 2600, 30) },
-    ],
-    qualificationClusters: [{ key: 'h', corners: rect(0, 0, 50, 30) }, { key: 'm', corners: rect(450, 400, 500, 430) },
-      { key: 'p', corners: rect(900, 0, 950, 30) }],
-    techumRegions: [rect(-960, -960, 1910, 990)],
-    warnings: [{ type: 'three-villages', round, middleComponentKeys: ['m'], outerComponentKeys: [['h'], ['p']] }],
-  });
-  const handLoaded = toDegrees({ minX: -1500, maxX: 2500, minY: -1500, maxY: 1500 });
-  const later = G.dataFrontier(handResult(2, 1800), proj, handLoaded, { x: 5, y: 5 });
-  const eastM = later && proj.toXY(41, later.east).x;
-  assert('rev18.1: a town 850 m from a part joined by three villages after an earlier join is loaded in full (the loader reaches 2600 m + 127.84 m or more); a first-round join, or a town 961 m away, asks for nothing',
-    later && eastM >= 2600 + look && eastM <= 2600 + 3 * look * 1.02 &&
-      G.dataFrontier(handResult(1, 1800), proj, handLoaded, { x: 5, y: 5 }) === null &&
-      G.dataFrontier(handResult(2, 1911), proj, handLoaded, { x: 5, y: 5 }) === null,
-    JSON.stringify({ eastM }));
+
+  // A cut middle village: H x [0, 50] and C x [2000, 2050] (1950 m apart); the middle village is a
+  // row of 49 houses 40 m apart at y [900, 910], x [60, 1990]. Lowered onto H and C it leaves 10 m
+  // on each side, and it is 870 m from each, so the three are one town of 61 houses. From 1200 m
+  // the row is cut by the loaded edge and C is not loaded; the cut row must be followed whole.
+  const cut = town6(0, 0).concat(town6(2000, 0), (() => { const out = []; for (let x = 60; x + 10 <= 1990; x += 40) out.push(box(x, 900, x + 10, 910)); return out; })());
+  const cutRuns = [300, 1200].map((startM) => load(cut, S, { x: 5, y: 5 }, around({ x: 5, y: 5 }, startM)));
+  assert('rev18.3: a middle village cut by the loaded edge is loaded whole, and with it the outer village 1950 m away: 61 houses from 300 and 1200 m',
+    cutRuns.every((run) => homeOf(run.result) === 61 && sameAsWhole(run, cut, S, { x: 5, y: 5 })),
+    JSON.stringify(cutRuns.map(({ result, passes }) => ({ home: homeOf(result), passes: passes.length }))));
+
+  // Cascades: a far village changes the home town through joins made one after another, so no
+  // fixed reach is enough. H x [0, 50]; C x [2000, 2050]; B a row x [300, 1950] at y 900 (250 m
+  // left of it, so (H, B, C) fails); B' x [110, 160] at y 900. Level 2: M x [200, 250] at y 1500
+  // fits between B' and B (40 m and 50 m), so (B', M, B) joins in round 1 and (H, B'+M+B, C) in
+  // round 2: 66 houses; without M, 6. M is two 2000-amah steps from H (H to B', B' to M).
+  // Level 3: instead of M, two columns Ma x [200, 210] and Mb x [280, 290], y [1500, 1710], that
+  // fit between B' and B only together; X x [240, 250], y [2400, 2610], joins them in round 1,
+  // then (B', Ma+X+Mb, B) in round 2 and (H, ..., C) in round 3: 78 houses; without X, 6. X is
+  // three steps from H, so a rule of two steps would stop before it.
+  const row = (x0, x1, y0) => { const out = []; for (let x = x0; x + 10 <= x1 + 1e-9; x += 40) out.push(box(x, y0, x + 10, y0 + 10)); return out; };
+  const column = (x0, y0) => { const out = []; for (let k = 0; k < 6; k++) out.push(box(x0, y0 + 40 * k, x0 + 10, y0 + 40 * k + 10)); return out; };
+  const base = () => town6(0, 0).concat(town6(2000, 0), row(300, 1950, 900), town6(110, 900));
+  const level2 = base().concat(town6(200, 1500));
+  const level3 = base().concat(column(200, 1500), column(280, 1500), column(240, 2400));
+  const pin = { x: 5, y: 5 };
+  const level2Run = load(level2, S, pin, around(pin, 1200)), level3Run = load(level3, S, pin, around(pin, 1200));
+  const rounds = (r) => r.warnings.filter((w) => w.type === 'three-villages').map((w) => w.round);
+  assert('rev18.3: level-2 cascade: the village 1.5 km out that joins B\' and B is loaded, and the home town is 66 houses (6 without it), joined in rounds 1 and 2',
+    homeOf(level2Run.result) === 66 && sameAsWhole(level2Run, level2, S, pin) && rounds(level2Run.result).join() === '1,2' &&
+      homeOf(G.runPipeline(base(), S, pin)) === 6,
+    JSON.stringify({ home: homeOf(level2Run.result), rounds: rounds(level2Run.result), passes: level2Run.passes.length }));
+  assert('rev18.3: level-3 cascade: the village three 2000-amah steps out is loaded, and the home town is 78 houses (6 without it), joined in rounds 1, 2 and 3',
+    homeOf(level3Run.result) === 78 && sameAsWhole(level3Run, level3, S, pin) && rounds(level3Run.result).join() === '1,2,3' &&
+      homeOf(G.runPipeline(base().concat(column(200, 1500), column(280, 1500)), S, pin)) === 6,
+    JSON.stringify({ home: homeOf(level3Run.result), rounds: rounds(level3Run.result), passes: level3Run.passes.length }));
+
+  // Every pin in the town and either profile first: a pin on a house of each joined village, in
+  // the street between two houses, and beside the town; Mishna Berura, then Chazon Ish on the tiles
+  // the first one loaded, and the other way round. Each answer is the whole map's answer.
+  const pins = [{ x: 5, y: 5 }, { x: 225, y: 5 }, { x: 115, y: 505 }, { x: 15, y: 5 }, { x: -12, y: 5 }];
+  const orders = [[MB, CI], [CI, MB]];
+  const pinOrderOk = pins.every((p) => orders.every(([first, second]) => {
+    const a = load(villages, first, p, around(p, 600));
+    const b = load(villages, second, p, a.loaded);
+    return sameAsWhole(a, villages, first, p) && sameAsWhole(b, villages, second, p);
+  }));
+  assert('rev18.3: from a house of each village, the street, and beside the town, with either profile first, every answer is the whole map\'s answer', pinOrderOk);
+
+  // dataNeeds itself: a lone town is complete once the tiles around it are loaded; a cut chain is
+  // not, and it names the missing tiles as 'i/j' keys, nearest steps of the chain first. An older
+  // snapshot's single box is complete only when the box holds what the result needs.
+  const lone = town6(0, 0);
+  const loneRun = load(lone, S, pin, around(pin, 1200));
+  const cutNeeds = chainRuns[1].passes[0].needs;
+  assert('rev18.3: a lone town is complete after the first pass; a cut chain names missing tiles as i/j keys',
+    loneRun.passes.length === 1 && loneRun.passes[0].needs.complete && loneRun.passes[0].needs.chain.towns === 1 &&
+      !cutNeeds.complete && cutNeeds.tiles.length > 0 && cutNeeds.tiles.every((key) => /^-?\d+\/-?\d+$/.test(key)),
+    JSON.stringify({ lone: loneRun.passes.length, cut: cutNeeds.tiles.slice(0, 3) }));
+  const loneResult = G.runPipeline(lone, S, pin);
+  const wide = degreesOf({ minX: -2500, maxX: 2500, minY: -2500, maxY: 2500 }), narrow = degreesOf({ minX: -500, maxX: 500, minY: -500, maxY: 500 });
+  assert('rev18.3: an older snapshot box is complete only when it holds the town\'s techum and its 2000 amos',
+    G.dataNeeds(lone, loneResult, { proj, bbox: wide, pin }).complete && !G.dataNeeds(lone, loneResult, { proj, bbox: narrow, pin }).complete);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

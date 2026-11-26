@@ -100,8 +100,8 @@
     return [
       String(label || 'Selected map point'),
       `${profileLabel} · amah ${(amah / 2.54).toFixed(2)} in (${amah} cm) · 2,000 amos = ${Math.round(20 * amah).toLocaleString('en-US')} m`,
-      // The dashed line of an incomplete result does not explain itself on a shared image.
-      ...(incomplete ? ['INCOMPLETE — the map data ran out; this boundary could be larger or smaller. Do not rely on it.'] : []),
+      // An incomplete result has no boundary on the image; the caption says why.
+      ...(incomplete ? ['INCOMPLETE — towns that can join this town go on past the loaded map data, so no boundary is drawn.'] : []),
       'DRAFT — decision support, not a psak. Review with a rav/mumcheh.',
     ];
   }
