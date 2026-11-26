@@ -503,29 +503,6 @@
     return { method: 'world-aligned', angleRad: 0, rect: bboxOfRing(points), rectangularity };
   }
 
-  // Beis-dirah size test (SA OC 398:6; SA HaRav 398:10): under 4 amos wide is not a
-  // dwelling even if very long. "Wide" is the footprint's narrowest width in any
-  // direction (rotating calipers over the convex hull), so a narrow structure turned off
-  // the compass is not mistaken for a wide one by its north-south/east-west box (spec rev. 18.2).
-  function minimumWidth(ring) {
-    const hull = convexHull(ring || []);
-    if (hull.length < 3) return 0;
-    let best = Infinity;
-    for (let i = 0; i < hull.length; i++) {
-      const a = hull[i], b = hull[(i + 1) % hull.length];
-      const len = Math.hypot(b.x - a.x, b.y - a.y);
-      if (!len) continue;
-      const nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
-      let reach = 0;
-      for (const p of hull) reach = Math.max(reach, Math.abs((p.x - a.x) * nx + (p.y - a.y) * ny));
-      best = Math.min(best, reach);
-    }
-    return best === Infinity ? 0 : best;
-  }
-  function belowMinDwellingSize(ring, amahM) {
-    return minimumWidth(ring) < 4 * amahM;
-  }
-
   function rectIntersection(a, b) {
     const out = {
       minX: Math.max(a.minX, b.minX), maxX: Math.min(a.maxX, b.maxX),
@@ -1304,20 +1281,6 @@
       if (!boundaryCache.has(closure)) boundaryCache.set(closure, buildClosureBoundary(closure));
       return boundaryCache.get(closure);
     };
-    // A pin outside every house is in a city only inside that city's FINAL starting area
-    // (spec §1.10a). The full squared rectangle can contain the pin while an unfilled
-    // bow/L pocket or an excluded hole removes that spot from the starting area; such a pin
-    // rests outside the city (spec rev. 18.2). A pin in one of the city's own houses stays a
-    // resident, and inside an active validated enclosure the enclosure itself is the person's city.
-    const pocketRejected = [];
-    if (physicalCityModel < 0 && !perimeterActive) {
-      selectedClosures = selectedClosures.filter((closure) => {
-        const boundary = boundaryOf(closure);
-        if ((settings.karpef ? boundary.karpef : boundary.city).some((ring) => pointInOrOnRing(workPin, ring))) return true;
-        pocketRejected.push(closure);
-        return false;
-      });
-    }
     // §1.10a priority (1): when several starting areas hold a pin that is in none of their houses,
     // the town whose own 70⅔-amah component physically holds the pin governs. A component's
     // physical area is its footprints, each grown by half the 70⅔-amah gap (§1.4: buffer each
@@ -1350,14 +1313,6 @@
       techumPolygons = defs.map((def) => regionDefToRing(def, techumM + (settings.karpef ? karpefM : 0)));
       mil12Polygons = defs.map((def) => regionDefToRing(def, AMOS.MIL12 * settings.amahM + (settings.karpef ? karpefM : 0)));
       warnings.push({ type: 'validated-perimeter', text: 'A reviewer-supplied validated enclosure is being used as the city edge. The app did not infer its hukaf-l\'dira status; confirm the supplied perimeter and ruling.' });
-      // Another city wholly inside this techum is flagged as in ordinary city mode (§1.10a,
-      // spec rev. 18.2). A city touching the validated enclosure belongs to the enclosed city itself.
-      for (const model of cityModels) {
-        if (ringsOverlap(model.ring, validatedPerimeter)) continue;
-        if (techumPolygons.some((region) => model.ring.every((point) => pointInOrOnRing(point, region)))) {
-          warnings.push({ type: 'ir-muvlaas', text: 'Another complete city lies inside this techum. Its route-specific ir muvla’at continuation is not represented by one universal permission polygon; check the destination with a rav.' });
-        }
-      }
     } else if (mode === 'city') {
       const boundaries = selectedClosures.map(boundaryOf);
       for (const boundary of boundaries) concavity.push(...boundary.concavity);
@@ -1417,23 +1372,6 @@
       squaring = { method: pointAngle === 0 ? 'world-aligned-point' : 'reviewer-angle-point', angleRad: pointAngle, rectangularity: null };
       warnings.push({ type: 'point-mode', text: 'No city starting area contains this point — treated as open-field shevisa: a 4-amah square plus 2000 amos on every side.' });
     }
-    // A person outside every city (point or lone-building shevisa) can also have a whole
-    // city swallowed by his reach (SA 408:1; spec §1.10a, rev. 18.2). Flag it; never draw an extension.
-    if (mode === 'point' || mode === 'building') {
-      const inTechumFrame = (point) => (pointModeWorldFrame ? unrot(point) : point);
-      for (const model of cityModels) {
-        const ring = model.ring.map(inTechumFrame);
-        if (techumPolygons.some((region) => ring.every((point) => pointInOrOnRing(point, region)))) {
-          warnings.push({ type: 'ir-muvlaas', text: 'A complete city lies inside this techum. Its route-specific ir muvla’at continuation is not represented by one universal permission polygon; check the destination with a rav.' });
-        }
-      }
-    }
-    // A city passed over because the pin rests in its unfilled pocket keeps its bow/hole
-    // review visible: confirming endpoints that fill the pocket would make the pin a resident.
-    if (pocketRejected.length) {
-      for (const closure of pocketRejected) concavity.push(...boundaryOf(closure).concavity);
-      warnings.push({ type: 'pin-in-excluded-pocket', text: 'The pin is inside a city’s squared rectangle but in an unfilled bow/L pocket or an excluded hole, which is not part of that city’s starting area, so it is measured as resting outside that city. If a reviewer fills the pocket or includes the hole, the pin becomes a resident.' });
-    }
     warnings.push(...concavity);
     markStage('boundaryAndWarnings');
 
@@ -1471,10 +1409,7 @@
       serializedClusters[home] = {
         ...serializedClusters[home],
         members: [...new Set(joinedModels.flatMap((model) => model.cluster.members))],
-        // A component of validated join perimeters only has 0 houses; 0 must not fall back to
-        // its member count (spec rev. 18.2).
-        houseCount: joinedModels.reduce((sum, model) => sum +
-          (model.cluster.houseCount == null ? model.cluster.members.length : model.cluster.houseCount), 0),
+        houseCount: joinedModels.reduce((sum, model) => sum + (model.cluster.houseCount || model.cluster.members.length), 0),
         overlapJoinedClusterIndices: joinedModels.map((model) => model.clusterIndex),
       };
     }
@@ -1510,86 +1445,6 @@
     markStage('resultSerialization');
     result.engineTimings = { ...stageTimings, total: clock() - engineStarted };
     return result;
-  }
-
-  // ---------- One outline for a union of regions (map display only; spec rev. 18.2) ----------
-  // A multi-region result stays separate regions in the data and every export (§1.5), but a map
-  // that strokes every piece shows dozens of overlapping edges inside the permitted area, where
-  // the area has no edge. Rectangles that share one direction are merged into the loops that bound
-  // their union, holes included (draw them with the even-odd fill rule). Any other region is
-  // returned unchanged. No area is added or removed.
-  function rectUnionLoops(rects) {
-    const snap = (v) => Math.round(v * 1e6) / 1e6; // a micrometre: frame round-off, not geometry
-    const boxes = rects.map((r) => ({ minX: snap(r.minX), maxX: snap(r.maxX), minY: snap(r.minY), maxY: snap(r.maxY) }))
-      .filter((r) => r.maxX > r.minX && r.maxY > r.minY);
-    const xs = [...new Set(boxes.flatMap((r) => [r.minX, r.maxX]))].sort((a, b) => a - b);
-    const ys = [...new Set(boxes.flatMap((r) => [r.minY, r.maxY]))].sort((a, b) => a - b);
-    const nx = xs.length - 1, ny = ys.length - 1;
-    if (nx < 1 || ny < 1) return [];
-    const xi = new Map(xs.map((v, i) => [v, i])), yi = new Map(ys.map((v, i) => [v, i]));
-    const covered = new Uint8Array(nx * ny);
-    for (const r of boxes) {
-      const x0 = xi.get(r.minX), x1 = xi.get(r.maxX);
-      for (let j = yi.get(r.minY); j < yi.get(r.maxY); j++) covered.fill(1, j * nx + x0, j * nx + x1);
-    }
-    const at = (i, j) => i >= 0 && j >= 0 && i < nx && j < ny && covered[j * nx + i] === 1;
-    // Boundary edges keep the covered cell on their left: outer loops run counter-clockwise.
-    const edges = [], from = new Map();
-    const add = (i0, j0, i1, j1) => {
-      const edge = { i0, j0, i1, j1, used: false }, key = i0 + ',' + j0;
-      edges.push(edge);
-      if (!from.has(key)) from.set(key, []);
-      from.get(key).push(edge);
-    };
-    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-      if (!at(i, j)) continue;
-      if (!at(i, j - 1)) add(i, j, i + 1, j);
-      if (!at(i + 1, j)) add(i + 1, j, i + 1, j + 1);
-      if (!at(i, j + 1)) add(i + 1, j + 1, i, j + 1);
-      if (!at(i - 1, j)) add(i, j + 1, i, j);
-    }
-    const loops = [];
-    for (const start of edges) {
-      if (start.used) continue;
-      const loop = [];
-      let edge = start;
-      while (edge && !edge.used) {
-        edge.used = true;
-        loop.push([edge.i0, edge.j0]);
-        const dx = edge.i1 - edge.i0, dy = edge.j1 - edge.j0;
-        // Where two cells meet only at a corner, turn left so each keeps its own loop.
-        const turn = (e) => dx * (e.j1 - e.j0) - dy * (e.i1 - e.i0); // > 0: a left turn
-        const next = (from.get(edge.i1 + ',' + edge.j1) || []).filter((e) => !e.used)
-          .sort((a, b) => turn(b) - turn(a));
-        edge = next[0] || null;
-      }
-      // Drop the corners where a straight side merely passes a grid line.
-      const points = loop.filter((p, k) => {
-        const a = loop[(k + loop.length - 1) % loop.length], b = loop[(k + 1) % loop.length];
-        return (p[0] - a[0]) * (b[1] - p[1]) !== (p[1] - a[1]) * (b[0] - p[0]);
-      });
-      if (points.length >= 4) loops.push(points.map(([i, j]) => ({ x: xs[i], y: ys[j] })));
-    }
-    return loops;
-  }
-  function unionOutline(regions) {
-    const groups = new Map(), loops = [];
-    for (const ring of regions || []) {
-      if (!Array.isArray(ring) || ring.length < 3) continue;
-      const angle = normalizeRectAngle(Math.atan2(ring[1].y - ring[0].y, ring[1].x - ring[0].x));
-      const framed = ring.map((point) => toOrientedFrame(point, angle)), box = bboxOfRing(framed);
-      const near = (a, b) => Math.abs(a - b) <= 1e-6;
-      const isRect = ring.length === 4 && framed.every((p) =>
-        (near(p.x, box.minX) || near(p.x, box.maxX)) && (near(p.y, box.minY) || near(p.y, box.maxY)));
-      if (!isRect) { loops.push(ring); continue; }
-      const key = angle.toFixed(9);
-      if (!groups.has(key)) groups.set(key, { angle, rects: [] });
-      groups.get(key).rects.push(box);
-    }
-    for (const { angle, rects } of groups.values()) {
-      for (const loop of rectUnionLoops(rects)) loops.push(loop.map((point) => fromOrientedFrame(point, angle)));
-    }
-    return loops;
   }
 
   // ---------- How much map data a result needs (spec rev. 18.1) ----------
@@ -1638,7 +1493,7 @@
     };
     const boxOf = (corners) => bboxOfRing(corners);
     // 1. The home town, every candidate of a shared overlap, and, for a pin left outside every
-    //    town, each town whose squared box with the karpef holds it (its unfilled pocket held the pin).
+    //    town, each town whose squared box with the karpef holds it.
     const towns = new Set(result.homeCluster >= 0 ? [result.homeCluster] : []);
     for (const group of result.homeCandidates || []) for (const index of group) towns.add(index);
     if (result.mode !== 'city' && pin) {
@@ -1681,7 +1536,7 @@
   }
 
   return {
-    AMOS, makeProjection, runPipeline, bufferRing, belowMinDwellingSize, dataFrontier, unionOutline,
+    AMOS, makeProjection, runPipeline, bufferRing, dataFrontier,
     // exported for tests
     _internals: {
       bboxOfRing, bboxGap, expandRect, ringDist,
@@ -1689,7 +1544,7 @@
       pointInRing, segSegDist, annotateCityQualification, concavityWarnings,
       ringsOverlap,
       convexHull, minimumAreaRect, deriveSquaring, toOrientedFrame, fromOrientedFrame,
-      intersectConvexPolygons, intersectPolygonSets, minimumWidth,
+      intersectConvexPolygons, intersectPolygonSets,
     },
   };
 });
