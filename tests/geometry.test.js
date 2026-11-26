@@ -852,5 +852,29 @@ const homeOf = (r) => (r && r.homeCluster >= 0 ? r.clusters[r.homeCluster].house
     JSON.stringify({ eastM }));
 }
 
+// 19. Eruv techumin forced point mode, corner aiming, and destination checking -
+{
+  const town = grid6(0, 0);
+  const autoRes = G.runPipeline(town, S, { x: 0, y: 0 });
+  const eruvRes = G.runPipeline(town, { ...S, shevisaMode: 'eruv-point', pointRotationDeg: 45 }, { x: 0, y: 0 });
+  assert('eruv-point forces 4-amah point shevisa even inside a qualifying city',
+    autoRes.mode === 'city' && eruvRes.mode === 'point' && eruvRes.eruvPointMode === true);
+  assert('eruv-point rotates the 4-amah techum square by 45 degrees so diagonals reach cardinal directions',
+    approx(Math.max(...eruvRes.techumCorners.map((c) => c.y)), (2000 + 2) * RCN * Math.SQRT2, 0.2) &&
+    eruvRes.warnings.some((w) => /Peninei Halakha Shabbos 30:12/.test(w.text)));
+  assert('cornerAimAngleDeg aims a square corner directly toward the target bearing',
+    G.cornerAimAngleDeg({ x: 0, y: 0 }, { x: 0, y: 500 }) === 45 &&
+    G.cornerAimAngleDeg({ x: 0, y: 0 }, { x: 500, y: 0 }) === 45 &&
+    G.cornerAimAngleDeg({ x: 0, y: 0 }, { x: 500, y: 500 }) === 0 &&
+    G.cornerAimAngleDeg({ x: 0, y: 0 }, { x: 500 * Math.cos(Math.PI / 3), y: 500 * Math.sin(Math.PI / 3) }) === 15);
+  const inside = G.checkDestination(autoRes, { x: 100, y: 100 });
+  const outside = G.checkDestination(autoRes, { x: 5000, y: 0 });
+  const inHome = G.checkDestination(autoRes, { x: 0, y: 0 });
+  assert('checkDestination reports inside/outside, starting city, and accurate edge distance',
+    inHome.inside && inHome.inCity &&
+    inside.inside && !inside.inCity && inside.edgeDistanceM > 800 &&
+    !outside.inside && outside.edgeDistanceM > 3900);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

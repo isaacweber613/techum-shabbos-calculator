@@ -93,8 +93,10 @@ test('accuracy uncertainty is prominent and review work is impact-ranked', () =>
   assert.match(main, /highest boundary impact first/);
   assert.match(main, /items\.slice\(0, 20\)/);
   assert.match(main, /starting place.*outer edge.*home city.*nearby/);
-  assert.match(experience, /accuracyNotes\.forEach\(\(node\) => card\.append\(node\)\)/);
-  assert.match(experience, /Your draft techum is ready/);
+  assert.match(experience, /blockingAlerts\.forEach\(\(node\) => card\.append\(node\)\)/);
+  assert.match(experience, /Rav review checklist/);
+  assert.match(experience, /btn-inspect-map/);
+  assert.match(experience, /Squared city \+ 2,000 amos/);
 });
 
 test('calm map defaults keep only the home audit label and collapse the mobile key', () => {
@@ -116,18 +118,20 @@ test('simplified design directions calculate automatically and keep advanced con
   assert.match(main, /const isSimplifiedDirection = \/\^\(9\|10\)\$\//);
   assert.match(main, /scheduleAutomaticCalculation\(\)/);
   assert.match(main, /params\.has\('draftLat'\) && params\.has\('draftLon'\)/);
-  assert.match(main, /realistic\.addTo\(map\)/);
-  assert.match(main, /'Original satellite map': realistic/);
-  assert.match(main, /'Original illustrated map': illustrated/);
+  assert.match(main, /layers\.Satellite = originalMapLayer/);
+  assert.match(main, /layers\['Street map'\] = illustratedMapLayer/);
+  assert.match(main, /showDestinationCheck\(e\.latlng\)/);
   assert.match(experience, /quickSettings\.id = 'simple-quick-settings'/);
   assert.match(experience, /simple-settings-summary/);
+  assert.match(experience, /quick-shevisa-mode/);
+  assert.match(experience, /result-point-angle/);
   assert.match(experience, /mapKey\.id = 'simple-map-key'/);
-  assert.match(experience, /Starting place \(city, building, or 4 amos\)/);
+  assert.match(experience, /Starting place/);
   assert.match(experience, /simple-review-notes/);
   assert.match(experience, /Calculation details/);
   assert.match(experience, /document\.body\.append\(drawer\)/);
   assert.match(experience, /const design = isDesignPreview \? requestedDesign : '10'/);
-  assert.match(experience, /nav\.classList\.add\('production-review-nav'\)/);
+  assert.match(experience, /if \(node\.tagName !== 'FOOTER'\) movable\.push\(node\)/);
   assert.match(experience, /Review controls/);
 });
 
@@ -147,8 +151,8 @@ test('reference pink and green palette is shared by map, UI, PNG, and PDF export
   assert.match(html, /<strong>Pink:<\/strong>/);
   assert.match(html, /<strong>Pale green dashed:<\/strong>/);
   assert.match(baseCss, /\.ln\.techum \{ border-color: #a94364/);
-  assert.match(css, /--dx-pink:#f0a1b7/);
-  assert.match(css, /--dx-green:#c8df97/);
+  assert.match(css, /--dx-pink:\s*#f0a1b7/);
+  assert.match(css, /--dx-green:\s*#c8df97/);
 });
 
 test('reverse geocoding is proxied and validated by the Worker', () => {
@@ -186,8 +190,8 @@ test('automatic result keeps messages, exposes a retry, and keeps the audit togg
   assert.match(html, /id="btn-retry"/);
   assert.match(main, /setRetryVisible\(!succeeded\)/);
   assert.match(main, /btn-retry'\)\.addEventListener\('click', \(\) => calculate\(false\)\)/);
-  assert.doesNotMatch(css, /body\.has-result #status[^{]*\{[^}]*display:none/s);
-  assert.match(css, /body\.has-result #status[^{]*\{[^}]*display:block/s);
+  assert.doesNotMatch(css, /body\.has-result #status\s*\{[^}]*display:\s*none/s);
+  assert.match(css, /body\.has-result #status\s*\{[^}]*display:\s*block/s);
   assert.match(design, /mapDisplayDetails\.prepend\(methodCallout\)/);
   assert.match(design, /location\.hostname === 'localhost'/);
 });
@@ -222,7 +226,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-[12]|20261110-[12]|20261125-[6-8])'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-[12]|20261110-[12]|20261125-[6-8]|20261126-[1-9])'));
   }
 });
 
@@ -244,7 +248,7 @@ test('Google Maps is preferred with a metered same-site config and original-map 
   assert.match(main, /mapExportInProgress/);
   assert.match(main, /waitForBaseLayerReady\(originalMapLayer\)/);
   assert.match(main, /fallbackBasemap = 'original satellite map'/);
-  assert.match(main, /calculated boundaries are unchanged/);
+  assert.match(main, /calculated boundaries are unchanged/i);
   assert.match(main, /leaflet-tile-loaded/);
   assert.match(main, /originalBaseLayer === googleBaseLayer/);
   assert.match(main, /app\.inert = true/);
@@ -576,7 +580,7 @@ test('the loader widens until dataFrontier asks for nothing, with only the build
   // The data-limit note is first in the answer, before every other note.
   const panel = main.slice(main.indexOf('    const lines = [];'));
   assert.ok(panel.indexOf('data-limit') >= 0 && panel.indexOf('data-limit') < panel.indexOf('Provisional smaller boundary'));
-  assert.match(experience, /incomplete \? 'This result is incomplete'/);
+  assert.match(experience, /incomplete\s*\?\s*'This result is incomplete'/);
   assert.match(experience, /Pink dashed area = an incomplete draft\. Do not rely on it\./);
 });
 

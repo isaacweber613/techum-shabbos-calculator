@@ -48,7 +48,8 @@
     minSizeFilter: true,    // exclude structures below 4x4 amos (SA HaRav 398:10)
     secondAmahCm: 0,        // 0 = off; draws a comparison techum line
     show12mil: false,
-    pointRotationDeg: 0,    // open-field square rotation (SA 399 — person may orient)
+    shevisaMode: 'auto',    // 'auto' (city/building/point) | 'eruv-point' (forced 4-amah point shevisa)
+    pointRotationDeg: 0,    // open-field / eruv-point square rotation (Peninei Halakha 30:12)
     showAuditRings: false,  // dotted 70⅔-amos rings around buildings (manual-audit aid)
     cityQualificationOverrides: {}, // cluster key -> reviewer yes/no; empty preserves count proxy
     concavityReviews: {},   // review key -> reviewer-confirmed endpoints and application state
@@ -68,6 +69,7 @@
       settings.overlapPolicy = settings.overlapMerge ? 'join-redraw' : 'no-join';
     }
     delete settings.overlapMerge;
+    if (settings.shevisaMode !== 'eruv-point') settings.shevisaMode = 'auto';
     return { ...DEFAULTS, ...settings };
   }
 

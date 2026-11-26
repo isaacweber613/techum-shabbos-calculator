@@ -31,7 +31,7 @@
   </script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261109-1" />
+  <link rel="stylesheet" href="css/style.css?v=20261126-1" />
   <script>
     (() => {
       const requestedDesign = new URLSearchParams(location.search).get('design');
@@ -41,21 +41,27 @@
         : '10';
     })();
   </script>
-  <link rel="stylesheet" href="css/design-experience.css?v=20261125-7" />
-  <link rel="stylesheet" href="css/feedback.css?v=20260722-4" />
+  <link rel="stylesheet" href="css/design-experience.css?v=20261126-1" />
+  <link rel="stylesheet" href="css/feedback.css?v=20261126-1" />
 </head>
 <body>
   <div id="banner">
-    <span class="banner-disclaimer"><span class="banner-mark">Draft</span> This map is decision support, not a psak. <b>Review with a rav before relying on it.</b></span>
-    <span class="banner-feedback-copy">Please send feedback with any issues or ways we can make this better. It would be very helpful and greatly appreciated.</span>
-    <button id="banner-feedback-button" class="banner-feedback-button" type="button" data-feedback-trigger aria-label="Send feedback">
-      <span data-feedback-label>Send feedback</span>
-    </button>
+    <span class="banner-disclaimer"><span class="banner-mark">Draft</span> Decision support, not a psak. <b>Review with a rav before relying on it.</b></span>
     <button id="btn-dismiss-banner" type="button" aria-label="Dismiss disclaimer">×</button>
   </div>
   <main id="app">
     <aside id="sidebar">
-      <header class="brand"><a class="brand-mark" href="/">ת</a><div><h1>Techum Shabbos</h1><p><span lang="he" dir="rtl">תחום שבת</span> boundary calculator</p></div><a class="about-link" href="/about">About</a></header>
+      <header class="brand">
+        <a class="brand-mark" href="/">ת</a>
+        <div class="brand-title"><h1>Techum Shabbos</h1><p><span lang="he" dir="rtl">תחום שבת</span> boundary calculator</p></div>
+        <nav class="brand-nav" aria-label="Site links">
+          <a class="header-link" href="/guide">Guide</a>
+          <a class="header-link about-link" href="/about">About</a>
+          <button id="header-feedback-button" class="header-feedback-btn" type="button" data-feedback-trigger aria-label="Send feedback">
+            <span data-feedback-label>Feedback</span>
+          </button>
+        </nav>
+      </header>
       <section class="intro"><span class="eyebrow">Start with a place</span><h2>Where will you be for Shabbos?</h2><p>Enter the address where your techum begins. We’ll guide you through the rest.</p></section>
 
       <div class="row search-row">
@@ -64,6 +70,8 @@
           <input id="address" type="text" placeholder="Enter an address or place" autocomplete="street-address"
                  role="combobox" aria-autocomplete="list" aria-expanded="false"
                  aria-controls="address-suggestions" />
+          <span class="address-spinner" aria-hidden="true"></span>
+          <button id="btn-clear-address" class="address-clear" type="button" aria-label="Clear address" hidden>×</button>
           <div id="address-suggestions" class="suggestions" role="listbox" hidden></div>
         </div>
       </div>
@@ -86,15 +94,12 @@
       <div id="confidence" class="confidence" hidden></div>
       <div id="results"></div>
       <div id="review-queue" class="review-queue" hidden></div>
-      <button id="send-feedback-button" type="button" data-feedback-trigger aria-label="Send feedback" title="Send feedback">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H8l-4 4V4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 9h8M8 12h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        <span data-feedback-label>Send feedback</span>
-      </button>
+
       <div class="advanced-heading"><span>Review &amp; settings</span><small>Optional</small></div>
 
       <div class="settings-grid">
-      <details>
-        <summary>Halachic profile <small>Defaults &amp; shitos</small></summary>
+      <details class="drawer-section">
+        <summary>Halachic rules <small>Profiles, amah &amp; shitos</small></summary>
         <label>Profile
           <select id="profile">
             <option value="mishna-berura">Mishna Berurah / Ashkenazi (default)</option>
@@ -111,11 +116,17 @@
             <option value="57.6">Chazon Ish — 22.68 in (1,152 m)</option>
           </select>
         </label>
+        <label>Starting mode <small>Automatic derives a city or building when present. Choose Eruv techumin to force a 4-amah point square at the pin (orienting a square requires rabbinic guidance).</small>
+          <select id="shevisa-mode">
+            <option value="auto">Automatic (city / building)</option>
+            <option value="eruv-point">Eruv techumin (4-amah point)</option>
+          </select>
+        </label>
         <label class="check"><input id="karpef" type="checkbox" />
           Single-city karpef +70⅔ amos <small>(Rema; MB 398:36 — off = Mechaber)</small></label>
         <label>City-squaring reviewer override (angle°) <small>0 = automatic: preserve a clearly rectangular city's existing direction (SA/MB 398:1); otherwise square to the world's directions (SA 398:2–3). Enter another angle only when a rav determines the controlling alignment.</small>
           <input id="sq-angle" type="number" step="1" min="-89" max="89" value="0" /></label>
-        <label>Open-field square rotation (angle°) <small>Used only for point shevisa. 0 = cardinal directions; change only with rabbinic direction.</small>
+        <label>Eruv / open-field square rotation (angle°) <small>Used for point shevisa and eruv techumin. 0 = cardinal directions; 45 = diagonal (Peninei Halakha Shabbos 30:12). Confirm with a rav.</small>
           <input id="point-angle" type="number" step="1" min="-89" max="89" value="0" /></label>
         <label>Overlapping city rectangles <small>The ordinary default keeps unrelated cities separate. The middle option produces a stepped union without redrawing one large rectangle.</small>
           <select id="overlap">
@@ -140,31 +151,8 @@
         <p class="fixed-rule"><b>City status:</b> the sourced rule is 3 courtyards × 2 houses (or the sourced resident-count basis). Six mapped footprints are only a provisional fallback; record the factual basis in the calculation review.</p>
       </details>
 
-      <details>
-        <summary>Buildings &amp; data <small>Sources &amp; overrides</small></summary>
-        <label class="check"><input id="inc-unknown" type="checkbox" />
-          Include structures with unknown use <small>(orange — included automatically)</small></label>
-        <label class="check"><input id="inc-review" type="checkbox" />
-          Include ambiguous buildings <small>(purple — hotels, shuls, schools… ask a rav)</small></label>
-        <label class="check"><input id="min-size" type="checkbox" checked />
-          Exclude structures under 4×4 amos <small>(SA HaRav 398:10 — scales with the amah)</small></label>
-        <button id="btn-clear-overrides">Clear manual overrides</button>
-        <small class="muted">The calculator automatically uses the configured immutable
-          Overture release and shared reviewed corrections. Refresh bypasses both caches.</small>
-        <button id="btn-fresh" class="secondary">Refresh map data</button>
-        <div class="row">
-          <button id="btn-snapshot">Save snapshot</button>
-          <button id="btn-load-snapshot">Load snapshot</button>
-          <input id="snapshot-file" type="file" accept=".json" hidden />
-        </div>
-        <small class="muted">Snapshots freeze the fetched data + settings + overrides for a
-          deterministic, reproducible replay (map releases change over time; halachos don't).</small>
-        <label>Initial fetch radius (m) <small>Applies on the next Calculate or Refresh.</small><input id="fetch-radius" type="number" step="100" min="300" /></label>
-        <label>Max buildings (data cap) <small>Applies on the next Calculate or Refresh.</small><input id="max-buildings" type="number" step="1000" min="1000" /></label>
-      </details>
-
-      <details>
-        <summary>Map display <small>Layers &amp; comparison</small></summary>
+      <details class="drawer-section">
+        <summary>Map layers &amp; audit <small>Layers, audit rings &amp; comparisons</small></summary>
         <label class="check"><input id="layer-buildings" type="checkbox" checked /> Buildings</label>
         <label class="check"><input id="layer-city" type="checkbox" checked /> City rectangle (ribua)</label>
         <label class="check"><input id="layer-karpef" type="checkbox" checked /> Karpef</label>
@@ -192,57 +180,89 @@
           <div id="cluster-review" class="cluster-review"></div>
         </div>
       </details>
-      </div>
 
-      <div class="row exports">
-        <button id="btn-kml">Export KML</button>
-        <button id="btn-kmz">Export KMZ</button>
-        <button id="btn-geojson">Export GeoJSON</button>
-      </div>
-      <details>
-        <summary>Missing buildings <small>Manual map corrections</small></summary>
+      <details class="drawer-section">
+        <summary>Building &amp; perimeter corrections <small>Filters, manual roofs &amp; enclosures</small></summary>
+        <label class="check"><input id="inc-unknown" type="checkbox" />
+          Include structures with unknown use <small>(orange — included automatically)</small></label>
+        <label class="check"><input id="inc-review" type="checkbox" />
+          Include ambiguous buildings <small>(purple — hotels, shuls, schools… ask a rav)</small></label>
+        <label class="check"><input id="min-size" type="checkbox" checked />
+          Exclude structures under 4×4 amos <small>(SA HaRav 398:10 — scales with the amah)</small></label>
+        <button id="btn-clear-overrides" type="button">Clear manual overrides</button>
+        <small class="muted">The calculator automatically uses the configured immutable
+          Overture release and shared reviewed corrections. Refresh bypasses both caches.</small>
+        <button id="btn-fresh" class="secondary" type="button">Refresh map data</button>
+        <label>Initial fetch radius (m) <small>Applies on the next Calculate or Refresh.</small><input id="fetch-radius" type="number" step="100" min="300" /></label>
+        <label>Max buildings (data cap) <small>Applies on the next Calculate or Refresh.</small><input id="max-buildings" type="number" step="1000" min="1000" /></label>
+
+        <hr class="drawer-divider" />
+        <p class="drawer-subhead"><b>Missing buildings</b></p>
         <p class="muted">Usually nothing is required. If a roof is missing, use the two-click
           rectangle or trace its corners. It applies immediately and is submitted to the shared review database.</p>
         <div class="row">
-          <button id="btn-draw-rectangle">Two-click rectangle</button>
-          <button id="btn-draw-building">Draw footprint</button>
-          <button id="btn-finish-building" hidden>Finish shape</button>
-          <button id="btn-cancel-map-mode" hidden>Cancel</button>
+          <button id="btn-draw-rectangle" type="button">Two-click rectangle</button>
+          <button id="btn-draw-building" type="button">Draw footprint</button>
+          <button id="btn-finish-building" type="button" hidden>Finish shape</button>
+          <button id="btn-cancel-map-mode" type="button" hidden>Cancel</button>
         </div>
         <div class="row">
-          <button id="btn-import-buildings">Import GeoJSON</button>
-          <button id="btn-clear-manual">Clear manual</button>
+          <button id="btn-import-buildings" type="button">Import GeoJSON</button>
+          <button id="btn-clear-manual" type="button">Clear manual</button>
           <input id="building-file" type="file" accept=".json,.geojson,application/geo+json" hidden />
         </div>
-      </details>
-      <details>
-        <summary>Reviewed city library <small>Published rav-reviewed snapshots</small></summary>
-        <p class="muted">Published entries preserve the reviewer, date, conditions, and source notes. Loading one replaces the current calculation after confirmation.</p>
-        <button id="btn-registry-refresh">Browse reviewed cities</button>
-        <div id="registry-list" class="source-report"></div>
-      </details>
-      <details>
-        <summary>Validated enclosure <small>Rav-supplied perimeter only</small></summary>
+
+        <hr class="drawer-divider" />
+        <p class="drawer-subhead"><b>Validated enclosure</b> <small>(rav-supplied perimeter only)</small></p>
         <p class="muted">Draw or import a rav-validated hukaf-l'dira wall/eruv perimeter. A yard is not assumed to count merely because it appears fenced in imagery. It remains inactive until you explicitly enable it.</p>
         <div class="row">
-          <button id="btn-draw-perimeter">Draw enclosure</button>
-          <button id="btn-import-perimeter">Import validated GeoJSON</button>
+          <button id="btn-draw-perimeter" type="button">Draw enclosure</button>
+          <button id="btn-import-perimeter" type="button">Import validated GeoJSON</button>
         </div>
         <input id="perimeter-file" type="file" accept=".json,.geojson,application/geo+json" hidden />
         <label class="check"><input id="use-perimeter" type="checkbox" /> Use validated perimeter as the city edge</label>
-        <button id="btn-clear-perimeter">Clear validated perimeter</button>
-        <hr />
+        <button id="btn-clear-perimeter" type="button">Clear validated perimeter</button>
         <p class="muted"><b>Validated residential yard / subsidiary perimeter:</b> this participates in the 70⅔- and 141⅓-amah wall-to-wall geometry but never counts as another house. Use only after a rav confirms the connection to a dwelling and <i>hukaf l'dirah</i> facts.</p>
         <div class="row">
-          <button id="btn-draw-join-perimeter">Draw joining perimeter</button>
-          <button id="btn-import-join-perimeter">Import joining GeoJSON</button>
+          <button id="btn-draw-join-perimeter" type="button">Draw joining perimeter</button>
+          <button id="btn-import-join-perimeter" type="button">Import joining GeoJSON</button>
         </div>
         <input id="join-perimeter-file" type="file" accept=".json,.geojson,application/geo+json" hidden />
-        <button id="btn-clear-join-perimeters">Clear joining perimeters</button>
+        <button id="btn-clear-join-perimeters" type="button">Clear joining perimeters</button>
       </details>
-      <div class="row exports">
-        <button id="btn-pdf">Export PDF</button>
-        <button id="btn-image">Export PNG image</button>
+
+      <details id="drawer-snapshots-section" class="drawer-section">
+        <summary>Snapshots &amp; reviewed cities <small>Replay &amp; rav library</small><span id="registry-count-badge" class="count-badge" hidden></span></summary>
+        <div class="row">
+          <button id="btn-snapshot" type="button">Save snapshot</button>
+          <button id="btn-load-snapshot" type="button">Load snapshot</button>
+          <input id="snapshot-file" type="file" accept=".json" hidden />
+        </div>
+        <small class="muted">Snapshots freeze the fetched data + settings + overrides for a
+          deterministic, reproducible replay (map releases change over time; halachos don't).</small>
+        <hr class="drawer-divider" />
+        <div class="drawer-subhead-row">
+          <b>Reviewed city library</b>
+          <button id="btn-registry-refresh" type="button">Refresh list</button>
+        </div>
+        <p class="muted">Published entries preserve the reviewer, date, conditions, and source notes.</p>
+        <div id="registry-list" class="source-report"></div>
+      </details>
+
+      <details class="drawer-section">
+        <summary>Exports <small>PNG, PDF, KML, KMZ &amp; GeoJSON</small></summary>
+        <p class="muted">Print-ready review sheets and GIS files carrying the active settings and audit record.</p>
+        <div class="row exports">
+          <button id="btn-image" type="button">Export PNG image</button>
+          <button id="btn-pdf" type="button">Export PDF</button>
+        </div>
+        <div class="row exports">
+          <button id="btn-kml" type="button">Export KML</button>
+          <button id="btn-kmz" type="button">Export KMZ</button>
+          <button id="btn-geojson" type="button">Export GeoJSON</button>
+        </div>
+        <div id="drawer-export-feedback" class="export-feedback" role="status" aria-live="polite" hidden></div>
+      </details>
       </div>
 
       <div class="legend" aria-label="Map key">
@@ -264,13 +284,13 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="js/track.js"></script>
-  <script src="js/geometry.js?v=20261125-8"></script>
-  <script src="js/data.js?v=20261125-8"></script>
-  <script src="js/settings.js?v=20261125-6"></script>
+  <script src="js/geometry.js?v=20261126-1"></script>
+  <script src="js/data.js?v=20261126-1"></script>
+  <script src="js/settings.js?v=20261126-1"></script>
   <script src="js/kml.js?v=20261109-1"></script>
   <script src="js/map-export.js?v=20261125-6"></script>
-  <script src="js/main.js?v=20261125-8"></script>
-  <script src="js/design-experience.js?v=20261125-7"></script>
-  <script src="js/feedback.js?v=20261125-7"></script>
+  <script src="js/main.js?v=20261126-1"></script>
+  <script src="js/design-experience.js?v=20261126-1"></script>
+  <script src="js/feedback.js?v=20261126-1"></script>
 </body>
 </html>

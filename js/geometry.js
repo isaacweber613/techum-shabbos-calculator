@@ -1201,11 +1201,13 @@
         closure.redraw.angleRad)];
       return closure.indices.map((index) => expandedModelRing(cityModels[index], settings.karpef ? karpefM : 0));
     };
-    let selectedClosures = physicalCityModel >= 0
-      ? closures.filter((closure) => closure.indices.includes(physicalCityModel)).slice(0, 1)
-      : closures.filter((closure) => closureStartingRings(closure).some((ring) => pointInOrOnRing(workPin, ring)));
+    const eruvPointMode = settings.shevisaMode === 'eruv-point';
+    let selectedClosures = eruvPointMode ? []
+      : physicalCityModel >= 0
+        ? closures.filter((closure) => closure.indices.includes(physicalCityModel)).slice(0, 1)
+        : closures.filter((closure) => closureStartingRings(closure).some((ring) => pointInOrOnRing(workPin, ring)));
 
-    const validatedPerimeter = Array.isArray(settings.validatedCityPerimeter) && settings.validatedCityPerimeter.length >= 3
+    const validatedPerimeter = !eruvPointMode && Array.isArray(settings.validatedCityPerimeter) && settings.validatedCityPerimeter.length >= 3
       ? settings.validatedCityPerimeter.map(rot) : null;
     const perimeterActive = !!(validatedPerimeter && pointInOrOnRing(workPin, validatedPerimeter));
 
@@ -1338,8 +1340,8 @@
       if (walled.length === 1) selectedClosures = walled;
       else if (holding.length) besideTown = true;
     }
-    const mode = perimeterActive || selectedClosures.length ? 'city' : homeBuilding >= 0 ? 'building' : 'point';
-    let home = selectedClosures.length === 1 ? cityModels[selectedClosures[0].indices[0]].clusterIndex : -1;
+    const mode = eruvPointMode ? 'point' : perimeterActive || selectedClosures.length ? 'city' : homeBuilding >= 0 ? 'building' : 'point';
+    let home = !eruvPointMode && selectedClosures.length === 1 ? cityModels[selectedClosures[0].indices[0]].clusterIndex : -1;
     markStage('homeSelection');
 
     if (mode === 'city' && perimeterActive) {
@@ -1415,7 +1417,12 @@
       techumPolygons = [rotateAroundPin(rectCornersInFrame(expandRect(base, techumM), 0))];
       mil12Polygons = [rotateAroundPin(rectCornersInFrame(expandRect(base, AMOS.MIL12 * settings.amahM), 0))];
       squaring = { method: pointAngle === 0 ? 'world-aligned-point' : 'reviewer-angle-point', angleRad: pointAngle, rectangularity: null };
-      warnings.push({ type: 'point-mode', text: 'No city starting area contains this point — treated as open-field shevisa: a 4-amah square plus 2000 amos on every side.' });
+      warnings.push({
+        type: 'point-mode',
+        text: eruvPointMode
+          ? 'Eruv techumin mode (4-amah point shevisa): measured as a 4-amah square around the pin plus 2,000 amos on every side. Orienting the square requires rabbinic guidance; if a rotated diagonal reaches a town, that town does not count as 4 amos (Peninei Halakha Shabbos 30:12).'
+          : 'No city starting area contains this point — treated as open-field shevisa: a 4-amah square plus 2000 amos on every side.',
+      });
     }
     // A person outside every city (point or lone-building shevisa) can also have a whole
     // city swallowed by his reach (SA 408:1; spec §1.10a, rev. 18.2). Flag it; never draw an extension.
@@ -1480,6 +1487,7 @@
     }
     const result = {
       mode,
+      eruvPointMode,
       calculationStatus: provisional ? 'provisional-no-fill' : 'complete-default',
       validatedPerimeterActive: perimeterActive,
       labels, homeCluster: home, homeCandidates: selectedClosures.map((closure) => closure.indices.map((index) => cityModels[index].clusterIndex)),
@@ -1641,14 +1649,14 @@
     //    town, each town whose squared box with the karpef holds it (its unfilled pocket held the pin).
     const towns = new Set(result.homeCluster >= 0 ? [result.homeCluster] : []);
     for (const group of result.homeCandidates || []) for (const index of group) towns.add(index);
-    if (result.mode !== 'city' && pin) {
+    if (result.mode !== 'city' && !result.eruvPointMode && pin) {
       result.clusters.forEach((cluster, index) => {
         if (cluster.qualifiesAsCity && pointInOrOnRing(pin, rectCornersInFrame(expandRect(boxOf(cluster.corners), karpefM), 0))) towns.add(index);
       });
     }
     // The houses joined to the pin's building, while too few of them are loaded to make a city: a
     // town cut by the edge of the loaded area can look like a few lone houses.
-    if (result.homeBuilding >= 0) {
+    if (result.homeBuilding >= 0 && !result.eruvPointMode) {
       const own = result.clusters.find((cluster) => !cluster.qualifiesAsCity && cluster.members.includes(result.homeBuilding));
       if (own) need(boxOf(own.corners));
     }
@@ -1680,8 +1688,44 @@
     return want;
   }
 
+  // Checks whether a local-meter destination lies inside the draft techum and its distance
+  // to the outer techum edge (ignoring internal seams between stepped regions).
+  function checkDestination(result, pointXY) {
+    if (!result || !pointXY) return null;
+    const techumRegions = (result.techumRegions && result.techumRegions.length)
+      ? result.techumRegions : (result.techumCorners ? [result.techumCorners] : []);
+    if (!techumRegions.length) return null;
+    const cityRegions = (result.cityRegions && result.cityRegions.length)
+      ? result.cityRegions : (result.cityCorners ? [result.cityCorners] : []);
+    const karpefRegions = result.karpefRegions || [];
+    const inCity = cityRegions.some((ring) => pointInOrOnRing(pointXY, ring));
+    const inKarpef = !inCity && karpefRegions.some((ring) => pointInOrOnRing(pointXY, ring));
+    const inside = techumRegions.some((ring) => pointInOrOnRing(pointXY, ring));
+    const outlineLoops = techumRegions.length > 1 ? unionOutline(techumRegions) : techumRegions;
+    let edgeDistanceM = Infinity;
+    for (const loop of outlineLoops) {
+      for (let i = 0; i < loop.length; i++) {
+        const d = pointSegDist(pointXY, loop[i], loop[(i + 1) % loop.length]);
+        if (d < edgeDistanceM) edgeDistanceM = d;
+      }
+    }
+    return { inside, inCity, inKarpef, edgeDistanceM };
+  }
+
+  // Rotation angle in [-44, 45] degrees that aims one corner of the 4-amah point square
+  // from pinXY directly toward targetXY.
+  function cornerAimAngleDeg(pinXY, targetXY) {
+    const dx = targetXY.x - pinXY.x, dy = targetXY.y - pinXY.y;
+    if (Math.hypot(dx, dy) < 1e-6) return 0;
+    const targetDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+    let deg = Math.round(((targetDeg % 90) + 90) % 90 - 45);
+    if (deg === -45) deg = 45;
+    return deg;
+  }
+
   return {
     AMOS, makeProjection, runPipeline, bufferRing, belowMinDwellingSize, dataFrontier, unionOutline,
+    checkDestination, cornerAimAngleDeg,
     // exported for tests
     _internals: {
       bboxOfRing, bboxGap, expandRect, ringDist,

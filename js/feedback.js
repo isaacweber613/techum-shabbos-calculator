@@ -45,7 +45,7 @@
       return await window.html2canvas(document.documentElement, {
         useCORS: true,
         allowTaint: false,
-        backgroundColor: '#f8f8f5',
+        backgroundColor: '#fffaf0',
         scale: Math.min(1.5, window.devicePixelRatio || 1),
         logging: false,
         imageTimeout: 5_000,
@@ -55,8 +55,13 @@
         windowHeight: window.innerHeight,
         scrollX: -window.scrollX,
         scrollY: -window.scrollY,
+        // Capture the page behind the open feedback dialog without hiding the form from the user.
+        ignoreElements: (element) => element.id === 'feedback-dialog',
         // Without this the map's boundary shapes are drawn offset from the map in the screenshot.
-        onclone: (clonedDocument) => { if (window.TechumNormalizeMapClone) window.TechumNormalizeMapClone(clonedDocument); },
+        onclone: (clonedDocument) => {
+          clonedDocument.getElementById('feedback-dialog')?.remove();
+          if (window.TechumNormalizeMapClone) window.TechumNormalizeMapClone(clonedDocument);
+        },
       });
     } finally {
       document.documentElement.classList.remove('feedback-capturing');
@@ -116,38 +121,77 @@
     return dialog;
   }
 
-  function openFeedback(screenshot, captureError) {
+  let openGeneration = 0;
+
+  function openFeedbackImmediate() {
+    const generation = ++openGeneration;
     const dialog = ensureDialog();
     dialog.innerHTML = `
       <div class="feedback-shell">
         <header class="feedback-header">
-          <div><h2>Send feedback</h2><p>Draw on the screenshot, then tell us what should change.</p></div>
+          <div><h2>Send feedback</h2><p>Tell us what happened or what should change. You can also mark up the screenshot.</p></div>
           <button class="feedback-close" type="button" aria-label="Close feedback">×</button>
         </header>
         <div class="feedback-body">
           <section class="feedback-preview">
-            <div class="feedback-preview-toolbar"><div><strong>Screenshot</strong><br><span>Draw in red to point something out.</span></div><button id="feedback-clear" type="button">Clear drawing</button></div>
-            ${captureError ? `<div class="feedback-capture-warning">The screenshot could not be captured, but you can still send written feedback: ${captureError}</div>` : '<canvas id="feedback-canvas" aria-label="Screenshot annotation canvas"></canvas>'}
+            <div class="feedback-preview-toolbar">
+              <div><strong>Screenshot</strong><br><span id="feedback-preview-hint">Capturing page in the background…</span></div>
+              <div class="feedback-preview-actions">
+                <label class="feedback-include-toggle"><input id="feedback-include-screenshot" type="checkbox" checked /> Include</label>
+                <button id="feedback-clear" type="button" disabled>Clear drawing</button>
+              </div>
+            </div>
+            <div id="feedback-preview-stage" class="feedback-preview-stage">
+              <div class="feedback-capture-loading">Preparing screenshot preview…</div>
+            </div>
           </section>
           <form class="feedback-form" id="feedback-form">
             <label>What should we fix or improve?
               <textarea id="feedback-description" maxlength="5000" required autofocus placeholder="Describe what happened and what you expected instead."></textarea>
             </label>
-            <label>Email <small>Optional—only used if we need to ask about this report.</small>
+            <label>Email <small>Optional — only used if we need to ask about this report.</small>
               <input id="feedback-email" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com" />
             </label>
-            <small>The screenshot, this page URL, browser details, and recent warnings/errors will be stored privately for review.</small>
+            <small>The page URL, browser details, recent warnings/errors, and optional screenshot will be stored privately for review.</small>
             <button class="feedback-submit" type="submit">Send feedback</button>
             <div class="feedback-form-status" role="status" aria-live="polite"></div>
           </form>
         </div>
       </div>`;
+
     dialog.querySelector('.feedback-close').addEventListener('click', () => dialog.close());
-    const canvas = dialog.querySelector('#feedback-canvas');
-    const clear = canvas && screenshot ? installAnnotation(canvas, screenshot) : null;
     const clearButton = dialog.querySelector('#feedback-clear');
-    clearButton.disabled = !clear;
-    clearButton.addEventListener('click', () => clear?.());
+    const includeCheckbox = dialog.querySelector('#feedback-include-screenshot');
+    const stage = dialog.querySelector('#feedback-preview-stage');
+    const hint = dialog.querySelector('#feedback-preview-hint');
+
+    let readyCanvas = null;
+    let clearFn = null;
+    clearButton.addEventListener('click', () => clearFn?.());
+    includeCheckbox.addEventListener('change', () => {
+      stage.classList.toggle('excluded', !includeCheckbox.checked);
+    });
+
+    const capturePromise = captureViewport().then((screenshot) => {
+      if (generation !== openGeneration || !dialog.open) return;
+      const canvas = document.createElement('canvas');
+      canvas.id = 'feedback-canvas';
+      canvas.setAttribute('aria-label', 'Screenshot annotation canvas');
+      clearFn = installAnnotation(canvas, screenshot);
+      readyCanvas = canvas;
+      stage.replaceChildren(canvas);
+      hint.textContent = 'Draw in red to point something out.';
+      clearButton.disabled = false;
+    }).catch((error) => {
+      if (generation !== openGeneration || !dialog.open) return;
+      const msg = error instanceof Error ? error.message : 'Unknown screenshot error';
+      const warn = document.createElement('div');
+      warn.className = 'feedback-capture-warning';
+      warn.textContent = `The screenshot could not be captured, but you can still send written feedback: ${msg}`;
+      stage.replaceChildren(warn);
+      hint.textContent = 'Screenshot unavailable.';
+    });
+
     const form = dialog.querySelector('#feedback-form');
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -158,16 +202,19 @@
       status.className = 'feedback-form-status';
       status.textContent = '';
       try {
+        if (includeCheckbox.checked && !readyCanvas) {
+          await Promise.race([capturePromise, new Promise((resolve) => setTimeout(resolve, 2500))]);
+        }
         const data = new FormData();
         data.set('description', dialog.querySelector('#feedback-description').value);
         data.set('reporterEmail', dialog.querySelector('#feedback-email').value);
         data.set('pageUrl', location.href);
         data.set('diagnostics', JSON.stringify(diagnostics()));
-        if (canvas) data.set('screenshot', await canvasBlob(canvas), 'feedback.png');
+        if (includeCheckbox.checked && readyCanvas) data.set('screenshot', await canvasBlob(readyCanvas), 'feedback.png');
         const result = await fetch('/api/feedback', { method: 'POST', body: data });
         const payload = await result.json().catch(() => ({}));
         if (!result.ok) throw new Error(payload.error || `HTTP ${result.status}`);
-        dialog.querySelector('.feedback-shell').innerHTML = `<div class="feedback-success"><h2>Thanks—feedback sent.</h2><p>It is now in the private feedback inbox.</p><p><code>${payload.reportId}</code></p><button type="button" class="feedback-success-close">Close</button></div>`;
+        dialog.querySelector('.feedback-shell').innerHTML = `<div class="feedback-success"><h2>Thanks — feedback sent.</h2><p>It is now in the private feedback inbox.</p><p><code>${payload.reportId}</code></p><button type="button" class="feedback-success-close">Close</button></div>`;
         dialog.querySelector('.feedback-success-close').addEventListener('click', () => dialog.close());
       } catch (error) {
         status.className = 'feedback-form-status error';
@@ -176,27 +223,14 @@
         submit.textContent = 'Send feedback';
       }
     });
+
     dialog.showModal();
     dialog.querySelector('#feedback-description').focus();
   }
 
-  const buttons = [...document.querySelectorAll('[data-feedback-trigger]')];
-  if (!buttons.length) return;
-  for (const button of buttons) {
-    button.addEventListener('click', async () => {
-      const label = button.querySelector('[data-feedback-label]');
-      const original = label?.textContent || 'Send feedback';
-      button.disabled = true;
-      if (label) label.textContent = 'Capturing…';
-      let screenshot = null;
-      let captureError = '';
-      try { screenshot = await captureViewport(); }
-      catch (error) { captureError = error instanceof Error ? error.message : 'Unknown screenshot error'; }
-      finally {
-        button.disabled = false;
-        if (label) label.textContent = original;
-      }
-      openFeedback(screenshot, captureError);
-    });
-  }
+  document.addEventListener('click', (event) => {
+    const trigger = event.target.closest?.('[data-feedback-trigger]');
+    if (!trigger) return;
+    openFeedbackImmediate();
+  });
 })();
