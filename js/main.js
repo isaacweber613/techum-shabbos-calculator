@@ -2072,7 +2072,7 @@
     const attributionOverlay = document.createElement('div');
     attributionOverlay.className = 'google-static-attribution-overlay';
     attributionOverlay.setAttribute('aria-hidden', 'true');
-    attributionOverlay.style.setProperty('--google-attribution-height', `${plan.attributionHeight}px`);
+    attributionOverlay.style.setProperty('--google-attribution-height', `${plan.attribution.height}px`);
     try {
       const centerPoint = map.project(center, plan.requestZoom);
       const images = plan.images.map((part) => {
@@ -2099,13 +2099,19 @@
         return { image, part, loaded };
       });
       await Promise.all(images.map(({ loaded }) => loaded));
-      // Repaint Google's baked-in bottom attribution above Leaflet's boundary panes.
-      // The source images remain direct from Google and the strip is not cropped.
-      images.filter(({ part }) => part.bottomRow).forEach(({ image, part }) => {
+      // Each image's own Google strip is hidden under the next row or below the view.
+      // Repaint one logo (bottom left) and one "Map data" line (bottom right), straight
+      // from Google's images and uncropped, above Leaflet's boundary panes.
+      plan.attribution.boxes.forEach((box) => {
+        const { image, part } = images[box.image];
+        const clip = document.createElement('div');
+        Object.assign(clip.style, { position: 'absolute', overflow: 'hidden', top: '0px',
+          left: `${box.left}px`, width: `${box.width}px`, height: `${plan.attribution.height}px` });
         const attributionImage = image.cloneNode(false);
         attributionImage.alt = '';
-        attributionImage.style.top = `${part.top - (size.y - plan.attributionHeight)}px`;
-        attributionOverlay.appendChild(attributionImage);
+        Object.assign(attributionImage.style, { left: `${part.left - box.left}px`, top: `${-part.contentCssHeight}px` });
+        clip.appendChild(attributionImage);
+        attributionOverlay.appendChild(clip);
       });
       mapElement.prepend(container);
       mapElement.appendChild(attributionOverlay);
