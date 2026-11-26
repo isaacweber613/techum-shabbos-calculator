@@ -1,6 +1,6 @@
 # Techum Shabbos Calculator — Halachos & Spec
 
-> **STATUS: Researched and executable draft (rev. 18.3, 2026-11-25) — sources verified via web research against Sefaria,
+> **STATUS: Researched and executable draft (rev. 18.4, 2026-11-25) — sources verified via web research against Sefaria,
 > Chabad.org (Shulchan Aruch HaRav), Halachipedia, Peninei Halakha, Rambam, and contemporary
 > techum literature. NOT a psak halacha.** The Mishna Berurah (399:7) requires techum
 > measurement by an expert (*mumcheh*) who knows these halachos; this tool is decision-support
@@ -1049,6 +1049,61 @@ one that is proven, and says plainly when a result cannot be finished.
 - No psak default changed. Engine 1.6.0. Tests: `tests/geometry.test.js` and
   `tests/app.test.js` (spec rev. 18.3 cases); `tests/buildings-cache.test.ts` (tile requests,
   largest copy); `scripts/loading-proof.cjs` (the 300 made-up maps, about 15 minutes).
+
+### Rev. 18.4 — 2026-11-25 (the line a dense town keeps, and a search the server can answer; no psak default changes)
+
+- **The line a dense town keeps.** When the rev. 18.3 proof cannot finish inside the
+  building-count limit, the result is still incomplete, but it now draws the rev. 18.1 area
+  rule's line dashed and calls it "not proven" instead of drawing nothing. The rule
+  (`dataFrontier` in `js/geometry.js`) is unchanged and still reads the loaded area as one box.
+  The line is drawn only while that rule is met for the result and the loaded extent; when it
+  also fails, or loading failed, no line is drawn. The map label, answer card, status line,
+  audit text, KML/KMZ/GeoJSON and PNG caption all say the line is not proven. This is a display
+  rule; the halachic result is the rev. 18.3 one.
+- **The limit stops the loading, not the other way round.** Tiles are added in the caller's
+  order (nearest the home town's chain first) only while the building-count limit has room, so a
+  dense town's search reaches the limit holding its own area rather than a corner of the last
+  box. The analyzed set is therefore at or below the limit, and the dashed line can be drawn
+  where the area rule is met.
+- **Requests the server can answer.** The loader packs wanted tiles into 6 × 6 boxes (at most
+  36 tiles, one request each; `tileRequests` in `js/data.js`) and keeps this tab under the
+  server's 30 requests a minute (`wrangler.jsonc`) by waiting before a request that would be the
+  31st in the last minute. A per-network refusal (`429` with `Retry-After: 60`) is waited out and
+  the request retried instead of ending the search. The local development proxy (`serve.mjs`)
+  now passes `Retry-After` and `X-Building-Fill-Remaining` through so a local copy behaves the
+  same.
+- **Speed work.** One request is one 6 × 6 window; each pass also asks for one ring of tiles
+  around the tiles `dataNeeds` names, so towns one 2000-amah step farther load in the same pass
+  (Woodbourne by Mishna Berura: 12 passes and 26 requests, now 5 passes and 14 requests).
+  Browser cache reads and writes for a pass go in one IndexedDB transaction instead of one per
+  tile. A footprint already projected for this pin is reused on later passes; a larger copy that
+  replaces a cut one at a tile edge is a new object and is prepared again. `nextPaint` no longer
+  waits forever for a frame in a hidden tab.
+- **Measured in the browser on a local copy** (the shared Chrome, production map data through
+  the local proxy; `master` is the released `3e09ba1`, run the same way). "First" is the first
+  visit with a cleared browser cache, "repeat" the same place straight after; seconds are the
+  app's calculation time until the answer shows.
+
+  | Place | Profile | Requests (first) | First (s) | Repeat (s) | master (s) |
+  |---|---|---:|---:|---:|---:|
+  | Woodbourne NY | Mishna Berura | 14 | 37.8 | 6.9 | 5.3 |
+  | Woodbourne NY | Chazon Ish | 19 | 33.2 | 9.6 | 4.9 |
+  | Iowa farmhouse | Mishna Berura | 1 | 2.7 | 0.6 | 1.3 |
+  | Iowa farmhouse | Chazon Ish | 1 | 0.5 | 0.1 | 3.7 |
+  | Monsey NY | Mishna Berura | 3 | 4.7 | 3.0 | 15.2 |
+  | Monsey NY | Chazon Ish | 3 | 10.2 | 6.5 | 16.9 |
+  | Lakewood NJ | Mishna Berura | 3 | 36.3 | 4.5 | 7.8 |
+  | Lakewood NJ | Chazon Ish | 3 | 8.2 | 5.9 | 16.1 |
+
+  Woodbourne and the Iowa farmhouse are proven under both profiles. Monsey and Lakewood are
+  incomplete; their dashed not-proven line is drawn by Mishna Berura, and not by Chazon Ish
+  because there the rev. 18.1 area rule itself is not met. The first visit pays the server's
+  cold fill for tiles no earlier run had (Woodbourne 37.8 s, Lakewood 36.3 s); the repeat is the
+  steady state. `master` was measured once per place, so its numbers carry the same network
+  noise.
+- No psak default changed. Engine 1.6.0. Tests: `npm test` (`tests/app.test.js`, 54 tests;
+  `tests/geometry.test.js`; `tests/spec-golden.test.js`; the Worker suites) and
+  `npm run typecheck`.
 
 ## Part 3 — Product spec
 

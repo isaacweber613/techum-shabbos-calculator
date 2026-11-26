@@ -69,10 +69,17 @@ createServer(async (req, res) => {
       const upstream = new URL('/api/buildings' + url.search, 'https://tchumshabbos.com');
       const response = await fetch(upstream, { headers: { Accept: 'application/json' } });
       const body = Buffer.from(await response.arrayBuffer());
-      res.writeHead(response.status, {
+      // Pass the server's retry signals through: the app waits out a rate-limit minute and keeps
+      // following a cold fill only if it can read them.
+      const headers = {
         'Content-Type': response.headers.get('Content-Type') || 'application/json',
         'Cache-Control': 'no-store',
-      });
+      };
+      for (const name of ['Retry-After', 'X-Building-Fill-Remaining']) {
+        const value = response.headers.get(name);
+        if (value) headers[name] = value;
+      }
+      res.writeHead(response.status, headers);
       res.end(body);
       return;
     }

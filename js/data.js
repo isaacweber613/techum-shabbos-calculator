@@ -290,6 +290,39 @@
       });
     } catch { /* cache is best-effort */ }
   }
+  // One transaction for a pass's tiles: opening a connection and a transaction per tile made a
+  // pass with 177 cached tiles take seconds.
+  async function cacheGetMany(keys) {
+    const out = new Map();
+    if (!keys.length) return out;
+    try {
+      const db = await openDB();
+      await new Promise((resolve) => {
+        const tx = db.transaction(STORE, 'readonly');
+        const store = tx.objectStore(STORE);
+        for (const key of keys) {
+          const req = store.get(key);
+          req.onsuccess = () => { if (req.result) out.set(key, req.result); };
+        }
+        tx.oncomplete = resolve;
+        tx.onerror = resolve;
+      });
+    } catch { /* cache is best-effort */ }
+    return out;
+  }
+  async function cachePutMany(entries) {
+    if (!entries.length) return;
+    try {
+      const db = await openDB();
+      await new Promise((resolve) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        const store = tx.objectStore(STORE);
+        for (const [key, value] of entries) store.put(value, key);
+        tx.oncomplete = resolve;
+        tx.onerror = resolve;
+      });
+    } catch { /* cache is best-effort */ }
+  }
 
   // ---------- Server tiles ----------
   // Mirrors worker/buildings.ts: 0.02° cache tiles, at most 36 tiles (6×6) per request. The
@@ -320,13 +353,28 @@
     };
     const whole = boxOf(all);
     if (whole.i1 - whole.i0 < SERVER_SPAN_TILES && whole.j1 - whole.j0 < SERVER_SPAN_TILES) return [request(whole)];
-    const blocks = new Map();
-    for (const tile of all) {
-      const block = `${Math.floor(tile.i / SERVER_SPAN_TILES)}/${Math.floor(tile.j / SERVER_SPAN_TILES)}`;
-      if (!blocks.has(block)) blocks.set(block, []);
-      blocks.get(block).push(tile);
+    // Greedy 6 × 6 cover: take the lowest remaining tile as an anchor and the window around it
+    // that holds the most remaining tiles, so a chain that straddles a fixed grid line still
+    // travels in one request. Each request is the window's wanted tiles, at most 36.
+    const remaining = all.slice().sort((a, b) => a.i - b.i || a.j - b.j);
+    const requests = [];
+    while (remaining.length) {
+      const anchor = remaining[0];
+      let best = null;
+      for (let i0 = anchor.i - SERVER_SPAN_TILES + 1; i0 <= anchor.i; i0++) {
+        for (let j0 = anchor.j - SERVER_SPAN_TILES + 1; j0 <= anchor.j; j0++) {
+          const taken = remaining.filter((tile) => tile.i >= i0 && tile.i < i0 + SERVER_SPAN_TILES &&
+            tile.j >= j0 && tile.j < j0 + SERVER_SPAN_TILES);
+          const better = !best || taken.length > best.taken.length ||
+            (taken.length === best.taken.length && (i0 > best.i0 || (i0 === best.i0 && j0 > best.j0)));
+          if (better) best = { i0, j0, taken };
+        }
+      }
+      requests.push(request(boxOf(best.taken)));
+      const used = new Set(best.taken.map((tile) => `${tile.i}/${tile.j}`));
+      for (let k = remaining.length - 1; k >= 0; k--) if (used.has(`${remaining[k].i}/${remaining[k].j}`)) remaining.splice(k, 1);
     }
-    return [...blocks.values()].map((tiles) => request(boxOf(tiles)));
+    return requests;
   }
 
   // The server answers 30 building requests a minute from one network (wrangler.jsonc). Keep this
@@ -492,33 +540,52 @@
   // (sequentially, so cold fills do not contend for the Worker's global fill slot). Every tile of
   // an answer is cached on its own, including the tiles of its box that were not asked for: the
   // answer holds them whole. force=true bypasses the browser and R2 caches.
-  async function fetchTilesCached(keys, { force = false } = {}) {
-    const tiles = new Map();
-    const pending = [];
-    for (const key of keys) {
-      const hit = force ? null : await cacheGet(tileCacheKey(key));
-      if (hit) {
-        tiles.set(key, { buildings: hit.buildings, fetchedAt: hit.fetchedAt, checkedAt: hit.checkedAt || hit.fetchedAt,
-          fromCache: true, source: 'local-overture', release: hit.release || null,
-          correctionsApplied: hit.correctionsApplied || 0,
-          correctionIds: Array.isArray(hit.correctionIds) ? hit.correctionIds : null });
-      } else pending.push(key);
-    }
+  async function fetchTilesCached(keys, { force = false, maxBuildings = Infinity, loadedBuildings = 0 } = {}) {
+    const wanted = [...new Set(keys)];
+    const budget = Number.isFinite(maxBuildings) ? Math.max(0, maxBuildings - loadedBuildings) : Infinity;
+    const cached = force ? new Map() : await cacheGetMany(wanted.map((key) => tileCacheKey(key)));
+    const pending = wanted.filter((key) => !cached.has(tileCacheKey(key)));
+    const fetchedTiles = new Map();
     let requests = 0;
+    let received = 0;
     for (const request of tileRequests(pending)) {
+      if (received > budget) break; // the caller's order gives the nearer tiles the room left
       const remote = await fetchBuildingsFromServer(request.bbox, { force });
       requests++;
       const split = splitIntoTiles(remote.buildings, request.tiles);
+      const writes = [];
       for (const key of request.tiles) {
         const record = { buildings: split.get(key), fetchedAt: remote.fetchedAt, checkedAt: remote.checkedAt,
           release: remote.release, correctionsApplied: remote.correctionsApplied, correctionIds: remote.correctionIds };
-        await cachePut(tileCacheKey(key), record);
+        writes.push([tileCacheKey(key), record]);
         // fromCache as the server said: its own tile store answered, so the data is as old as
         // fetchedAt and the status line says so rather than calling it fresh.
-        tiles.set(key, { ...record, fromCache: remote.fromCache, source: remote.source });
+        fetchedTiles.set(key, { ...record, fromCache: remote.fromCache, source: remote.source });
+        received += record.buildings ? record.buildings.length : 0;
       }
+      await cachePutMany(writes);
     }
-    return { tiles, requests };
+    // The building-count data limit is the only stop. Add the tiles in the caller's order, so a
+    // dense town's search reaches the limit holding the tiles nearest its chain, not a corner of
+    // the last box. A town's own tiles are asked for first, so its line can still be drawn dashed.
+    const tiles = new Map();
+    let added = 0;
+    let truncated = false;
+    for (const key of wanted) {
+      const hit = cached.get(tileCacheKey(key));
+      const record = hit
+        ? { buildings: hit.buildings, fetchedAt: hit.fetchedAt, checkedAt: hit.checkedAt || hit.fetchedAt,
+          fromCache: true, source: 'local-overture', release: hit.release || null,
+          correctionsApplied: hit.correctionsApplied || 0,
+          correctionIds: Array.isArray(hit.correctionIds) ? hit.correctionIds : null }
+        : fetchedTiles.get(key);
+      if (!record) { truncated = true; continue; }
+      const count = record.buildings ? record.buildings.length : 0;
+      if (added + count > budget) { truncated = true; continue; }
+      added += count;
+      tiles.set(key, record);
+    }
+    return { tiles, requests, truncated };
   }
 
   async function submitBuildingCorrection(correction) {

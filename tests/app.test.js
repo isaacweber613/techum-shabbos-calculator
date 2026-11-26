@@ -222,7 +222,7 @@ test('audit map and city-status controls use the correct merge stage', () => {
   assert.match(html, /Six mapped footprints are only a provisional fallback/);
   assert.doesNotMatch(html, /City threshold: 6 houses/);
   for (const asset of ['style.css', 'geometry.js', 'data.js', 'settings.js', 'map-export.js', 'main.js']) {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-[12]|20261110-[12]|20261125-[6-9])'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=(?:202607(?:14-(?:2|3)|15-[1-6]|20-1)|2026100[56]-[12]|20261023-[12]|20261109-[12]|20261110-[12]|20261125-(?:[6-9]|10))'));
   }
 });
 
@@ -624,6 +624,7 @@ test('an incomplete result keeps the line only while the rev. 18.1 area rule is 
       state: { dataCapHit: true, dataCapReason: reason, result: { clusters: [] }, pin: { lat: 41, lon: -74 },
         proj: { lat0: 41, lon0: -74, toXY: () => ({ x: 0, y: 0 }) } },
       loadedView: () => view,
+      tilesExtent: (keys) => ({ south: 1, west: 2, north: 3, east: 4, from: keys.length }),
       frontierArgs: null,
       G: { dataFrontier(...args) { ctx.frontierArgs = args; return frontier; } },
     };
@@ -632,7 +633,8 @@ test('an incomplete result keeps the line only while the rev. 18.1 area rule is 
   };
   const met = make();
   assert.equal(met.fn(), true, 'the older rule is met: draw the dashed line');
-  assert.equal(JSON.stringify(met.ctx.frontierArgs[2]), JSON.stringify({ tiles: ['1/1'] }));
+  assert.equal(JSON.stringify(met.ctx.frontierArgs[2]), JSON.stringify({ south: 1, west: 2, north: 3, east: 4, from: 1 }),
+    'a tile-loaded area is read as its one box, as the rev. 18.1 rule did');
   const bbox = make({ view: { bbox: { south: 0, west: 0, north: 1, east: 1 } } });
   assert.equal(bbox.fn(), true);
   assert.equal(JSON.stringify(bbox.ctx.frontierArgs[2]), JSON.stringify({ south: 0, west: 0, north: 1, east: 1 }), 'an older snapshot\'s box is checked');
@@ -828,6 +830,30 @@ test('typed coordinates go to that point, not to a street named after the number
   };
   // Run after the cache-flag block, which swaps globalThis.fetch too.
   pendingTests.push(Promise.all(pendingTests).then(refusalRun));
+}
+
+{
+  // The building-count limit stops the loader with the nearest tiles added, so a dense town's
+  // search keeps as much of its own area as fits and can still draw the dashed not-proven line.
+  const name = 'the loader stops at the building-count limit with the nearest tiles added';
+  const realFetch = globalThis.fetch;
+  const run = async () => {
+    globalThis.fetch = async () => ({ ok: true, status: 200, headers: { get: () => null },
+      json: async () => ({ buildings: [
+        { id: 'a', ringLatLon: [{ lat: 0.03, lon: 0.03 }, { lat: 0.031, lon: 0.03 }, { lat: 0.03, lon: 0.031 }] },
+        { id: 'b', ringLatLon: [{ lat: 0.03, lon: 0.05 }, { lat: 0.031, lon: 0.05 }, { lat: 0.03, lon: 0.051 }] },
+      ], fetchedAt: '2026-07-13T00:00:00Z', checkedAt: '2026-07-13T00:00:00Z', fromCache: false,
+      source: 'overture-tiles', release: '2026-06-17.0', correctionIds: [] }) });
+    try {
+      const { tiles, truncated } = await D.fetchTilesCached(['1/1', '1/2'], { maxBuildings: 1, loadedBuildings: 0 });
+      assert.equal(truncated, true);
+      assert.deepEqual([...tiles.keys()], ['1/1'], 'the first tile fits the limit; the second does not');
+      assert.equal(tiles.get('1/1').buildings[0].id, 'a');
+    } finally { globalThis.fetch = realFetch; }
+  };
+  pendingTests.push(Promise.all(pendingTests).then(run)
+    .then(() => { passed++; console.log('  ok  ' + name); })
+    .catch((e) => { console.error('FAIL  ' + name + ' — ' + e.message); process.exitCode = 1; }));
 }
 
 Promise.all(pendingTests).then(() => console.log(`\n${passed} app tests passed`));

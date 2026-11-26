@@ -531,7 +531,8 @@
       };
       const fetchTicker = setInterval(showFetchStage, 1000);
       try {
-        fetched = await D.fetchTilesCached(wanted.filter((key) => !loadedTiles.has(key)), { force: !!forceFresh });
+        fetched = await D.fetchTilesCached(wanted.filter((key) => !loadedTiles.has(key)), { force: !!forceFresh,
+          maxBuildings: settings.maxBuildings, loadedBuildings: state.rawBuildings.length });
         if (isStale()) return;
       } catch (e) {
         if (isStale()) return;
@@ -604,12 +605,23 @@
         engineStages: state.result && state.result.engineTimings ? state.result.engineTimings : null });
       const needs = state.needs;
       if (needs && needs.complete) break;
-      if (!needs || !needs.tiles.length || state.rawBuildings.length > settings.maxBuildings) {
+      // The data limit: either this pass was cut at it, or the next pass would add nothing. Keep
+      // the analyzed pass and say it is incomplete.
+      if (fetched.truncated || !needs || !needs.tiles.length || state.rawBuildings.length >= settings.maxBuildings) {
         state.dataCapHit = true;
         state.dataCapReason = 'buildings';
         break;
       }
       wanted = needs.tiles;
+      // Load one ring of tiles around each needed tile too. The towns that join the chain next
+      // lie within 2000 amos (about one 0.02° tile) of its edge, so their map data comes with
+      // this pass instead of another one; the proof still checks the finished result.
+      wanted = [...new Set(wanted.flatMap((key) => {
+        const [i, j] = key.split('/').map(Number);
+        const ring = [];
+        for (let di = -2; di <= 2; di++) for (let dj = -2; dj <= 2; dj++) ring.push(`${i + di}/${j + dj}`);
+        return ring;
+      }))];
       iteration++;
     }
     setCalculationStage('draw', 'Drawing and labeling the boundaries…');
@@ -675,9 +687,15 @@
     document.getElementById('btn-dismiss-performance').onclick = () => { el.hidden = true; };
   }
 
+  // A search pass re-prepares every loaded footprint; the projection is fixed for the whole run
+  // and a footprint's tiles keep the same object, so a footprint prepared once is reused. A
+  // larger copy that replaces a cut one at a tile edge is a new object and is prepared again.
+  let preparedByRaw = new WeakMap();
+  let preparedForProj = null;
   function prepareBuildings() {
-    auditCache.clear(); // buffers are keyed by building id — new data invalidates them
+    auditCache.clear(); // buffers are keyed by building id - new data invalidates them
     const proj = state.proj;
+    if (preparedForProj !== proj) { preparedByRaw = new WeakMap(); preparedForProj = proj; }
     const joinPerimeters = state.validatedJoinPerimeters.map((item, index) => ({
       id: item.id || `validated-join-${index + 1}`,
       tags: { building: 'yes', source: 'rav-validated-join-perimeter' },
@@ -685,19 +703,30 @@
       joinOnly: true,
     }));
     state.buildings = state.rawBuildings.concat(state.manualBuildings, joinPerimeters).map((raw) => {
+      const cached = !raw.joinOnly && preparedByRaw.get(raw);
+      if (cached) return cached;
       const ring = raw.ringLatLon.map((p) => proj.toXY(p.lat, p.lon));
       const cls = D.classify(raw.tags);
-      return {
+      const prepared = {
         id: raw.id, tags: raw.tags, ring,
         bbox: ringBBox(ring), joinOnly: !!raw.joinOnly,
         klass: cls.klass, reason: cls.reason,
         included: false, // set in recompute from klass + settings + override
       };
-      });
+      if (!raw.joinOnly) preparedByRaw.set(raw, prepared);
+      return prepared;
+    });
   }
 
   function nextPaint() {
-    return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+    // Wait for the next frame, but a hidden tab has no frames: continue after a short cap so a
+    // calculation switched away from still finishes instead of stalling on requestAnimationFrame.
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      requestAnimationFrame(() => setTimeout(finish, 0));
+      setTimeout(finish, 50);
+    });
   }
 
   // A finished run hides the strip after a delay; a run that starts meanwhile must keep it.
@@ -977,15 +1006,17 @@
   }
   // The rev. 18.1 rule (dataFrontier): does the loaded area hold the home town, every town whose
   // squared area could share it, and the towns within 2000 amos of a later three-villages join?
-  // It is weaker than the rev. 18.3 proof. When it is met and no load failed, the answer is drawn
-  // dashed and labelled "not proven" rather than withheld; only when it also fails, or loading
-  // failed, does an incomplete result draw no line (spec rev. 18.4).
+  // It is weaker than the rev. 18.3 proof, and it reads the loaded area as one box, as it did when
+  // it drove the search. When it is met and no load failed, the answer is drawn dashed and
+  // labelled "not proven" rather than withheld; only when it also fails, or loading failed, does
+  // an incomplete result draw no line (spec rev. 18.4).
   function unprovenLineAllowed() {
     if (!state.dataCapHit || state.dataCapReason === 'failed') return false;
     if (!state.result || !state.proj || !state.pin) return false;
     const view = loadedView();
     if (!view) return false;
-    const loaded = view.tiles ? { tiles: view.tiles } : view.bbox;
+    const loaded = view.bbox || tilesExtent(view.tiles);
+    if (!loaded) return false;
     return !G.dataFrontier(state.result, state.proj, loaded, state.proj.toXY(state.pin.lat, state.pin.lon));
   }
   function tilesExtent(keys) {
