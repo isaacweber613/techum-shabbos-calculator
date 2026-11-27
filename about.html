@@ -15,9 +15,11 @@
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--page); color: var(--ink-1);
       font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 15px; line-height: 1.55; }
-    #banner { background: var(--banner); color: #fff8e8; padding: 7px 14px; font-size: 13px;
+    #banner { background: var(--banner); color: #fff8e8; padding: 7px 14px; font-size: 12.5px;
       line-height: 1.35; position: sticky; top: 0; z-index: 20; text-align: center; }
     #banner b { color: #fff; }
+    .banner-mark { margin-right: 6px; padding: 1px 6px; border: 1px solid rgba(255, 248, 232, .45);
+      border-radius: 99px; color: #fff8e8; font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
     main { max-width: 860px; margin: 0 auto; padding: 24px 22px 60px; }
     nav { font-size: 13.5px; margin-bottom: 18px; }
     nav a { color: var(--accent); text-decoration: none; font-weight: 600; }
@@ -56,8 +58,8 @@
 </head>
 <body>
   <div id="banner">
-    ⚠ DRAFT TOOL — <b>not a psak halacha.</b> Techum measurement requires an expert (MB 399:7).
-    <b>Verify with a rav before relying on anything here.</b>
+    <span class="banner-mark">Draft</span> Decision support, not a psak.
+    <b>Review with a rav before relying on it.</b>
   </div>
   <main>
     <nav><a href="/">← Back to the calculator</a> &nbsp;·&nbsp; <a href="/guide">Plain-language guide</a> &nbsp;·&nbsp; <a href="/he/">עברית</a></nav>

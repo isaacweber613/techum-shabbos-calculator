@@ -11,8 +11,10 @@ html[data-design] {
   --dx-soft: #eef4dc;
   --dx-line: rgba(54, 95, 70, .16);
   color-scheme: light;
+  accent-color: var(--dx-accent);
 }
 html[data-design] body { overflow-x: hidden; background: #fffaf0; color: var(--dx-ink); }
+html[data-design] #map path.leaflet-interactive:focus { outline: none; }
 
 html[data-design] #banner {
   min-height: 32px;
@@ -207,6 +209,7 @@ html[data-design] #address {
   background: #fff;
   color: var(--dx-ink);
   font-size: 15px;
+  text-overflow: ellipsis;
   box-shadow: 0 2px 10px rgba(54, 95, 70, .06);
 }
 html[data-design] #address:focus {
@@ -354,14 +357,14 @@ html[data-design] #simple-quick-settings > summary em {
 }
 html[data-design] .simple-settings-body {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   align-items: end;
   gap: 8px;
   padding: 10px 12px 12px;
   border-top: 1px solid var(--dx-line);
 }
 html[data-design] #simple-quick-settings label { display: block; min-width: 0; margin: 0; }
-html[data-design] #simple-quick-settings .quick-mode-field { grid-column: 1 / -1; }
+html[data-design] #simple-quick-settings .quick-mode-field { grid-column: auto; }
 html[data-design] #simple-quick-settings label span {
   display: block;
   margin: 0 0 3px 1px;
@@ -425,21 +428,22 @@ html[data-design] .result-color-summary {
   line-height: 1.45;
 }
 html[data-design] .result-action-bar {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
-  margin: 0 0 6px;
+  margin: 0 0 8px;
 }
 html[data-design] .result-action-bar button {
-  flex: 1 1 auto;
+  min-width: 0;
   min-height: 34px;
-  padding: 6px 10px;
+  padding: 6px 6px;
   border: 1px solid rgba(54, 95, 70, .28);
   border-radius: 6px;
   background: #fff;
   color: var(--dx-ink);
   font-size: 12.5px;
   font-weight: 700;
+  white-space: nowrap;
 }
 html[data-design] .result-action-bar button:hover:not(:disabled) { background: var(--dx-soft); }
 html[data-design] .result-action-bar button:disabled { opacity: .65; cursor: wait; }
@@ -451,9 +455,23 @@ html[data-design] .result-action-bar button.is-active {
 html[data-design] .result-tap-hint {
   margin: 0 0 8px;
   color: var(--dx-muted);
-  font-size: 12px;
-  line-height: 1.35;
+  font-size: 12.5px;
+  line-height: 1.4;
 }
+html[data-design] .inline-action-link {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--dx-accent);
+  font: 700 12.5px/1.4 inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+html[data-design] .inline-action-link:hover { background: transparent; color: #244532; }
 html[data-design] .export-feedback {
   margin: 6px 0 8px;
   padding: 7px 10px;
@@ -621,9 +639,29 @@ html[data-design] #review-queue {
   background: #fffdf7;
   font-size: 13px;
 }
-html[data-design] #review-queue .review-title { padding: 9px 11px; margin: 0; background: var(--dx-soft); }
-html[data-design] #review-queue .review-title span { font-size: 12px; }
-html[data-design] #review-queue .review-list button { font-size: 12.5px; }
+html[data-design] #review-queue .review-title {
+  display: block;
+  padding: 10px 12px;
+  margin: 0;
+  background: var(--dx-soft);
+  border-bottom: 1px solid var(--dx-line);
+}
+html[data-design] #review-queue .review-title b { display: block; font-size: 13.5px; color: var(--dx-ink); }
+html[data-design] #review-queue .review-title span { display: block; margin-top: 2px; font-size: 12px; color: var(--dx-muted); }
+html[data-design] #review-queue .review-list { padding: 6px; }
+html[data-design] #review-queue .review-list button {
+  grid-template-columns: 14px 82px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 8px;
+  margin-bottom: 4px;
+  border: 1px solid rgba(54, 95, 70, .12);
+  border-radius: 7px;
+  background: #fff;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+html[data-design] #review-queue .review-list button:hover { background: var(--dx-soft); }
+html[data-design] #review-queue .review-list button small { color: var(--dx-muted); font-size: 12px; line-height: 1.35; }
 
 /* Main sidebar footer stays visible. */
 html[data-design] #sidebar > footer {
@@ -638,7 +676,7 @@ html[data-design] #sidebar > footer {
 html[data-design] #sidebar > footer a { color: var(--dx-accent); text-decoration: none; font-weight: 600; }
 html[data-design] #sidebar > footer a:hover { text-decoration: underline; }
 
-/* All settings drawer — single uniform Title Case accordion style. */
+/* All settings drawer — sticky header + single uniform Title Case accordion style. */
 html[data-design] #design-drawer {
   position: fixed;
   z-index: 4100;
@@ -646,22 +684,26 @@ html[data-design] #design-drawer {
   right: 0;
   bottom: 0;
   width: min(470px, 100%);
-  padding: 20px 22px 32px;
-  overflow: auto;
+  padding: 0;
+  overflow: hidden;
   display: none;
+  flex-direction: column;
   background: var(--dx-panel);
   color: var(--dx-ink);
-  box-shadow: -20px 0 64px rgba(10, 25, 18, .22);
+  box-shadow: -20px 0 64px rgba(10, 25, 18, .25);
   font-size: 13.5px;
 }
 html[data-design] .design-settings-open #design-drawer,
-html[data-design] #design-drawer[aria-hidden="false"] { display: block; }
+html[data-design] #design-drawer[aria-hidden="false"] { display: flex; }
 html[data-design] #design-drawer > header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  margin-bottom: 6px;
+  padding: 16px 22px 12px;
+  border-bottom: 1px solid var(--dx-line);
+  background: var(--dx-panel);
 }
 html[data-design] #design-drawer > header small {
   color: var(--dx-accent);
@@ -670,8 +712,9 @@ html[data-design] #design-drawer > header small {
   letter-spacing: .08em;
   text-transform: uppercase;
 }
-html[data-design] #design-drawer > header h2 { margin: 2px 0 0; font-size: 24px; color: var(--dx-ink); }
+html[data-design] #design-drawer > header h2 { margin: 2px 0 0; font-size: 22px; color: var(--dx-ink); }
 html[data-design] #design-drawer-close {
+  flex: 0 0 auto;
   width: 36px;
   height: 36px;
   padding: 0;
@@ -681,8 +724,13 @@ html[data-design] #design-drawer-close {
   color: var(--dx-ink);
   font-size: 21px;
 }
+html[data-design] .design-drawer-content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 14px 22px 32px;
+}
 html[data-design] .design-drawer-intro {
-  margin: 0 0 14px;
+  margin: 0 0 12px;
   color: var(--dx-muted);
   font-size: 13px;
   line-height: 1.45;
@@ -701,10 +749,10 @@ html[data-design] #design-drawer .settings-grid details {
 html[data-design] #design-drawer .drawer-section[open],
 html[data-design] #design-drawer .settings-grid details[open] { padding-bottom: 12px; }
 html[data-design] #design-drawer .settings-grid summary {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: 10px;
   min-height: 46px;
   margin: 0;
   padding: 8px 0;
@@ -716,6 +764,13 @@ html[data-design] #design-drawer .settings-grid summary {
   text-transform: none;
   cursor: pointer;
 }
+html[data-design] #design-drawer .drawer-summary-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
 html[data-design] #design-drawer .settings-grid summary small {
   display: inline;
   margin: 0;
@@ -725,14 +780,16 @@ html[data-design] #design-drawer .settings-grid summary small {
 }
 html[data-design] #design-drawer .settings-grid summary::after {
   display: block;
-  margin-left: auto;
+  align-self: center;
+  margin-left: 0;
   color: var(--dx-accent);
   font-size: 17px;
+  line-height: 1;
 }
 html[data-design] #design-drawer .setting-items { display: block; }
 html[data-design] #design-drawer .settings-grid details label {
   display: block;
-  margin: 10px 0;
+  margin: 8px 0;
   padding: 0;
   font-size: 13px;
   line-height: 1.35;
@@ -863,7 +920,8 @@ html[data-design] #design-drawer-backdrop {
   border: 0;
   visibility: hidden;
   opacity: 0;
-  background: rgba(4, 16, 10, .34);
+  background: rgba(11, 16, 13, .5);
+  backdrop-filter: blur(2px);
   transition: opacity .2s, visibility 0s linear .2s;
 }
 html[data-design] .design-settings-open #design-drawer-backdrop {
@@ -913,13 +971,18 @@ html[data-design] .key-line.alternate { border-color: #e5a000; border-top-style:
 html[data-design] .key-line.comparison { border: 2px dashed #e040fb; }
 html[data-design] .key-line.concavity { border: 2px dashed #e0c000; background: #fff6bf; }
 html[data-design] .key-line.mil12 { border: 2px dotted #666; }
+html[data-design] .key-line.audit-join { border: 2px dotted #00a6ff; background: transparent; border-radius: 99px; }
+html[data-design] .key-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+html[data-design] .key-swatch.un { background: #ff9f1a; }
+html[data-design] .key-swatch.rv { background: #b45cff; }
 
 #simple-map-key .key-extra { display: none !important; }
 body.key-karpef #simple-map-key .key-extra-karpef,
 body.key-verified #simple-map-key .key-extra-verified,
 body.key-comparison #simple-map-key .key-extra-comparison,
 body.key-concavity #simple-map-key .key-extra-concavity,
-body.key-12mil #simple-map-key .key-extra-12mil { display: flex !important; }
+body.key-12mil #simple-map-key .key-extra-12mil,
+body.key-audit #simple-map-key .key-extra-audit { display: flex !important; }
 
 /* Compact segmented base-map switch on desktop, collapsed icon button on phones. */
 html[data-design] .leaflet-control-layers {
@@ -932,11 +995,12 @@ html[data-design] .leaflet-control-layers {
 html[data-design] .leaflet-control-layers-expanded { padding: 4px; }
 html[data-design] .leaflet-control-layers-base { display: flex; gap: 3px; }
 html[data-design] .leaflet-control-layers-base label {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
   margin: 0;
-  padding: 5px 9px;
+  padding: 5px 11px;
   border-radius: 6px;
   background: transparent;
   color: var(--dx-ink);
@@ -947,7 +1011,18 @@ html[data-design] .leaflet-control-layers-base label:has(input:checked) {
   background: var(--dx-accent);
   color: #fff8e8;
 }
-html[data-design] .leaflet-control-layers-base input { accent-color: var(--dx-accent); margin: 0; }
+html[data-design] .leaflet-control-layers-base label:has(input:focus-visible) {
+  outline: 2px solid var(--dx-accent);
+  outline-offset: 1px;
+}
+html[data-design] .leaflet-control-layers-base input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  pointer-events: none;
+}
 html[data-design] .leaflet-control-layers-separator { display: none; }
 
 /* Keep Leaflet attribution cleanly above Google Maps' bottom-right terms strip. */
@@ -1095,7 +1170,9 @@ html[data-design] #map.google-map-active .leaflet-bottom.leaflet-right .leaflet-
   html[data-design] .intro { margin: 4px 0 10px; }
   html[data-design] .intro h2 { font-size: 24px; }
   html[data-design] #address { height: 46px; font-size: 16px; }
-  html[data-design] #design-drawer { width: 100%; padding: 18px 16px 28px; }
+  html[data-design] #design-drawer { width: 100%; padding: 0; }
+  html[data-design] #design-drawer > header { padding: 14px 16px 10px; }
+  html[data-design] .design-drawer-content { padding: 12px 16px 28px; }
 
   html[data-design] .leaflet-control-layers-base { flex-direction: column; gap: 3px; }
   html[data-design] .leaflet-control-layers-base label { padding: 6px 10px; }
