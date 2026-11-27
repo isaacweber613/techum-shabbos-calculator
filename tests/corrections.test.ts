@@ -22,6 +22,11 @@ assert.match(worker, /correctionReviewMatch = url\.pathname\.match/);
 assert.match(worker, /return listBuildingCorrections\(env\.DB\)/);
 assert.match(worker, /return reviewBuildingCorrection\(request, correctionReviewMatch\[1\], env\.DB, reviewer\)/);
 assert.match(worker, /url\.pathname === '\/corrections'/);
+// The worker must fetch the extensionless canonical asset path: with
+// html_handling "auto-trailing-slash" the asset binding redirects
+// /corrections.html back to /corrections, which loops forever.
+assert.match(worker, /assetUrl\.pathname = '\/corrections';/);
+assert.doesNotMatch(worker, /assetUrl\.pathname = '\/corrections\.html';/);
 assert.match(build, /'corrections\.html'/);
 
 const listDb = {
