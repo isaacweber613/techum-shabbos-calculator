@@ -108,6 +108,9 @@
           <span class="key-extra key-extra-comparison"><i class="key-line comparison"></i><strong>Purple</strong> Comparison amah</span>
           <span class="key-extra key-extra-concavity"><i class="key-line concavity"></i><strong>Yellow</strong> Pocket review</span>
           <span class="key-extra key-extra-12mil"><i class="key-line mil12"></i><strong>Gray</strong> 12 mil</span>
+          <span class="key-extra key-extra-audit"><i class="key-swatch un"></i><strong>Orange</strong> Unknown</span>
+          <span class="key-extra key-extra-audit"><i class="key-swatch rv"></i><strong>Purple</strong> Review</span>
+          <span class="key-extra key-extra-audit"><i class="key-line audit-join"></i><strong>Dotted</strong> 70⅔-amah join</span>
         </div>`;
       const mapKeyToggle = mapKey.querySelector('.map-key-toggle');
       mapKeyToggle.addEventListener('click', () => {
@@ -161,9 +164,8 @@
               <button type="button" id="result-btn-pdf">PDF</button>
               <button type="button" id="result-btn-snapshot">Snapshot</button>
               <button type="button" id="result-btn-audit" class="${meta && meta.auditMode ? 'is-active' : ''}" aria-pressed="${meta && meta.auditMode ? 'true' : 'false'}">${meta && meta.auditMode ? 'Hide audit' : 'Audit map'}</button>
-              <button type="button" id="result-btn-move-pin">Move pin</button>
             </div>
-            <p class="result-tap-hint">Tap anywhere on the map to check if a spot is inside the techum, or drag the pin to move it.</p>
+            <p class="result-tap-hint">Tap the map to check a spot, drag the pin, or <button type="button" id="result-btn-move-pin" class="inline-action-link">move pin</button>.</p>
             <div id="result-export-feedback" class="export-feedback" role="status" aria-live="polite" hidden></div>`;
 
           card.querySelector('#result-btn-png')?.addEventListener('click', () => window.TechumApp?.exportPNG?.());
@@ -284,7 +286,8 @@
       drawer.id = 'design-drawer';
       drawer.setAttribute('aria-hidden', 'true');
       const drawerEyebrow = isDesignPreview && design !== '10' ? `Concept ${design}` : 'Review controls';
-      drawer.innerHTML = `<header><div><small>${drawerEyebrow}</small><h2>All settings</h2></div><button id="design-drawer-close" type="button" aria-label="Close all settings">×</button></header><p class="design-drawer-intro">Common choices stay on the main screen. Open this panel for shitos, audit geometry, building corrections, snapshots, and GIS exports.</p>`;
+      drawer.innerHTML = `<header><div><small>${drawerEyebrow}</small><h2>All settings</h2></div><button id="design-drawer-close" type="button" aria-label="Close all settings">×</button></header><div class="design-drawer-content"><p class="design-drawer-intro">Common choices stay on the main screen. Open this panel for shitos, audit geometry, building corrections, snapshots, and GIS exports.</p></div>`;
+      const drawerBody = drawer.querySelector('.design-drawer-content');
       const movable = [];
       let node = advancedHeading;
       while (node) {
@@ -292,7 +295,7 @@
         if (node.tagName !== 'FOOTER') movable.push(node);
         node = node.nextSibling;
       }
-      movable.forEach((item) => drawer.append(item));
+      movable.forEach((item) => drawerBody.append(item));
       // Keep the fixed drawer at the document root so the sidebar's stacking
       // context cannot put the full-screen backdrop in front of its controls.
       document.body.append(drawer);

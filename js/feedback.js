@@ -57,9 +57,17 @@
         scrollY: -window.scrollY,
         // Capture the page behind the open feedback dialog without hiding the form from the user.
         ignoreElements: (element) => element.id === 'feedback-dialog',
-        // Without this the map's boundary shapes are drawn offset from the map in the screenshot.
+        // Without this the map's boundary shapes are drawn offset, and html2canvas renders closed <details> bodies.
         onclone: (clonedDocument) => {
           clonedDocument.getElementById('feedback-dialog')?.remove();
+          clonedDocument.querySelectorAll('details:not([open])').forEach((details) => {
+            [...details.children].forEach((child) => {
+              if (child.tagName !== 'SUMMARY') child.style.display = 'none';
+            });
+          });
+          clonedDocument.querySelectorAll('.leaflet-popup-content-wrapper').forEach((el) => {
+            el.style.boxShadow = '0 2px 6px rgba(0, 0, 0, .14)';
+          });
           if (window.TechumNormalizeMapClone) window.TechumNormalizeMapClone(clonedDocument);
         },
       });

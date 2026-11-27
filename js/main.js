@@ -303,6 +303,7 @@
     });
     container.append(badge, meta, moveBtn);
     if (window.L?.DomEvent) L.DomEvent.disableClickPropagation(container);
+    map.eachLayer((layer) => { if (layer.closeTooltip) layer.closeTooltip(); });
     destinationPopup = L.popup({ className: 'destination-check-popup', maxWidth: 260, closeButton: true })
       .setLatLng(latlng)
       .setContent(container)
@@ -405,6 +406,9 @@
       if (googleActive) { ensureGoogleMap(); syncGoogleMap(); }
     });
     map.on('move zoomend', syncGoogleMap);
+    map.on('popupopen', () => {
+      map.eachLayer((layer) => { if (layer.closeTooltip) layer.closeTooltip(); });
+    });
     map.on('resize', () => {
       if (googleMap && window.google && window.google.maps) window.google.maps.event.trigger(googleMap, 'resize');
       syncGoogleMap();
@@ -1326,7 +1330,7 @@
   // Removes every trace of a result that no longer applies (moved pin, failed re-analysis).
   function clearResultDisplay() {
     closeDestinationPopup();
-    document.body.classList.remove('has-result', 'key-karpef', 'key-verified', 'key-comparison', 'key-12mil', 'key-concavity');
+    document.body.classList.remove('has-result', 'key-karpef', 'key-verified', 'key-comparison', 'key-12mil', 'key-concavity', 'key-audit');
     layerGroups.buildings.clearLayers();
     layerGroups.rects.clearLayers(); layerGroups.second.clearLayers(); layerGroups.settlements.clearLayers();
     layerGroups.audit.clearLayers(); layerGroups.perimeter.clearLayers();
@@ -1429,7 +1433,7 @@
         fillColor: MAP_PALETTE.pink, fillOpacity: 0.38, casing: true,
         // An incomplete result (the map data ran out) is drawn dashed, not as a confident line.
         ...(state.dataCapHit ? { dashArray: '10 7' } : {}) },
-      'PINK TECHUM AREA — 2000 amos (' + settings.amahCm + ' cm amah)' +
+      'Pink techum — 2,000 amos (' + (settings.amahCm / 2.54).toFixed(2) + ' in amah)' +
         (state.dataCapHit ? ' · INCOMPLETE: the map data ran out' : ''));
     if ((res.karpefRegions || []).length && document.getElementById('layer-karpef').checked)
       addRegions(res.karpefRegions, { color: MAP_PALETTE.greenStroke, weight: 2, dashArray: '6 5',
@@ -1488,6 +1492,7 @@
     document.body.classList.toggle('key-comparison', canRunComparisonAmah());
     document.body.classList.toggle('key-12mil', !!settings.show12mil);
     document.body.classList.toggle('key-concavity', (res.concavityRegions || []).length > 0);
+    document.body.classList.toggle('key-audit', !!settings.showAuditRings);
 
     renderAuditRings();
     renderAuditGuide();
@@ -1929,9 +1934,23 @@
       button.innerHTML = `<span>⌁</span><b>${audit.shapeKind === 'hole' ? 'Large enclosed hole' : 'Bow / L-shaped pocket'}</b><small>${audit.reviewerEndpoints ? `Endpoints applied · ${escapeHtml(audit.reviewStatus)}` : audit.shapeKind === 'hole' ? escapeHtml(audit.reviewStatus) : 'Select two endpoints; provisional no-fill is active'}</small>`;
       button.addEventListener('click', () => recordConcavityEndpoints(audit.reviewKey)); list.appendChild(button);
     });
+    const formatReviewReason = (b) => {
+      const raw = String(b.reason || '');
+      if (b.klass === 'unknown') return 'Use not tagged in map data';
+      if (/synagogue|place of worship|religious|church|chapel|cathedral|mosque|temple/i.test(raw)) return 'Religious building (ask a rav)';
+      if (/hotel/i.test(raw)) return 'Hotel (ask a rav)';
+      if (/school|college|university|kindergarten|education/i.test(raw)) return 'School / educational building (ask a rav)';
+      if (/hospital|medical/i.test(raw)) return 'Hospital / medical building (ask a rav)';
+      if (/office|commercial|industrial|factory/i.test(raw)) return 'Commercial / office building (ask a rav)';
+      if (/fire_station|guardhouse/i.test(raw)) return 'Attended station / guardhouse (ask a rav)';
+      if (/agricultural|farm/i.test(raw)) return 'Agricultural building (may be a farmhouse)';
+      if (/abandoned|ruins/i.test(raw)) return 'Abandoned or ruined structure (ask a rav)';
+      return raw.replace(/^Overture subtype=[^→]+→\s*/i, '').replace(/^building=/i, '').replace(/_/g, ' ');
+    };
     items.slice(0, 20).forEach(({ building: b, impact }) => {
       const button = document.createElement('button'); button.type = 'button';
-      button.innerHTML = `<span class="sw ${b.klass === 'unknown' ? 'un' : 'rv'}"></span><b>${escapeHtml(impact)}</b><small>${escapeHtml(b.klass)} · ${escapeHtml(b.reason)}</small>`;
+      button.title = `${b.klass} · ${b.reason}`;
+      button.innerHTML = `<span class="sw ${b.klass === 'unknown' ? 'un' : 'rv'}"></span><b>${escapeHtml(impact)}</b><small>${escapeHtml(formatReviewReason(b))}</small>`;
       button.addEventListener('click', () => {
         const sw = state.proj.toLatLon(b.bbox.minX, b.bbox.minY), ne = state.proj.toLatLon(b.bbox.maxX, b.bbox.maxY);
         map.fitBounds([[sw.lat, sw.lon], [ne.lat, ne.lon]], { maxZoom: 20, padding: [40, 40] });
@@ -2695,7 +2714,7 @@
     }
   }
 
-  function setAuditMode(enabled) {
+  function setAuditMode(enabled, options = {}) {
     const next = !!enabled;
     settings.showAuditRings = next;
     const rings = document.getElementById('audit-rings');
@@ -2705,9 +2724,9 @@
     saveSettings();
     if (state.result) {
       render();
-      if (next) {
+      if (next && options.scrollToQueue) {
         const queue = document.getElementById('review-queue');
-        if (queue && !queue.hidden) queue.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        if (queue && !queue.hidden) queue.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }
     }
     return next;
@@ -2750,7 +2769,7 @@
     startAimCornerMode,
     startMovePinMode,
     toggleAuditMode: () => setAuditMode(!settings.showAuditRings),
-    enableAuditMode: () => setAuditMode(true),
+    enableAuditMode: () => setAuditMode(true, { scrollToQueue: true }),
     exportPNG: () => void exportPNG(),
     exportPDF: () => void exportPDF(),
     saveSnapshot: () => saveSnapshot(),
@@ -2808,6 +2827,7 @@
     $('show-12mil').addEventListener('change', (e) => { settings.show12mil = e.target.checked; onChange(); });
     $('audit-rings').addEventListener('change', (e) => {
       settings.showAuditRings = e.target.checked; saveSettings();
+      document.body.classList.toggle('key-audit', !!settings.showAuditRings);
       if (state.result) { renderAuditRings(); renderAuditGuide(); renderReviewQueue(); }
     });
     $('fetch-radius').addEventListener('change', (e) => { settings.fetchRadiusM = Math.max(300, parseInt(e.target.value, 10) || S.DEFAULTS.fetchRadiusM); saveSettings(); });
