@@ -452,6 +452,11 @@ html[data-design] .result-action-bar button.is-active {
   border-color: var(--dx-accent);
   color: #fff8e8;
 }
+html[data-design] .result-action-bar button.is-active:hover:not(:disabled) {
+  background: #294c37;
+  border-color: #294c37;
+  color: #fff8e8;
+}
 html[data-design] .result-tap-hint {
   margin: 0 0 8px;
   color: var(--dx-muted);
